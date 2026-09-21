@@ -63,3 +63,14 @@ def test_corporate_action_indicator_is_present_and_used():
     flagged = [r["CORP_IND"] for r in _rows(PD) if r.get("CORP_IND")]
     assert flagged, "CORP_IND column is empty; corporate-action detection would silently fail"
     assert set(flagged) <= {"XD", "XI", "XO", "XB", "XS", "XR"}, set(flagged)
+
+
+def test_band_hitter_file_shape():
+    # The bh file is the circuit-limit source (Sect.5.9). It covers every series, so the
+    # loader must filter to the universe rather than assume EQ.
+    BH = FIXTURES / "bh18092026.csv"
+    rows = list(_rows(BH))
+    assert {"SYMBOL", "SERIES", "SECURITY", "HIGH/LOW"} <= set(rows[0])
+    assert {r["HIGH/LOW"] for r in rows} <= {"H", "L"}
+    # Not an EQ-only file: on 18 Sep 2026 fewer than a third of the hitters were EQ.
+    assert len([r for r in rows if r["SERIES"] == "EQ"]) < len(rows) / 2

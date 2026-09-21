@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 0.4 · 21 Sep 2026 · Owner: Sravanth
+Version 0.5 · 21 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v0.5 (Slice 0, Spike B) verifies the NSE bulk-archive URL patterns and depth (§5.2, §5.9) and **reverses the corporate-action design**: `PrvsClsgPric` is *not* adjusted, so returns cannot be chained through it (§5.9, §5.11). Records the robots.txt / terms-of-use conflict in §3.
 - v0.4 (Slice 0, Step 0 review) reworks the LLM routing and verification rules (§6), makes verification provenance-based, fixes the announcement-source plan to a hybrid (§5.1), and settles the data-quality decisions: return chaining, band hitters, Q4 derivation, dedup keys, revision rows, sector column. Adds D23. Corrects D6, D10, D14, D19, D20.
 - v0.3 (Slice 0, Step 0) adds D19–D22: work runs on the laptop, the build order may be re-ordered to reach the verdict first, corporate actions and circuit limits are handled in Phase 1, and the go/no-go rule is pre-registered (§5.9, §5.11). Records the first fixture findings in §5.1 and §5.9.
 - v0.2 switches the LLM from OpenRouter free models to the OpenAI API with model routing (D4, D5, §3, §6).
@@ -76,6 +77,12 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 - **Exchange websites**: expect anti-bot behaviour (browser-like headers, session cookies, 401/403 on bare requests). Be polite: backoff, no parallel requests, and a *jittered* interval rather than a fixed one — perfect periodicity from a datacentre IP is the clearest bot signature there is.
   The VPS IP is whitelisted with Angel One. NSE blocking it would not affect the broker (different hosts), but the IP is identified and expensive to change, because rotating it means redoing the broker whitelist. So the data source and the trading access share a single address where only one of them is cheap to replace.
   Hence D19: the backfill — by far the highest-volume, highest-risk traffic — runs from the laptop, and the VPS only ever polls at a low rate.
+- **robots.txt vs the terms of use — they conflict** (Spike B, both read 21 Sep 2026; **Open**, §11).
+  - `https://www.nseindia.com/robots.txt` is permissive in full: `User-agent: *`, `Allow: /`, with a single `Disallow: /market-data-test`. Nothing this project touches is disallowed.
+  - `https://www.nseindia.com/static/nse-terms-of-use` says the opposite, verbatim: "User is prohibited to conduct any systematic or automated data collection activities (including scraping, data mining, data extraction and data harvesting) on or in relation to our Website / Mobile Application."
+  - The clause is written about the *Website / Mobile Application*. The files this project reads are pre-built static archives on `nsearchives.nseindia.com`, which is arguably a different thing — but that is a legal reading, not an engineering one, and this document does not make it. Recorded here so the choice is Sravanth's, made knowingly, rather than something that happened by default.
+  - Facts either way: the filings are public disclosures, nothing is redistributed, the volume is small and paced, and Phase 1 is personal research.
+- **Anti-bot layer** (Spike B, Verified): the homepage sets `AKA_A2`, `_abck`, `ak_bmsc` and `bm_sz` — Akamai Bot Manager. A session warm-up against `https://www.nseindia.com/` is required before the archive hosts will answer, and the request must carry browser-like headers. This sits awkwardly against §5.1's "consistent, identifiable User-Agent": an honest UA is what robots.txt would invite, and is also what the bot manager is most likely to refuse. Unresolved (§11).
 - **Volume** (one ordinary day, NSE only, Fri 18 Sep 2026): ~1,229 announcements from ~881 companies, of which 22 were order-win filings from 12 companies.
 
 ---
@@ -142,7 +149,13 @@ Purpose: capture every announcement exactly once, with the exchange timestamp an
 ### 5.2 Instruments and ISIN map
 Purpose: one identity per company (ISIN) across NSE symbols and BSE scrip codes. This also defines the universe.
 
-- NSE side: the daily UDiFF bhavcopy (`BhavCopy_NSE_CM_0_0_0_YYYYMMDD_F_0000.csv.zip`) gives ISIN, symbol and series.
+- NSE side: the daily UDiFF bhavcopy gives ISIN, symbol and series.
+  - **Verified** (Spike B, 21 Sep 2026). URL pattern:
+    `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{YYYYMMDD}_F_0000.csv.zip`
+    — a zip holding one CSV of the same name. Fetched 200 for 2025-08-05, 2025-08-06, 2026-03-11, 2026-07-16, 2026-07-17 and 2026-09-18, so depth comfortably exceeds the 12 months + 30 trading days D10 asks for.
+  - 34 columns, and the column set is **identical to the BSE UDiFF fixture** already in `tests/fixtures/`. One parser handles both exchanges, which is what §5.2 assumed.
+  - `ISIN`, `TckrSymb`, `SctySrs`, `OpnPric`, `ClsPric` and `PrvsClsgPric` all present on every date checked.
+  - Size: about 3,080–3,440 rows across all series, of which roughly 2,380 are `EQ`.
 - BSE side: the BSE UDiFF bhavcopy is used **only as a mapping table** (`FinInstrmId` = BSE scrip code → `ISIN`; e.g. ABB is 500002). It is never a price source.
 - Universe rule (D9): the ISIN has an NSE mainboard listing (series other than SM/ST). BSE filings for ISINs outside the universe are stored raw and not processed.
 - Store but don't act on in Phase 1: NSE series (EQ vs BE/BZ), ASM/GSM membership. These become trade-time filters later.
@@ -229,16 +242,26 @@ Order of operations:
 
 ### 5.9 Market data loader
 - NSE UDiFF bhavcopy (daily) → `prices` (open, high, low, close, volume, series per ISIN). The bhavcopy is also the only one of these files that carries ISIN, so it is the join key for the other two.
-- NSE market-cap file (`mcapDDMMYYYY.csv`, inside the daily PR bundle) → `market_caps`. **Verify** archive depth; 12 months is what the event study needs, 24 was over-stated.
+- **PR bundle** — **Verified** (Spike B, 21 Sep 2026). URL pattern:
+  `https://nsearchives.nseindia.com/archives/equities/bhavcopy/pr/PR{ddmmyy}.zip`
+  Note the **two-digit year in the URL**, even though the members inside use four digits from 2026 onward. Fetched 200 for 2025-08-06, 2026-03-11 and 2026-09-18; 14 members each.
+  - **Member names are not stable across the archive — match case-insensitively on prefix, never on an exact filename** (Changed). In the 2025-08-06 bundle the members are `An060825.txt`, `Pd060825.csv`, `bh060825.csv` and `MCAP06082025.csv`: mixed capitalisation, and `MCAP` uses `DDMMYYYY` while its siblings use `DDMMYY` **in the same zip**. From 2026-03-11 onward everything is lowercase `DDMMYYYY`. A loader keyed on exact filenames would silently find nothing on older bundles.
+  - `pd` and `mcap` column sets **match the fixtures exactly** on all three dates. Stable.
+- NSE market-cap file (`mcap`, inside the daily PR bundle) → `market_caps`.
   - **Verified** (Step 0, `tests/fixtures/mcap18092026.csv`): the column is `Market Cap(Rs.)` and the values are **plain rupees**, not lakhs or crores. Keyed by Symbol + Series, so it needs the bhavcopy for ISIN. Columns: Trade Date, Symbol, Series, Security Name, Category, Last Trade Date, Face Value, Issue Size, Close Price, Market Cap.
 - Nifty 50 daily close (index rows in the PR bundle's `pd` file) → `index_prices`, used for returns relative to the market.
   - **Verified** (Step 0, `tests/fixtures/pd18092026.csv`): index rows carry `MKT=Y` and `IND_SEC=Y`, with `Nifty 50` as the first row. Columns: MKT, SERIES, SYMBOL, SECURITY, PREV_CL_PR, OPEN_PRICE, HIGH_PRICE, LOW_PRICE, CLOSE_PRICE, NET_TRDVAL, NET_TRDQTY, IND_SEC, CORP_IND, TRADES, HI_52_WK, LO_52_WK. No ISIN, so this too joins via the bhavcopy.
 - **Corporate actions** (D21). Bhavcopy and `pd` prices are *unadjusted*, so a split or bonus inside an event window reads as a huge fake loss — and splits and bonus issues are common in exactly the small-caps this study targets. Two signals handle it, both already in the daily files and both free:
   - `CORP_IND` in the `pd` file flags the ex-date directly. **Verified** on 18 Sep 2026: 70 rows `XD`, 2 `XI`, 1 `XO`, 3,741 blank. The full code list is still to confirm (expect `XB` bonus, `XS` split, `XR` rights).
-  - `PREV_CL_PR` is set by NSE to the *adjusted* previous close on an ex-date. So returns are computed as `CLOSE_PRICE / PREV_CL_PR - 1`, never against the previous row's close, and a mismatch between the two is an independent corporate-action detector.
-  - Volume ratios (§5.11) are distorted by the same events; flag rather than adjust them.
-  - **Spike B must prove this on a real ex-date** before Slice 7 depends on it: take one known split or bonus in the window, chain the return through `PREV_CL_PR`, and show it comes out near zero rather than near −50% or −90%.
-- **Band hitters** (D21). The PR bundle's `bhDDMMYYYY.csv` lists the securities that hit their price band that day (SYMBOL, SERIES, SECURITY, HIGH/LOW). This is the direct source for the circuit flag, so the band does not have to be inferred from the price move. A micro-cap that gates up on an order win is untradeable, and counting that move as return would be fictitious P&L.
+  - **CHANGED — `PrvsClsgPric` is NOT corporate-action adjusted.** v0.4 planned to chain every return through it. Spike B tested that and it is false.
+    Evidence, 2025-08-06 (a day the PR bundle flags 18 corporate actions, including `COALINDIA` ex-dividend and `DAVANGERE` ex-rights): `PrvsClsgPric` equals the previous session's close for **all 18 flagged names, and for all 3,093 symbols in the file**. The PR bundle's `PREV_CL_PR` is the same number — it differs from the UDiFF field for **0** symbols that day. Both fields are simply the raw prior close.
+    So there is no free adjustment anywhere in the daily files, and the corporate-action problem is real and unsolved by them.
+  - **`CORP_IND` still works, but only as a detector, never as an adjustment.** It names the affected securities on the ex-date; it does not carry the ratio needed to adjust a price. Observed values: `XD` (ex-dividend), `XR` (ex-rights), `XO`, and `XI` (ex-interest, only on debt series). `XB` and `XS` are expected but did not appear on the three days sampled.
+  - **Phase 1 rule** (Decided): **exclude, do not adjust.** An event is dropped from the study if a capital action (`XB`, `XS`, `XR`, `XO`) is flagged for its ISIN anywhere in its window. Ordinary dividends (`XD`) are recorded and tolerated: they move a price by a fraction of a percent, in one direction, across the whole sample.
+    This is affordable because capital actions are rare. Across the three sampled days the counts were 1, 1 and 1 out of roughly 3,400 rows — about 0.03% of names per day — whereas `XD` ran 16, 3 and 70. Excluding on `XD` too would cost a large share of the sample for no benefit.
+  - Adjusting properly would need NSE's corporate-actions feed for the ratios. That is a Slice 7 option **only if** the exclusion turns out to cost more events than expected; it is not Phase 1 work. Never infer a ratio from the price move — that is guessing a number.
+  - Volume ratios (§5.11) are distorted by the same events, and are excluded on the same rule.
+- **Band hitters** (D21) — **Verified** (Spike B). The PR bundle's `bh` member lists the securities that hit their price band that day, and is present in all three bundles sampled. Columns are `SYMBOL, SERIES, SECURITY, HIGH/LOW` in 2026; the 2025-08-06 file carries a fifth column, `INDEX FLAG`, which was later dropped — so the loader must tolerate both widths. `HIGH/LOW` is `H` or `L`. The file covers every series, `SM`, `ST`, `BE`, `BZ` and debt included, so it needs filtering to the universe. **Base rate** (Spike B, 18 Sep 2026): 298 band hitters, 181 at the high and 117 at the low, of which only 86 were `EQ` — about 3.6% of the ~2,380 EQ names. On an ordinary day, then, roughly one EQ name in 28 is untradeable at its band, and the rate among the small-caps this study targets will be higher still. This is not an edge case. This is the direct source for the circuit flag, so the band never has to be inferred from the price move: a micro-cap that gates up on an order win is untradeable, and counting that move as return would be fictitious P&L.
 - **History depth** (D10): 12 months **+ 30 trading days** for prices, market caps and band hitters, so the −20-day pre-event window and the 20-day average volume have room at the start of the study period. Results stay at 24 months.
 
 ### 5.10 Calculator
@@ -260,7 +283,7 @@ For each verified order:
   - **Post-event**: returns at +1, +3, +5 and +10 trading days, minus Nifty. Measure from day-0 close (conservative) and, for after-hours filings, also from the next day's open.
   - **Volume**: event-day volume ÷ 20-day average volume. Flagged, not used, when a corporate action falls in the window (§5.9).
   - **Contamination**: the same ISIN has another non-noise filing within ±3 trading days. Tag it and report it separately.
-  - **Corporate action** (D21): tag any event whose window contains a `CORP_IND` flag or a `PREV_CL_PR` mismatch. Returns always come from `CLOSE_PRICE / PREV_CL_PR - 1`, so they are already adjusted; the tag exists so a bad adjustment can be found later.
+  - **Corporate action** (D21, revised by Spike B): prices are unadjusted and **stay** unadjusted — neither `PrvsClsgPric` nor `PREV_CL_PR` is adjusted (§5.9). So returns are computed from consecutive closes, and any event whose window contains a capital action (`CORP_IND` in `XB`, `XS`, `XR`, `XO`) for its ISIN is **excluded from the study and reported as excluded**, with the count shown. `XD` is tagged and kept. Excluded events are never silently dropped: an exclusion that quietly removed half the sample would change the verdict without anyone seeing it.
   - **Circuit limits** (D21): Indian stocks trade inside 5 / 10 / 20% price bands. A micro-cap that wins a large order can gate up untradeably, and a measured +10% on a 5%-band stock is fictitious P&L — which matters because the whole question is whether Sravanth can *trade* this. The flag comes straight from the PR bundle's **`bhDDMMYYYY.csv` band-hitter file** (§5.9), not from inferring the band. Tradeable return is reported separately from paper return.
 - Buckets (Default, change freely):
   - value_to_ttm: <5%, 5–15%, 15–40%, >40%;
@@ -478,6 +501,8 @@ Resolved since v0.2: the model acceptance threshold (§6 — kept at 95%, but re
 
 Still open:
 
+- **NSE terms of use vs robots.txt** (§3). robots.txt allows everything this project reads; the terms of use prohibit systematic or automated collection "on or in relation to our Website / Mobile Application". Sravanth's call, and it is a precondition for Slice 1, not a detail to settle later.
+- User-Agent honesty vs the Akamai bot manager (§3): an identifiable UA is what robots.txt invites and what §5.1 asks for, and is also the one most likely to be refused.
 - Scanned PDFs: local OCR, a vision-capable model, or manual review only.
 - FX source for foreign-currency orders.
 - NSE holiday calendar source.

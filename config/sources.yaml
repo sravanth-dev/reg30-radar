@@ -1,0 +1,56 @@
+# Endpoints, headers and parameters live here, never in code (CLAUDE.md scraping rules).
+#
+# Politeness is policy, not decoration (D25): one request at a time per source, a fixed
+# low rate with jitter, a session warm-up first, backoff on errors, and a single
+# consistent User-Agent that is never rotated. Nothing here exists to defeat NSE's bot
+# management; the pacing exists to keep load negligible.
+
+nse:
+  # A warm-up GET here first, to pick up the Akamai cookies (AKA_A2, _abck, ak_bmsc,
+  # bm_sz). The archive and API hosts will not answer a cold session.
+  warmup_url: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+
+  headers:
+    # Copied from the request the announcements page itself makes. Chosen once and kept
+    # stable: rotating these is exactly the pattern bot management scores hardest (D25).
+    accept: "*/*"
+    accept-language: "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7"
+    priority: "u=1, i"
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+    sec-ch-ua: '"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"'
+    sec-ch-ua-mobile: "?0"
+    sec-ch-ua-platform: '"Windows"'
+    sec-fetch-dest: empty
+    sec-fetch-mode: cors
+    sec-fetch-site: same-origin
+    user-agent: >-
+      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
+      Chrome/153.0.0.0 Safari/537.36
+
+  announcements:
+    url: https://www.nseindia.com/api/corporate-announcements
+    # index=equities is the only parameter confirmed so far. Symbol and date-range
+    # parameter names are what Spike A is for; nothing is assumed here.
+    params:
+      index: equities
+
+  # Verified in Spike B (ARCHITECTURE.md Sect.5.2, Sect.5.9).
+  archives:
+    udiff_cm: https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip
+    # Note the two-digit year in the PR URL, while the members inside use four digits.
+    pr_bundle: https://nsearchives.nseindia.com/archives/equities/bhavcopy/pr/PR{ddmmyy}.zip
+    # PR members are matched case-insensitively on prefix, never on an exact filename:
+    # the 2025 bundles mix capitalisation and mix DDMMYY with DDMMYYYY inside one zip.
+    pr_members:
+      announcements: an
+      price_data: pd
+      market_cap: mcap
+      band_hitters: bh
+
+  pacing:
+    # ARCHITECTURE.md D6 and Sect.5.1.
+    market_window_seconds: 60
+    off_window_seconds: 600
+    backfill_min_gap_seconds: 3.0
+    jitter_seconds: [0.4, 1.6]
+    market_window_ist: ["08:00", "22:00"]

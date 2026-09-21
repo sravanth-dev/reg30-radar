@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 0.5 · 21 Sep 2026 · Owner: Sravanth
+Version 0.6 · 22 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v0.6 (Slice 0, Spike A) documents the announcements API record shape (§5.1) and **reverses the hybrid plan again**: the API is a partial view of any past day, while the PR bundle's `an` file is the complete one. `sm_isin` and `smIndustry` answer §5.3's ISIN attachment and §5.8's sector source.
 - v0.5 (Slice 0, Spike B) verifies the NSE bulk-archive URL patterns and depth (§5.2, §5.9) and **reverses the corporate-action design**: `PrvsClsgPric` is *not* adjusted, so returns cannot be chained through it (§5.9, §5.11). Records the robots.txt / terms-of-use conflict in §3.
 - v0.4 (Slice 0, Step 0 review) reworks the LLM routing and verification rules (§6), makes verification provenance-based, fixes the announcement-source plan to a hybrid (§5.1), and settles the data-quality decisions: return chaining, band hitters, Q4 derivation, dedup keys, revision rows, sector column. Adds D23. Corrects D6, D10, D14, D19, D20.
 - v0.3 (Slice 0, Step 0) adds D19–D22: work runs on the laptop, the build order may be re-ordered to reach the verdict first, corporate actions and circuit limits are handled in Phase 1, and the go/no-go rule is pre-registered (§5.9, §5.11). Records the first fixture findings in §5.1 and §5.9.
@@ -144,7 +145,79 @@ Purpose: capture every announcement exactly once, with the exchange timestamp an
 - **Stored** (raw): source (NSE|BSE), source_id, exchange_ts, first_seen_at, symbol or BSE scrip code, company name, ISIN if present, raw category string, headline/description, attachment URL, full payload (jsonb).
 - **Verified** (Slice 0 Step 0, from `tests/fixtures/an18092026.txt`, 1,265 lines): the PR bundle's announcement file carries **company name, symbol, category and description text — and nothing else**. It has no per-filing timestamp, no attachment URL and no ISIN.
   Consequences: (a) the PR bundle **cannot** drive the backfill on its own, because day-0 determination and point-in-time discipline need the exchange timestamp, and the document pipeline needs the PDF link — both must come from the JSON endpoint or the per-filing page; (b) the file **is** sufficient to test the router (§5.4), which only reads the category string; (c) it is a good completeness cross-check on whatever the JSON endpoint returns for the same day.
-- **Hybrid backfill plan** (follows from the above). Two sources, each doing only what it is good for:
+
+#### Spike A findings (22 Sep 2026)
+
+**Verified — the record shape.** `GET https://www.nseindia.com/api/corporate-announcements`
+returns a bare JSON array. Headers and the warm-up URL are now in `config/sources.yaml`.
+Twenty fields, every one populated in the sample:
+
+| Field | Example | Use |
+|---|---|---|
+| `seq_id` | `106784063` | identifier — **but null on older records** (see below) |
+| `sm_isin` | `INE00RL01028` | **the ISIN**, 100% populated across 1,035 BEL records |
+| `smIndustry` | `Textile Products` | **the sector source §5.8 needed**, but see coverage below |
+| `an_dt` | `18-Sep-2026 10:17:50` | filing timestamp, **with time of day** |
+| `exchdisstime` | `18-Sep-2026 10:17:52` | exchange dissemination timestamp |
+| `difference` | `00:00:02` | the lag between the two, given for free |
+| `desc` | `Press Release` | the category string the router keys on |
+| `attchmntFile` | `https://nsearchives.nseindia.com/corporate/HIGHWAY123_…pdf` | the PDF URL |
+| `hasXbrl` | `true` / `false` | 111 true, 924 false across BEL's history |
+| `sm_name`, `symbol`, `sort_date`, `dt`, `attchmntText`, `fileSize`, `attFileSize` | | supporting |
+| `old_new`, `bflag`, `csvName`, `orgid` | all `null` | no revision marker is exposed here |
+
+`difference` is worth noting: §5.3 wanted to learn which exchange publishes first, and this
+field already gives NSE's own filing-to-dissemination lag per record, at no cost.
+
+**Verified — identity.** `seq_id` is **null on older records**: 193 of BEL's 1,035 rows, all
+of them pre-2015. It is therefore not usable as a primary key on its own across the archive.
+`(seq_id, an_dt)` was unique across all 1,035 rows, and every row was distinct as a whole
+record. This supports the payload-hash key in §5.3 rather than a bare `source_id`.
+No `modified`, `revision` or `updated` field exists, and `old_new` was null on every row, so
+**the API exposes no revision marker** — revisions have to be detected by payload hash.
+
+**Verified — sector coverage is not total.** `smIndustry` was populated on 1,035 of 1,035
+BEL records, but was `None` for HILINFRA. So it is the right source for the bank / NBFC /
+insurer exclusion, and the exclusion still needs a fallback for the names it misses.
+
+**CHANGED — the API is a partial view of any past day, and cannot drive the backfill.**
+This reverses the hybrid plan as written in v0.5, which assumed the API was authoritative and
+the bundle merely lacked timestamps. The opposite is true. Four query modes, each limited
+differently:
+
+| Query | Result |
+|---|---|
+| no parameters | the 20 most recent records only |
+| `symbol=BEL` | 1,035 records spanning **01-Apr-2005 to 31-Oct-2025** — nothing from 2026 at all |
+| `from_date=18-09-2026&to_date=18-09-2026` | 563 records across 392 symbols |
+| `symbol=BEL` **and** the date range | **0 records**; same for MASON; HILINFRA returned 1 |
+
+The date-range result is the serious one. For 18 Sep 2026 it returns 563 filings, where the
+PR bundle's `an18092026.txt` carries roughly 1,229. **BEL and MASON are absent from the API
+response entirely**, although the bundle shows BEL filed twice and MASON five times that day.
+In order-bucket terms the API returned **3 order wins where the bundle shows 22**.
+
+The timestamps in that response span `00:20:00` to `23:59:24`, so it is not truncated by time
+of day, and all 563 `seq_id` values were distinct, so it is not deduplicated either. It is
+simply a subset, and not one whose rule is yet known.
+
+**Consequence for §5.1.** The daily PR bundle is the **complete** record of what was filed;
+the API is the only source of the timestamp, ISIN, industry and PDF URL, and it does not carry
+most past filings. So the hybrid cannot be built as specified until that gap is understood.
+Unknown, and the subject of the next spike: whether a different `index` value, a pagination
+parameter, or the CSV export hinted at by the null `csvName` field reaches the full day.
+Until then, **no backfill design should assume a PDF URL is obtainable for an arbitrary past
+order filing.**
+
+**Volume estimate (question 5), contingent on that being solved.** From the 18 Sep fixture:
+22 `order_win` + 1 `order_candidate` = 23 filings needing a lookup, from 12 distinct companies.
+Over ~250 trading days that is roughly **5,750 per-filing lookups**, or about **3,000
+symbol-day lookups** if one call per company per day serves all of its filings. At the
+§5.1 pacing of one request every 3 s that is 5 to 10 hours of polite traffic — entirely
+feasible, and spread over the laptop's hotspot under D19. Volume is not the obstacle;
+completeness is.
+
+- **Hybrid backfill plan** (follows from the above). Two sources, each doing only what it is good for — **but see Spike A above: the API half is not yet viable for past dates**:
   1. **Daily PR bundle** — prices, market caps, Nifty, band hitters, and a daily index of *who filed what category*. One archive download per trading day, no anti-bot surface.
   2. **Announcements API** — called **only** for filings the bundle's index already routed to `order_win` or `order_candidate`, purely to fetch the exchange timestamp and the attachment URL.
   This keeps API traffic proportional to order filings (roughly 22 a day) rather than to all filings (roughly 1,229 a day) — about a 55× reduction against paginating the API for the full history.

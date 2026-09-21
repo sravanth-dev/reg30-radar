@@ -1,0 +1,12 @@
+# Windows laptop, Linux VPS. Normalise line endings in the repo (ARCHITECTURE.md Sect.9).
+* text=auto eol=lf
+
+# Exchange files are evidence: store them byte-for-byte, with no line-ending rewriting,
+# so a SHA-256 taken on the laptop matches one taken on the VPS.
+tests/fixtures/** -text
+tests/labelled/** -text
+
+# Never treat these as text.
+*.pdf binary
+*.zip binary
+*.xlsx binary

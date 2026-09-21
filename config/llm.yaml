@@ -1,0 +1,40 @@
+# Model IDs and prices are copied by hand from OpenAI's pricing page and never guessed
+# (ARCHITECTURE.md Sect.6). Every value below is a placeholder until the Spike D bake-off
+# fills it in. Code must fail loudly on PLACEHOLDER rather than proceed.
+
+tier1_model: PLACEHOLDER    # set by Spike D: the cheapest model that passes
+tier2_model: PLACEHOLDER    # may stay unset. A second tier exists only if Spike D shows
+                            # it beats tier 1 on the hard cases; otherwise a single tier.
+
+# USD per million tokens, keyed by model id. Copied from the pricing page, never from memory.
+prices: {}
+
+caps:
+  # Deliberately unset. The earlier $2/month and $10/backfill figures were arithmetic
+  # guesses, and at any meaningful escalation rate the backfill cap and the escalation
+  # policy are not compatible. Spike D measures the parser hit rate and the escalation
+  # rate first; the caps follow the measurement.
+  live_usd_per_month: null
+  backfill_usd_per_run: null
+
+bakeoff:
+  # Spike D. Four arms on the 10 labelled PDFs, reporting per-field accuracy, tokens,
+  # cost per document, and every failure.
+  hard_stop_usd: 0.50
+  arms:
+    - annexure_parser_only   # no model at all; also measures the parser's hit rate,
+                             # which is the number that sets the entire LLM bill
+    - PLACEHOLDER_gpt5_nano
+    - PLACEHOLDER_gpt41_mini
+    - PLACEHOLDER_luna
+
+# Every task sets a maximum output length (Sect.6).
+max_output_tokens:
+  triage: 200
+  order_extract: 800
+
+batch:
+  # Backfill LLM work goes through the Batch API; live processing does not.
+  # The cached-input discount is deliberately excluded from the cost model.
+  enabled: true
+  assume_cache_discount: false

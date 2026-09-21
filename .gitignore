@@ -1,0 +1,32 @@
+# Secrets. Never committed (CLAUDE.md, D13). .env.example carries the shape instead.
+.env
+.env.*
+!.env.example
+
+# Virtualenv (Windows layout is .venv/Scripts, Linux is .venv/bin)
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Downloaded PDFs are deleted after text extraction (D8). The labelled test set is the
+# one exception and stays in the repo permanently, so it is un-ignored below.
+# Note: tests/labelled/ itself is never ignored, because a negation cannot rescue a file
+# that sits inside an ignored directory.
+*.pdf
+!tests/labelled/*.pdf
+
+# Scratch space for spikes and any working copies of exchange bundles.
+data/
+spikes/out/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

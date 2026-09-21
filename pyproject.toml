@@ -1,0 +1,42 @@
+[project]
+name = "tradebot"
+version = "0.1.0"
+description = "Phase 1: NSE/BSE announcements to order signals. Places no trades."
+requires-python = ">=3.14"
+
+# Exactly the approved list in ARCHITECTURE.md Sect.9. Ask Sravanth before adding to it.
+dependencies = [
+  "requests",
+  "feedparser",
+  "pdfplumber",
+  "pypdf",
+  "lxml",
+  "psycopg[binary]",
+  "pydantic",
+  "openai",
+  "APScheduler",
+  "python-dotenv",
+  "PyYAML",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# src layout: tests import tradebot without requiring an editable install first, so the
+# test harness can be verified before the dependency set is proven on this Python.
+pythonpath = ["src"]
+# Plain `pytest` must never touch the network. `pytest -m live` overrides this, because a
+# -m given on the command line replaces the one in addopts.
+addopts = "-m 'not live'"
+markers = [
+  "live: hits real exchange sites; skipped unless run with -m live",
+]

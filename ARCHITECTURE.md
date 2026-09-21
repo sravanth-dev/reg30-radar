@@ -61,6 +61,8 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 | D20 | Build order | §10 stays as written for now. A revised build order is proposed **after** Slice 0, from the spike results | Decided |
 | D21 | Price data quality | Corporate actions and circuit limits are handled in Phase 1, not deferred (§5.9, §5.11) | Decided |
 | D22 | Verdict | The go/no-go rule is pre-registered in §5.11 and fixed before any returns are computed | Decided |
+| D24 | NSE terms of use | **Sravanth's decision (21 Sep 2026): proceed.** Phase 1 collects public corporate filings for personal research, redistributes nothing and runs at low volume. Recorded as the owner's call on his own risk, not as a legal conclusion reached by this document — the conflicting texts stay quoted in §3 so the decision is auditable | Decided |
+| D25 | No evasion | The collector is a **polite client, not an evasive one** (Decided). Permitted: fixed low rates, jitter, session warm-up, exponential backoff, a single consistent User-Agent, honouring errors. Not built: proxy or IP rotation, User-Agent rotation, browser fingerprint spoofing, CAPTCHA solving, or anything else whose purpose is to defeat the Akamai layer rather than to reduce load. Beyond the principle, this is also what works: bot management scores rotation and spoofing far more harshly than a slow, steady, consistent session, so evasion is the thing most likely to earn the hard block D19 exists to avoid | Decided |
 | D23 | Live collection | Not deferred to Phase 2. After Slice 0, a **minimal NSE-only live collector** runs on the VPS: raw store only, no BSE, no dedup, no health dashboard. Rationale: `first_seen_at` cannot be backfilled, and forward-collected data is the only honest test for anything found by exploration (§5.11) | Decided |
 
 ---
@@ -82,6 +84,7 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
   - `https://www.nseindia.com/static/nse-terms-of-use` says the opposite, verbatim: "User is prohibited to conduct any systematic or automated data collection activities (including scraping, data mining, data extraction and data harvesting) on or in relation to our Website / Mobile Application."
   - The clause is written about the *Website / Mobile Application*. The files this project reads are pre-built static archives on `nsearchives.nseindia.com`, which is arguably a different thing — but that is a legal reading, not an engineering one, and this document does not make it. Recorded here so the choice is Sravanth's, made knowingly, rather than something that happened by default.
   - Facts either way: the filings are public disclosures, nothing is redistributed, the volume is small and paced, and Phase 1 is personal research.
+  - **Resolved by D24**: Sravanth's call is to proceed. Both texts stay quoted above so the decision remains auditable, and D25 fixes what "proceed" does and does not license.
 - **Anti-bot layer** (Spike B, Verified): the homepage sets `AKA_A2`, `_abck`, `ak_bmsc` and `bm_sz` — Akamai Bot Manager. A session warm-up against `https://www.nseindia.com/` is required before the archive hosts will answer, and the request must carry browser-like headers. This sits awkwardly against §5.1's "consistent, identifiable User-Agent": an honest UA is what robots.txt would invite, and is also what the bot manager is most likely to refuse. Unresolved (§11).
 - **Volume** (one ordinary day, NSE only, Fri 18 Sep 2026): ~1,229 announcements from ~881 companies, of which 22 were order-win filings from 12 companies.
 
@@ -501,8 +504,7 @@ Resolved since v0.2: the model acceptance threshold (§6 — kept at 95%, but re
 
 Still open:
 
-- **NSE terms of use vs robots.txt** (§3). robots.txt allows everything this project reads; the terms of use prohibit systematic or automated collection "on or in relation to our Website / Mobile Application". Sravanth's call, and it is a precondition for Slice 1, not a detail to settle later.
-- User-Agent honesty vs the Akamai bot manager (§3): an identifiable UA is what robots.txt invites and what §5.1 asks for, and is also the one most likely to be refused.
+- User-Agent: one consistent browser-like UA, per D25 — chosen once, never rotated. Whether to append a contact string to it is still open.
 - Scanned PDFs: local OCR, a vision-capable model, or manual review only.
 - FX source for foreign-currency orders.
 - NSE holiday calendar source.

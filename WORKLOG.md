@@ -98,11 +98,19 @@ verified, store null plus a flag.
 - All 11 approved dependencies install from cp314 Windows wheels with no source builds.
 - Spikes and the eventual backfill run **on the laptop over a phone hotspot, not the campus
   network** (D19). The VPS runs only the live collector.
-- **Local database** (D19): PostgreSQL **16** on Windows, service `postgresql-x64-16`,
-  `psql` at `C:\Program Files\PostgreSQL\16\bin\psql`, listening on `127.0.0.1:5432`.
-  Role and database are both `tradebot`; the password lives only in the gitignored `.env`.
-  The venv has `psycopg` 3.3.6. `migrations/` is still empty — there is no schema yet, so a
-  successful connection proves the server, not the tables.
+- **Local database** (D19) — **connection verified 22 Sep 2026**: PostgreSQL **16.15** on
+  Windows, service `postgresql-x64-16`, port 5432, `psql` at
+  `C:\Program Files\PostgreSQL\16\bin\psql`. Role, database and database *owner* are all
+  `tradebot`, so migrations can create tables — confirmed by actually creating one, writing
+  to it and rolling back. `NUMERIC(20,2)` returns `Decimal` and `timestamptz` returns a
+  tz-aware datetime, which is what the money and time rules in CLAUDE.md require. The venv
+  has `psycopg` 3.3.6. The password lives only in the gitignored `.env`, whose
+  `DATABASE_URL` points at `localhost:5432`.
+  Two things to know: the server's `timezone` is `Asia/Calcutta`, the deprecated IANA alias
+  for `Asia/Kolkata` — the same zone, and harmless because `timestamptz` stores UTC and the
+  edges use `ZoneInfo("Asia/Kolkata")` in Python, so it only affects how `psql` prints a
+  timestamp. And `migrations/` is still empty, so the database has **no schema**: a working
+  connection proves the server, not the tables.
 - Branch `main`, tracking `origin/main` at `github.com/sravanth-dev/tradebot_NSE_order_scraper`. **Push after every commit** (Sravanth's standing instruction). A push carrying the 22 MB label set failed once with HTTP 408 over the hotspot and succeeded after `git config http.postBuffer 524288000`.
 
 ```bash
@@ -122,12 +130,11 @@ laptop matches one taken on the VPS.
 
 Needed from Sravanth:
 
-- ~~**Postgres on the laptop.**~~ **Installed and running, 22 Sep 2026** — PostgreSQL 16,
-  service `postgresql-x64-16`, listening on `127.0.0.1:5432`, and the `tradebot` role
-  exists. Remaining: the real password still has to be saved into the local `.env`,
-  which currently holds the `CHANGEME` placeholder. That file is machine-local and
-  gitignored by design, so no later session can confirm this from the repo — if a
-  connection fails, check `.env` first.
+- ~~**Postgres on the laptop, with `DATABASE_URL` set.**~~ **Done and verified end to end,
+  22 Sep 2026.** Connected as `tradebot` to database `tradebot` on PostgreSQL 16.15. See
+  **Environment** for the details. `.env` is gitignored by design, so a later session cannot
+  confirm the password from the repo — if a connection fails, check `.env` before suspecting
+  the server.
 - ~~`config/holidays_2026.yaml`~~ **supplied 22 Sep 2026** and committed. Still outstanding
   inside it: NSE has not published the 8 Nov Muhurat timings, so `session` is null.
 - **VPS numbers** for Spike E: free memory, free disk, swap, the external Docker network
@@ -488,3 +495,28 @@ verified end to end, and this entry deliberately does not claim it was.
 
 Also confirmed while looking: `migrations/` is empty. There is no schema, so even a working
 connection would reach an empty database — Slice 1 still has to write `0001_init.sql`.
+
+### 22 Sep 2026 (night, cont.) — laptop Postgres connected end to end
+
+The `.env` password saved on the second attempt (file written 23:54), and the connection
+now works. **ARCHITECTURE §11 blocker 2 is closed.**
+
+Verified, not assumed:
+
+- **PostgreSQL 16.15**, connected as role `tradebot` to database `tradebot`.
+- **`tradebot` owns the database.** Worth checking rather than hoping: PostgreSQL 15 and
+  later revoke `CREATE` on the `public` schema from `PUBLIC`, so a role that merely has
+  access to a database cannot necessarily create tables in it. Here the schema owner is
+  `pg_database_owner` and the database owner is `tradebot`, so the migration runner will
+  work. Proved it by creating a table, inserting a row, reading it back, and rolling the
+  transaction back — the database is left with zero tables.
+- **`NUMERIC(20,2)` round-trips as `Decimal`** and **`timestamptz` comes back tz-aware**,
+  which is exactly what the money and time rules in CLAUDE.md demand.
+
+One oddity, noted so nobody spends time on it later: the server's `timezone` is
+`Asia/Calcutta`, the deprecated IANA alias for `Asia/Kolkata`. Same zone, same offset, and
+harmless — `timestamptz` stores UTC internally and the edges convert with
+`ZoneInfo("Asia/Kolkata")` in Python, so the setting only affects how `psql` displays a
+timestamp. Not worth changing, but worth recognising rather than re-investigating.
+
+`migrations/` is still empty, so the database has no schema. Slice 1 writes `0001_init.sql`.

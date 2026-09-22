@@ -1,0 +1,81 @@
+# Trading-day calendar for the LIVE collector only (D27).
+#
+# Source: NSE's official 2026 holiday list, segment "CM" (Capital Market - the equity
+# segment this project trades), scraped by Sravanth on 22 Sep 2026 and transcribed here
+# by hand. The CBM, CMOT, FO, MF, NDM and NTRP segments carry the same twenty dates; CD
+# and IRD carry four extra (19 Feb, 19 Mar, 1 Apr, 26 Aug) and COM one (1 Jan), none of
+# which apply to the equity segment.
+#
+# Why this file exists at all: the bhavcopy is published after the close, so it cannot tell
+# the collector at 08:00 whether today is a trading day. Past dates derive from the archives
+# instead, and need nothing here.
+#
+# The collector FAILS LOUDLY when this file is missing, unparseable, or has no coverage for
+# today. It must never fall back to "assume every weekday trades" - that failure is silent
+# and would poison first_seen_at for the forward-collected sample.
+#
+# Checked on transcription: every date below matches the weekday NSE stated for it.
+
+year: 2026
+timezone: Asia/Kolkata
+
+# Normal pattern. Anything not listed below follows it.
+regular_week: [monday, tuesday, wednesday, thursday, friday]
+regular_session: {start: "09:15", end: "15:30"}
+
+# Full-day closures that fall on a weekday. Sixteen of NSE's twenty CM entries.
+holidays:
+  - {date: 2026-01-15, name: "Municipal Corporation Election - Maharashtra"}  # Thursday
+  - {date: 2026-01-26, name: "Republic Day"}                                  # Monday
+  - {date: 2026-03-03, name: "Holi"}                                          # Tuesday
+  - {date: 2026-03-26, name: "Shri Ram Navami"}                               # Thursday
+  - {date: 2026-03-31, name: "Shri Mahavir Jayanti"}                          # Tuesday
+  - {date: 2026-04-03, name: "Good Friday"}                                   # Friday
+  - {date: 2026-04-14, name: "Dr. Baba Saheb Ambedkar Jayanti"}               # Tuesday
+  - {date: 2026-05-01, name: "Maharashtra Day"}                               # Friday
+  - {date: 2026-05-28, name: "Bakri Id"}                                      # Thursday
+  - {date: 2026-06-26, name: "Muharram"}                                      # Friday
+  - {date: 2026-09-14, name: "Ganesh Chaturthi"}                              # Monday
+  - {date: 2026-10-02, name: "Mahatma Gandhi Jayanti"}                        # Friday
+  - {date: 2026-10-20, name: "Dussehra"}                                      # Tuesday
+  - {date: 2026-11-10, name: "Diwali-Balipratipada"}                          # Tuesday
+  - {date: 2026-11-24, name: "Prakash Gurpurb Sri Guru Nanak Dev"}            # Tuesday
+  - {date: 2026-12-25, name: "Christmas"}                                     # Friday
+
+# The remaining four NSE entries fall on a weekend, so `regular_week` already closes them
+# and they need no row above. Recorded here so this file can be reconciled line by line
+# against NSE's published list, rather than looking like a transcription that lost four
+# dates:
+#
+#   2026-02-15  Sunday     Mahashivratri
+#   2026-03-21  Saturday   Id-Ul-Fitr (Ramadan Eid)
+#   2026-08-15  Saturday   Independence Day
+#   2026-11-08  Sunday     Diwali Laxmi Pujan*  -> NOT a closure; see special_sessions
+
+# Sessions outside the regular pattern: a weekend session, or a short one.
+# This is what makes the Muhurat case expressible.
+#
+#   trades: true          counts as a trading day even though it is a Sunday
+#   full_length: false    one hour, so it is excluded from volume baselines and an event
+#                         whose day 0 lands here is flagged (see ARCHITECTURE Sect.5.11)
+special_sessions:
+  - date: 2026-11-08
+    name: "Muhurat Trading (Diwali Laxmi Pujan, Samvat 2083)"
+    trades: true
+    full_length: false
+    session: null
+    note: >-
+      Falls on a Sunday. NSE's list marks it "Diwali Laxmi Pujan*", and the asterisk is
+      how NSE flags a Muhurat session whose timings are announced separately nearer the
+      date - the scraped record carries morning_session and evening_session as null, so
+      the hour is genuinely not published yet. `session` stays null rather than carrying a
+      guessed window; fill it in when NSE circulates the timings. Nothing depends on it
+      today, because the collector's own window is 08:00-22:00 (D6) and what matters here
+      is trades: true and full_length: false.
+      The archive-derived calendar picks this day up correctly for past dates, because a
+      bhavcopy is published for it - the 21 Oct 2025 Muhurat appears the same way. The live
+      collector cannot know it in advance, which is the whole reason this file exists.
+
+# Optional: dates the exchange announced and later moved. Kept so a disagreement between
+# this file and the bhavcopy can be explained rather than just alerted on.
+amendments: []

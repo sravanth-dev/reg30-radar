@@ -13,14 +13,15 @@ blocked is in WORKLOG.md. Read it before starting work in a new session.
 
 1. Build one slice at a time (ARCHITECTURE.md §10). Finish each slice with passing tests and a short plain-language summary: what changed, why, and how to verify it. Don't start the next slice until asked.
 2. Append a session entry to `WORKLOG.md` at the end of every working session, and edit its **Current state** section in place so the top of that file is always true. It is the handover to the next session; ARCHITECTURE.md stays the specification.
-3. Items marked **Open** in ARCHITECTURE.md are undecided. Ask before implementing any choice for them. Items marked **Verify** must be checked before code depends on them; write the findings back into ARCHITECTURE.md.
-4. Ask before:
+3. **Update `WORKLOG.md` as soon as anything important happens, not only at the end of the session.** A spike result, a reversed assumption, a resolved or newly discovered blocker, a config or schema change, a decision Sravanth makes in conversation, a budget spent — write it down when it happens. Waiting until the end loses the detail that made it worth recording, and a session that ends early leaves no trace at all.
+4. Items marked **Open** in ARCHITECTURE.md are undecided. Ask before implementing any choice for them. Items marked **Verify** must be checked before code depends on them; write the findings back into ARCHITECTURE.md.
+5. Ask before:
    - adding a dependency outside the approved list (§9);
    - changing a bucket definition in `config/category_map.yaml`;
    - touching anything outside this repo.
-5. Sravanth reviews every change and must be able to explain it. Prefer plain, readable code over clever code. Comments explain *why*, not *what*.
-6. Never touch n8n's database, containers or workflows. The only database this code uses is `tradebot`.
-7. Secrets live in `.env`. Never commit, print or log them. When adding a variable, add it to `.env.example`.
+6. Sravanth reviews every change and must be able to explain it. Prefer plain, readable code over clever code. Comments explain *why*, not *what*.
+7. Never touch n8n's database, containers or workflows. The only database this code uses is `tradebot`.
+8. Secrets live in `.env`. Never commit, print or log them. When adding a variable, add it to `.env.example`.
 
 ## Data rules
 

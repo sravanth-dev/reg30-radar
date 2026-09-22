@@ -119,7 +119,8 @@ Needed from Sravanth:
 
 - **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there; Slice 1
   cannot store a row without it.
-- **`config/holidays_2026.yaml`**, maintained by hand (D27), before the live collector runs.
+- ~~`config/holidays_2026.yaml`~~ **supplied 22 Sep 2026** and committed. Still outstanding
+  inside it: NSE has not published the 8 Nov Muhurat timings, so `session` is null.
 - **VPS numbers** for Spike E: free memory, free disk, swap, the external Docker network
   name, and how the existing Postgres container is configured.
 - **OpenAI model IDs and prices**, copied from the live pricing page. `config/llm.yaml` holds
@@ -371,3 +372,63 @@ every day trades.
 
 Also added a fail-closed rule for null spend caps in §6: `config/llm.yaml` ships with nulls
 until Spike D, and treating null as unlimited would silently invert D5.
+
+### 22 Sep 2026 (evening) — .env created, 2026 holiday calendar committed
+
+Two housekeeping items, both of which had been sitting on the blocked-on-Sravanth list.
+
+**`.env`.** There was none — only the committed `.env.example`. Created it from that
+template with the same five variables. `DATABASE_URL`, `OPENAI_API_KEY` and
+`HTTP_USER_AGENT` are left as `CHANGEME`: the first two have no real value yet (the laptop
+Postgres and the OpenAI project key are still Sravanth's to create), and the User-Agent
+string is still an **Open** decision in ARCHITECTURE §11, so picking one would have been
+implementing an open item. `TZ` and `LOG_LEVEL` are filled in. Verified ignored:
+`git check-ignore -v .env` matches `.gitignore:2` and `git status` stays clean. Nothing in
+`src/` reads it yet — `python-dotenv` is declared in `pyproject.toml` but no module loads it.
+
+**`config/holidays_2026.yaml`.** Sravanth scraped NSE's official 2026 holiday list and
+pasted it in. Transcribed the **CM (Capital Market)** segment, which is the equity segment
+this project needs. CBM, CMOT, FO, MF, NDM and NTRP carry the identical twenty dates; CD and
+IRD carry four extra (19 Feb, 19 Mar, 1 Apr, 26 Aug) and COM one (1 Jan), none of which
+apply to equities — so the segment choice is unambiguous rather than a judgment call.
+
+Three things worth recording, because each was a decision rather than a transcription:
+
+1. **Four of the twenty fall on a weekend**, not a weekday: Mahashivratri (Sun 15 Feb),
+   Id-Ul-Fitr (Sat 21 Mar), Independence Day (Sat 15 Aug) and Diwali Laxmi Pujan (Sun
+   8 Nov). `regular_week` already closes Saturdays and Sundays, so they get no `holidays`
+   row — that leaves **16**. They are listed as a comment block in the file so it still
+   reconciles line by line against NSE's published list instead of looking like a
+   transcription that lost four dates.
+2. **8 Nov is the Muhurat session, not a closure.** NSE writes it `Diwali Laxmi Pujan*`, and
+   the asterisk is how it flags a Muhurat whose timings come separately. It goes in
+   `special_sessions` with `trades: true, full_length: false` — exactly the case D27 and
+   §5.11 were written for, and the one ARCHITECTURE §5.1 already names.
+3. **The Muhurat timings are not guessed.** The example file carried a placeholder
+   `18:15-19:15`; NSE's record has `morning_session` and `evening_session` both null, so the
+   hour genuinely is not published yet. `session` is null with a note, per the never-guess-a
+   -number rule. Nothing depends on it today — the collector's window is 08:00-22:00 (D6),
+   and what the calendar needs from this entry is `trades: true`.
+
+Verified: all twenty dates match the weekday NSE stated for each; the file parses with
+`yaml.safe_load`; the sixteen `holidays` rows are all real 2026 weekdays. `pytest` still
+passes (24 passed, 1 deselected). ARCHITECTURE §11 blocker 4 marked done.
+
+### 22 Sep 2026 (evening, later) — worklog rule widened
+
+Sravanth's instruction: update this file **every time anything important happens in the
+repo**, not only at the end of a session. That is now its own numbered rule in CLAUDE.md,
+alongside the existing end-of-session rule rather than replacing it — the end-of-session
+entry is still the handover, and the new rule is about not letting an event wait for it.
+What counts: a spike result, a reversed assumption, a blocker resolved or discovered, a
+config or schema change, a decision he makes in conversation, a budget spent.
+
+The reasoning behind it, worth keeping because it is the failure this guards against: a
+session that ends early leaves no trace at all, and writing up an event hours later loses
+the detail that made it worth recording in the first place.
+
+Adding that rule renumbered the rules below it (Open/Verify is now 4, "Ask before" 5, the
+n8n rule 7, secrets 8). ARCHITECTURE.md §9 referred to "CLAUDE.md's rule 5" for the n8n
+containers point and would have silently started pointing at the wrong rule, so it now
+refers to it by name instead of by number — a cross-reference that breaks quietly on the
+next insertion is not worth keeping.

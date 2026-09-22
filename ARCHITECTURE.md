@@ -639,7 +639,7 @@ tradebot/
   The `tradebot` user has no rights on n8n's database.
 - **Deploy** (D1): laptop `git push` → VPS `git pull && docker compose up -d --build`.
 - **Line endings**: `.gitattributes` with `* text=auto eol=lf`. Windows dev, Linux prod.
-- **Viewing data (Phase 1)**: **no SSH tunnel and no change to n8n's containers** (D19). The `tradebot` database is created in the existing Postgres with `docker exec psql`, and queried the same way. This resolves what was a direct conflict between CLAUDE.md's rule 5 (never touch n8n's containers) and the earlier plan to re-bind the Postgres port for DBeaver: if Postgres is part of n8n's stack, changing its port binding *is* touching it. The backfill runs on the laptop against a local Postgres anyway, so the tunnel bought little.
+- **Viewing data (Phase 1)**: **no SSH tunnel and no change to n8n's containers** (D19). The `tradebot` database is created in the existing Postgres with `docker exec psql`, and queried the same way. This resolves what was a direct conflict between CLAUDE.md's n8n rule (never touch n8n's containers) and the earlier plan to re-bind the Postgres port for DBeaver: if Postgres is part of n8n's stack, changing its port binding *is* touching it. The backfill runs on the laptop against a local Postgres anyway, so the tunnel bought little.
 - **Local database** (D19): Postgres on the laptop holds the backfill. The VPS Postgres holds only what the live collector writes. Most tests — units, router, TTM logic, calculator — need no database at all.
 
 ---
@@ -701,10 +701,10 @@ Raised by the spikes:
 
 Work only he can do:
 
-1. **Git remote.** There is none. Every commit exists only on the laptop — no offsite copy of the spikes, fixtures or decisions, and D1's deploy path (laptop push → VPS pull) does not exist.
+1. ~~**Git remote.** There is none.~~ **Done.** `origin` is `github.com/sravanth-dev/tradebot_NSE_order_scraper`, `main` tracks `origin/main`, and as of 22 Sep 2026 nothing is unpushed — so the spikes, fixtures and decisions now have an offsite copy and D1's deploy path (laptop push → VPS pull) exists.
 2. **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there and Slice 1 cannot store a row without it.
 3. **Ten order PDFs with hand-labelled expected JSON**, which gate Spike D. (~50 later for the eval set.)
-4. **`config/holidays_2026.yaml`**, per D27, before the live collector runs.
+4. ~~**`config/holidays_2026.yaml`**, per D27, before the live collector runs.~~ **Done** (22 Sep 2026). Sravanth supplied NSE's official 2026 list and it is committed as `config/holidays_2026.yaml`: sixteen weekday closures from the CM segment, plus the 8 Nov Muhurat as a `special_sessions` entry. One gap remains and is NSE's, not ours — the Muhurat **timings are not published yet**, so `session` is null rather than guessed; fill it in when NSE circulates them.
 
 Promised before the phases that need them: **VPS numbers** (Spike E — free memory, free disk, swap, the Docker network name, how Postgres is configured) and the **OpenAI model IDs and prices** (Spike D).
 

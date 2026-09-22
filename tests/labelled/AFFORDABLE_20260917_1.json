@@ -1,0 +1,39 @@
+{
+  "_source": {
+    "symbol": "AFFORDABLE",
+    "isin": "",
+    "filing_date": "2026-09-17",
+    "category_raw": "",
+    "pdf_url": "",
+    "pdf_sha256": "210bb5b02a5a572611946e761425d96e19f6656d8b3e2f0281724ef4d5921bed"
+  },
+
+  "awarding_entity": null,
+  "domestic_or_international": null,
+  "nature_of_order": null,
+  "significant_terms": null,
+
+  "execution_period_raw": null,
+  "execution_months": null,
+
+  "consideration_raw": null,
+  "value_inr": null,
+  "value_span": null,
+  "gst_inclusive": null,
+  "currency": "INR",
+
+  "promoter_interest": null,
+  "related_party": null,
+  "receipt_datetime": null,
+  "reporting_delay_reason": null,
+
+  "company_is_recipient": true,
+  "stage": "unknown",
+  "is_follow_up": false,
+
+  "multiple_orders": false,
+  "orders": null,
+
+  "is_scanned": false,
+  "labeller_notes": null
+}

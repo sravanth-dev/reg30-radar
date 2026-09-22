@@ -1,0 +1,39 @@
+{
+  "_source": {
+    "symbol": "NEWGEN",
+    "isin": "",
+    "filing_date": "2026-09-21",
+    "category_raw": "",
+    "pdf_url": "",
+    "pdf_sha256": "7eee2087db07d8d2cc4bf8f68a36d81d5731573322db2d5c124589fd0c5f9bc3"
+  },
+
+  "awarding_entity": null,
+  "domestic_or_international": null,
+  "nature_of_order": null,
+  "significant_terms": null,
+
+  "execution_period_raw": null,
+  "execution_months": null,
+
+  "consideration_raw": null,
+  "value_inr": null,
+  "value_span": null,
+  "gst_inclusive": null,
+  "currency": "INR",
+
+  "promoter_interest": null,
+  "related_party": null,
+  "receipt_datetime": null,
+  "reporting_delay_reason": null,
+
+  "company_is_recipient": true,
+  "stage": "unknown",
+  "is_follow_up": false,
+
+  "multiple_orders": false,
+  "orders": null,
+
+  "is_scanned": false,
+  "labeller_notes": null
+}

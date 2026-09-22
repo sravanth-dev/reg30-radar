@@ -432,3 +432,23 @@ n8n rule 7, secrets 8). ARCHITECTURE.md §9 referred to "CLAUDE.md's rule 5" for
 containers point and would have silently started pointing at the wrong rule, so it now
 refers to it by name instead of by number — a cross-reference that breaks quietly on the
 next insertion is not worth keeping.
+
+### 22 Sep 2026 (evening, later still) — label-set JSON skeletons
+
+Created one JSON per PDF in `tests/labelled/`, nineteen in all, each a verbatim copy of
+`_template.json` for Sravanth to fill in after reviewing each filing by hand. Spike D needs
+ten of them; the rest are a head start on the ~50-file eval set.
+
+**Prefilled only what the filename and the file itself prove**: `_source.symbol`,
+`_source.filing_date` (from the `<SYMBOL>_<YYYYMMDD>_<n>` stem) and `_source.pdf_sha256`
+(computed from the bytes). `isin`, `category_raw` and `pdf_url` are left blank, and **every
+label field is untouched template default**. That restraint is deliberate: `CANDIDATES.md`
+states no values by design, so the labels stay independent of anything already seen, and
+prefilling a field from a PDF I had read would quietly contaminate the ground truth the
+bake-off is graded against. `is_scanned` is left `false` even for JISLDVREQS, which
+CANDIDATES.md flags as the scanned one, for the same reason - it is his to confirm.
+
+Written by text substitution on the template rather than `json.dump`, so the blank-line
+grouping survives and each file stays diffable against `_template.json`. Verified: all
+nineteen parse, every non-`_source` field is byte-identical to the template, each SHA-256 is
+64 hex characters, and the stems pair one-to-one with the PDFs with no orphans either way.

@@ -1,0 +1,39 @@
+{
+  "_source": {
+    "symbol": "GKENERGY",
+    "isin": "",
+    "filing_date": "2026-09-21",
+    "category_raw": "",
+    "pdf_url": "",
+    "pdf_sha256": "bf281c9391950a479fbf12b1bb348f7300867cb3a2aeeebd4958ee0c6c75a790"
+  },
+
+  "awarding_entity": null,
+  "domestic_or_international": null,
+  "nature_of_order": null,
+  "significant_terms": null,
+
+  "execution_period_raw": null,
+  "execution_months": null,
+
+  "consideration_raw": null,
+  "value_inr": null,
+  "value_span": null,
+  "gst_inclusive": null,
+  "currency": "INR",
+
+  "promoter_interest": null,
+  "related_party": null,
+  "receipt_datetime": null,
+  "reporting_delay_reason": null,
+
+  "company_is_recipient": true,
+  "stage": "unknown",
+  "is_follow_up": false,
+
+  "multiple_orders": false,
+  "orders": null,
+
+  "is_scanned": false,
+  "labeller_notes": null
+}

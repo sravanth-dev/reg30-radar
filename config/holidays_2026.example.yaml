@@ -1,0 +1,46 @@
+# Trading-day calendar for the LIVE collector only (D27).
+#
+# Copy to `config/holidays_2026.yaml` and fill from NSE's official holiday circular.
+# The dates below are EXAMPLES of the format, not a real calendar - do not ship them.
+#
+# Why this file exists at all: the bhavcopy is published after the close, so it cannot tell
+# the collector at 08:00 whether today is a trading day. Past dates derive from the archives
+# instead, and need nothing here.
+#
+# The collector FAILS LOUDLY when this file is missing, unparseable, or has no coverage for
+# today. It must never fall back to "assume every weekday trades" - that failure is silent
+# and would poison first_seen_at for the forward-collected sample.
+
+year: 2026
+timezone: Asia/Kolkata
+
+# Normal pattern. Anything not listed below follows it.
+regular_week: [monday, tuesday, wednesday, thursday, friday]
+regular_session: {start: "09:15", end: "15:30"}
+
+# Full-day closures that fall on a weekday.
+holidays:
+  - {date: 2026-01-26, name: "EXAMPLE - Republic Day"}
+  - {date: 2026-03-04, name: "EXAMPLE - Holi"}
+
+# Sessions outside the regular pattern: a weekend session, or a short one.
+# This is what makes the Muhurat case expressible.
+#
+#   trades: true          counts as a trading day even though it is a Sunday
+#   full_length: false    one hour, so it is excluded from volume baselines and an event
+#                         whose day 0 lands here is flagged (see ARCHITECTURE Sect.5.11)
+special_sessions:
+  - date: 2026-11-08
+    name: "Muhurat Trading (Samvat 2083)"
+    trades: true
+    full_length: false
+    session: {start: "18:15", end: "19:15"}
+    note: >-
+      Falls on a Sunday. The archive-derived calendar picks this up correctly for past
+      dates, because a bhavcopy is published for it - the 21 Oct 2025 Muhurat appears the
+      same way. The live collector cannot know it in advance, which is the whole reason
+      this file exists.
+
+# Optional: dates the exchange announced and later moved. Kept so a disagreement between
+# this file and the bhavcopy can be explained rather than just alerted on.
+amendments: []

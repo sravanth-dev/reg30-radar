@@ -32,20 +32,19 @@ fixtures, and throwaway probes in `spikes/`.
 |---|---|
 | **B** — NSE bulk archives | Done. See 21 Sep entry. |
 | **A** — announcements API | Done, but left a blocker. See 22 Sep entry. |
-| **A2** — API completeness | **Next. Not run. Blocks the backfill design and possibly the study's scope.** |
+| **A2** — API completeness | Done, 14/14 requests. **Backfill is viable**; see the 22 Sep entry. |
 | **C** — results XBRL | Not started |
 | **D** — extraction bake-off | Not started. Needs an OpenAI key and 10 labelled PDFs from Sravanth. |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
 | Python 3.14 wheels | Windows half verified; manylinux not checked. |
 
-**The blocker.** Spike A found that the announcements API returns only a subset of any past
-day (563 of ~1,229 filings for 18 Sep 2026, missing whole companies). The API is the only
-source of the PDF URL and filing timestamp. Until Spike A2 establishes whether the full day
-is reachable, **no backfill design should assume a PDF URL is obtainable for an arbitrary
-past order filing**, and the 12-month study cannot be scoped. If A2 finds nothing, the
-choice is to shrink the study to whatever window the API serves, or to fall back on D23's
-forward collection and wait 12 months of wall-clock time. That is Sravanth's call, not an
-implementation detail.
+**No longer blocked.** Spike A2 resolved the API-completeness scare: it was two measurement
+errors of mine, not a property of the API. The `an<date>.txt` bundle is a *report* covering
+filings disseminated since the previous report, so comparing bundle(D) to API(D) was a
+category error; and "the symbol query stops at Oct 2025" came from string-sorting
+`DD-Mon-YYYY`. Re-measured over a two-day window, **mainboard order coverage is 8 of 8**, and
+the symbol query returns a company's whole 22-year history in one call — so the backfill is
+one request per company, not per company-day. Caveats in §5.1.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -243,6 +242,54 @@ Commit: `7fb1ba1`. ARCHITECTURE.md v0.5 → v0.6.
 
 Created WORKLOG.md and added a pointer to it from CLAUDE.md, so a new session actually reads
 it. No code or design changed.
+
+### 22 Sep 2026 — security scan, Spike A2, ARCHITECTURE.md to v0.9
+
+**Security scan of all six commits: clean.** No secret-shaped file was ever committed (only
+`.env.example`, all `CHANGEME`), no secret-shaped string in any commit's content, no broker
+references. Largest blob 0.81 MB, `.git` 1.1 MB, nothing near 50 MB. Every `.gitignore` rule
+resolves in the intended direction. Safe to add a remote.
+
+**Spike A2 — 14/14 requests. The important entry in this file, because I got it wrong twice
+before getting it right.**
+
+Judged against the study universe rather than all 1,229 bodies, as Sravanth asked, the first
+measurement looked fatal: 700 of 976 operating-company bodies missing, 462 of 680 companies
+wholly absent, 2 of 23 order filings present. A recent day (21 Sep) showed the same 30%, so
+not an ageing effect. No parameter reached the full day: `csv=true` returns the same 563 as
+`text/csv`, `page=2` is ignored, `type=xbrl` is ignored, `index=equities_xbrl` is empty,
+omitting `index` gives `Missing index`.
+
+Then, mining saved responses for candidate PDFs, BEL records dated 2026 appeared —
+contradicting Spike A's claim that the symbol query stopped at 31 Oct 2025. **That claim was a
+string-sort artifact**: `DD-Mon-YYYY` sorted lexicographically puts `31-Oct-2025` after
+`31-Jul-2026`. The query actually spans 22-Sep-2004 to 17-Sep-2026.
+
+Checking BEL's September records exposed the second and larger error. BEL's
+`Bagging/Receiving of orders/contracts` is timestamped **17-Sep 16:43**, after the close, and
+appears in the **18 Sep** bundle. **`an<date>.txt` is a report for that date covering filings
+disseminated since the previous report** — so comparing bundle(D) against API(D) was a
+category error, and every "missing" figure above was inflated by it.
+
+Re-measured over 17+18 Sep: bundle coverage 23% -> 44%, and **order-filing symbols found
+3/12 -> 8/12, where the 8 are exactly the 8 mainboard issuers**. The 4 missing (MASON,
+INNOMET, ENVIRO, MDL) are all SME, which D9 excludes. For the study universe, order coverage
+on the day tested is **8 of 8**, and the hybrid is better than designed: one `symbol=` call
+returns a company's entire history, making the backfill roughly 300-600 requests rather than
+one per company-day.
+
+Caveats now in §5.1: one day proves a pattern, not a rate; the report-window boundary is
+unconfirmed; the *live* endpoint's completeness is untested, and D23 depends on it.
+
+**BSE**: two requests against `api.bseindia.com/.../AnnGetData/w` both returned 200 with
+`"No Record Found!"` — endpoint live, guessed parameters wrong. Still untested. Guessing an
+undocumented API shape cost two requests for nothing; ask for the cURL instead.
+
+**Also delivered**: a corporate-action regression test with a real fixture
+(`tests/unit/test_corporate_actions.py`) so no future doc edit can quietly restore the
+`PrvsClsgPric` claim; the labelled-order schema, README and template in `tests/labelled/`;
+`config/holidays_2026.example.yaml` with a Muhurat entry; and the D27 calendar rules, Muhurat
+return handling and Spike D counts in ARCHITECTURE.md.
 
 ### 22 Sep 2026 — open-loop audit, ARCHITECTURE.md to v0.7
 

@@ -1,8 +1,10 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 0.7 · 22 Sep 2026 · Owner: Sravanth
+Version 0.9 · 22 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v0.9 **corrects two measurement errors of mine** that made the API look far worse than it is. The `an<date>.txt` bundle is a *report* for that date covering filings disseminated since the previous report, so comparing it to the API's same-date query was a category error; and the Spike A claim that the symbol query "stops at 31 Oct 2025" came from string-sorting `DD-Mon-YYYY`. Corrected: **mainboard order coverage is 8 of 8** on the day tested, and the symbol query spans 2004 to the previous day. The backfill is not blocked.
+- v0.8 (Spike A2) measures the API gap **inside the study universe** and finds it fatal: 72% of operating-company filings and 21 of 23 order filings are missing, at a rate that does not improve for recent dates. No parameter reaches the full day. §5.1 now records this; §5.11 and D27 gain the Muhurat rules; §10 gains the Spike D counts.
 - v0.7 (open-loop audit) repairs eight self-contradictions left behind by the v0.5 and v0.6 reversals — most seriously §7, which still described `prev_close` as corporate-action adjusted after Spike B disproved it. Adds **D26** (BSE dropped from Phase 1) and **D27** (trading-day calendar split by direction), and records the router's ambiguous input in §5.4.
 - v0.6 (Slice 0, Spike A) documents the announcements API record shape (§5.1) and **reverses the hybrid plan again**: the API is a partial view of any past day, while the PR bundle's `an` file is the complete one. `sm_isin` and `smIndustry` answer §5.3's ISIN attachment and §5.8's sector source.
 - v0.5 (Slice 0, Spike B) verifies the NSE bulk-archive URL patterns and depth (§5.2, §5.9) and **reverses the corporate-action design**: `PrvsClsgPric` is *not* adjusted, so returns cannot be chained through it (§5.9, §5.11). Records the robots.txt / terms-of-use conflict in §3.
@@ -142,7 +144,10 @@ Purpose: capture every announcement exactly once, with the exchange timestamp an
 - **Modes**:
   - `live`: poll on the schedule below.
   - `backfill`: date range, resumable (checkpoint per source per day), slow pacing (Default ≥3 s between requests).
-- **Schedule** (D6): trading days 08:00–22:00 IST every 60 s **with jitter**; all other times every 10 min, also jittered. A fixed interval from a datacentre IP is the clearest bot signature there is, so the interval is never exactly periodic. Trading days come from D27: for **past** dates, a day counts as a trading day if a UDiFF bhavcopy or PR bundle exists for it; for **future** dates, from `config/holidays_2026.yaml`, which Sravanth maintains by hand. The live collector **fails loudly** when that file is missing, unparseable, or has no entry covering today — it must never fall back to assuming every day is a trading day, because that failure is silent and would poison `first_seen_at` for the forward-collected sample.
+- **Schedule** (D6): trading days 08:00–22:00 IST every 60 s **with jitter**; all other times every 10 min, also jittered. A fixed interval from a datacentre IP is the clearest bot signature there is, so the interval is never exactly periodic. Trading days come from D27: for **past** dates, a day counts as a trading day if a UDiFF bhavcopy or PR bundle exists for it; for **future** dates, from `config/holidays_2026.yaml`, which Sravanth maintains by hand (template: `config/holidays_2026.example.yaml`). The live collector **fails loudly** when that file is missing, unparseable, or has no entry covering today — it must never fall back to assuming every day is a trading day, because that failure is silent and would poison `first_seen_at` for the forward-collected sample.
+  - **Special sessions** (D27). A Muhurat session trades on a weekend and lasts about an hour: 8 Nov 2026 falls on a Sunday, and 21 Oct 2025 sits inside the backfill window. The archive-derived calendar handles past ones correctly with no special case, because a bhavcopy is published for them; the hand-maintained file must be able to say so in advance, which is what its `special_sessions` block with `trades: true` and `full_length: false` is for.
+  - **Post-close reconciliation** (D27). After each day's bhavcopy lands, compare what the calendar predicted against what the exchange did, and alert on either direction: predicted trading but no bhavcopy (an unannounced closure), or predicted closed but a bhavcopy exists (a special session nobody entered — exactly the Muhurat failure). This is the only check that catches a stale file before it silently costs a day of collection.
+  - **Next year's file**: from **1 December**, warn once a day until `config/holidays_<year+1>.yaml` exists. The collector would otherwise fail loudly on 1 January, which is correct but late.
 - **Idempotent**: unique on (source, source_id); re-polling never creates duplicates.
 - **Politeness**: one request at a time per source; exponential backoff with jitter on errors; on 401/403, refresh the session once, then back off; consistent User-Agent.
 - **Health**: update `source_health` on every poll. Log a warning if a source has no successful poll for 10 minutes inside the market window.
@@ -192,7 +197,7 @@ differently:
 | Query | Result |
 |---|---|
 | no parameters | the 20 most recent records only |
-| `symbol=BEL` | 1,035 records spanning **01-Apr-2005 to 31-Oct-2025** — nothing from 2026 at all |
+| `symbol=BEL` | 1,035 records spanning **22-Sep-2004 to 17-Sep-2026** — 22 years, 70 of them in 2026 |
 | `from_date=18-09-2026&to_date=18-09-2026` | 563 records across 392 symbols |
 | `symbol=BEL` **and** the date range | **0 records**; same for MASON; HILINFRA returned 1 |
 
@@ -221,9 +226,88 @@ symbol-day lookups** if one call per company per day serves all of its filings. 
 feasible, and spread over the laptop's hotspot under D19. Volume is not the obstacle;
 completeness is.
 
-- **Hybrid backfill plan** (follows from the above). Two sources, each doing only what it is good for — **but see Spike A above: the API half is not yet viable for past dates**:
+
+#### Spike A2 findings (22 Sep 2026) — the gap is inside the universe, and it is fatal
+
+Spike A compared 563 API records against all 1,229 bundle bodies. That was the wrong
+denominator: the study only cares about NSE mainboard. Measured properly, against
+`tests/fixtures/an18092026.txt` and the 18 Sep bhavcopy for segment:
+
+| Segment | Bundle bodies | Missing from API | Companies | Wholly absent |
+|---|---|---|---|---|
+| **Operating companies** | 976 | **700 (72%)** | 680 | **462 (68%)** |
+| Funds / ETFs | 48 | 46 (96%) | 46 | 45 |
+| SME | 99 | 99 (100%) | 56 | 56 |
+| Not in the bhavcopy | 106 | 105 (99%) | 98 | 97 |
+
+The decisive number is narrower still. **Of the 23 order filings that day, the API carries
+2.** BEL filed twice and appears not at all; MASON filed five times and appears not at all.
+Only BEML and ZAGGLE come through, one filing each.
+
+**It is not an ageing effect.** 21 Sep 2026, three days before this was measured, shows 493
+API records against 1,670 bundle lines — **30%**, the same as 18 Sep. The API is
+approximately 30% complete at every depth tested, so **shrinking the study window gains
+nothing**: there is no recent period where the data is whole.
+
+**No parameter reaches the full day.** Tested and rejected: `csv=true` (returns the same 563
+rows, as `text/csv`, with columns SYMBOL, COMPANY NAME, SUBJECT, DETAILS, BROADCAST
+DATE/TIME, RECEIPT, DISSEMINATION, DIFFERENCE, ATTACHMENT); `page=2` (ignored, same 563);
+omitting `index` (`Missing index`); `type=xbrl` (ignored); `index=equities_xbrl` (empty).
+The filings page offers two views, "Announcements" and "Announcements XBRL", so a second
+view exists — but every one of the 563 records already has `hasXbrl: true`, and none carries
+an `-XBRL` suffix in `desc`, so the split is not simply XBRL versus not. The parameter that
+selects it is still unknown.
+
+**CORRECTED (same day, before this was acted on).** Two measurement errors of mine made the
+gap look far worse than it is.
+
+1. **The bundle is a *report*, not a filing-date index.** `an18092026.txt` covers filings
+   disseminated since the previous report, so it contains filings timestamped the evening of
+   17 Sep. BEL's `Bagging/Receiving of orders/contracts` sits at `17-Sep-2026 16:43:18` in the
+   API — after the 15:30 close — and appears in the 18 Sep bundle. Comparing bundle(D) against
+   API(D) was a category error.
+2. **The "symbol query stops at Oct 2025" claim was a string-sort artifact**, from sorting
+   `DD-Mon-YYYY` lexicographically. It actually spans 22-Sep-2004 to 17-Sep-2026.
+
+Re-measured with a two-day window (17 + 18 Sep, 1,029 API records):
+
+| Measure | Same-day only | Two-day window |
+|---|---|---|
+| Bundle bodies covered | 279 / 1,229 (23%) | 538 / 1,229 (44%) |
+| Bundle symbols wholly absent | 660 / 880 | 505 / 880 |
+| **Order-filing symbols found** | 3 / 12 | **8 / 12** |
+
+And the eight found are **exactly the eight mainboard issuers**: BEL, BEML, CPL, GPTINFRA,
+JISLDVREQS, JISLJALEQS, UNIVASTU, ZAGGLE. The four missing — MASON, INNOMET, ENVIRO, MDL —
+are all SME, which D9 excludes from the universe anyway.
+
+**So for the study universe, order coverage on the day tested is 8 of 8.** The residual 56% of
+uncovered bodies is SME, debt, funds and window edges, none of which Phase 1 needs. The
+backfill is **not** blocked, and the 30%-at-every-depth figure in the table above is an
+artifact of the wrong denominator and the wrong date window, not a property of the API.
+
+**This makes the hybrid better than originally designed.** The symbol query returns a
+company's entire 22-year history in one call, so the backfill is one request per *company*,
+not per company-day: roughly 300–600 distinct mainboard order filers over twelve months,
+which at §5.1 pacing is well under an hour of traffic.
+
+**Still to confirm before Slice 1 builds on this** — one day proves a pattern, not a rate:
+- the exact report-window boundary (is it previous close to today's close, or a fixed hour?),
+  which decides whether a ±1-day or ±2-day window is needed for reconciliation;
+- whether 8/8 holds across several days, not one;
+- whether the *live* endpoint carries the same completeness as the symbol query, since D23's
+  forward collection depends on it. Poll it for one full day and reconcile against that
+  evening's bundle.
+
+**BSE was not ruled in or out.** Two requests were spent against
+`api.bseindia.com/BseIndiaAPI/api/AnnGetData/w`; both returned HTTP 200 with the body
+`"No Record Found!"`, meaning the endpoint is live but the parameter shape was guessed wrong.
+D26 stands as a live-path decision; BSE as a historical source is untested and now unlikely
+to be needed.
+
+- **Hybrid backfill plan** (follows from the above). Two sources, each doing only what it is good for. Per the A2 correction, the API half **does** work for past dates provided the report-window offset is respected:
   1. **Daily PR bundle** — prices, market caps, Nifty, band hitters, and a daily index of *who filed what category*. One archive download per trading day, no anti-bot surface.
-  2. **Announcements API** — called **only** for filings the bundle's index already routed to `order_win` or `order_candidate`, purely to fetch the exchange timestamp and the attachment URL.
+  2. **Announcements API** — called **once per company** that the bundle's index shows filing an `order_win` or `order_candidate`, using `symbol=`, which returns that company's whole history in one response. Match the bundle's report-date entries against it on a ±1-day window, never same-day.
   This keeps API traffic proportional to order filings (roughly 22 a day) rather than to all filings (roughly 1,229 a day) — about a 55× reduction against paginating the API for the full history.
 
 ### 5.2 Instruments and ISIN map
@@ -366,7 +450,8 @@ For each verified order:
   - **Day 0** = the filing date if filed before 15:30 IST, otherwise the next trading day. (F&O stocks now stop continuous trading at 15:15 for the closing auction; refine later if it matters.)
   - **Pre-event**: return over −5 and −20 trading days, minus Nifty. Did the news leak or get priced in early?
   - **Post-event**: returns at +1, +3, +5 and +10 trading days, minus Nifty. Measure from day-0 close (conservative) and, for after-hours filings, also from the next day's open.
-  - **Volume**: event-day volume ÷ 20-day average volume. Flagged, not used, when a corporate action falls in the window (§5.9).
+  - **Volume**: event-day volume ÷ 20-day average volume. Flagged, not used, when a corporate action falls in the window (§5.9). **Muhurat sessions are excluded from the 20-day baseline**: an hour of trading is a fraction of a normal day's volume and would drag the average down, inflating every ratio computed near it.
+  - **Muhurat sessions** (D27) count as trading days for day-numbering, because a bhavcopy exists for them and skipping them would desynchronise our trading-day arithmetic from the exchange's own. But an event whose **day 0 lands on one is flagged and reported separately**: a filing that can only be acted on inside a one-hour ceremonial session is not tradeable in the sense §5.11 is trying to measure.
   - **Contamination**: the same ISIN has another non-noise filing within ±3 trading days. Tag it and report it separately.
   - **Corporate action** (D21, revised by Spike B): prices are unadjusted and **stay** unadjusted — neither `PrvsClsgPric` nor `PREV_CL_PR` is adjusted (§5.9). So returns are computed from consecutive closes, and any event whose window contains a capital action (`CORP_IND` in `XB`, `XS`, `XR`, `XO`) for its ISIN is **excluded from the study and reported as excluded**, with the count shown. `XD` is tagged and kept. Excluded events are never silently dropped: an exclusion that quietly removed half the sample would change the verdict without anyone seeing it.
   - **Circuit limits** (D21): Indian stocks trade inside 5 / 10 / 20% price bands. A micro-cap that wins a large order can gate up untradeably, and a measured +10% on a 5%-band stock is fictitious P&L — which matters because the whole question is whether Sravanth can *trade* this. The flag comes straight from the PR bundle's **`bhDDMMYYYY.csv` band-hitter file** (§5.9), not from inferring the band. Tradeable return is reported separately from paper return.
@@ -565,6 +650,7 @@ Each slice ends with passing tests and a short plain-language summary for Sravan
      **If A2 finds nothing, the 12-month backfill is not possible as specified.** The honest options are then to shrink the study to whatever window the API does serve, or to fall back on D23's forward collection, which costs 12 months of wall-clock time. That is a scoping decision for Sravanth, and it must be settled before any slice is built on the assumption that history is reachable.
    - **Spike C — results XBRL.** Parse one Integrated Filing – Financial and one older Financial Results filing. Must show **both** a discrete-quarter and a cumulative context, and demonstrate the Q4 = FY − 9M derivation.
    - **Spike D — extraction bake-off.** Four arms on 10 labelled PDFs: parser alone, GPT-5 nano, gpt-4.1-mini, GPT-5.6 Luna. Per-field accuracy, tokens, cost per document, every failure. **Hard stop $0.50.** Sets tier 1, decides whether a second tier is needed at all, and only then sets the spend caps. Also covers the OpenAI data-sharing page: eligibility and covered models.
+     **Spike D also counts, split by market cap band (<₹1,000 cr / ₹1,000–10,000 cr / > ₹10,000 cr):** how many PDFs are scanned versus text-layer, and how many orders are in a foreign currency. Those two counts settle the scanned-PDF and FX decisions in §11 with measurements instead of argument — if scanned PDFs are 2% and concentrated in micro-caps the answer is manual review, and if they are 30% it is OCR. The labelled JSON carries `is_scanned` and `currency` for exactly this.
    - **Spike E — VPS preflight.** Read-only: free memory, free disk, swap, the external Docker network name, and how the existing Postgres container is configured. Sets the `mem_limit` and `cpus` values.
    - **Python 3.14 wheels** for every dependency. Windows/cp314 already verified in Step 0; manylinux still to check.
 

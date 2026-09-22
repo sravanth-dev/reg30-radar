@@ -32,7 +32,8 @@ fixtures, and throwaway probes in `spikes/`.
 |---|---|
 | **B** — NSE bulk archives | Done. See 21 Sep entry. |
 | **A** — announcements API | Done, but left a blocker. See 22 Sep entry. |
-| **A2** — API completeness | Done, 14/14 requests. **Backfill is viable**; see the 22 Sep entry. |
+| **A2** — API completeness | Done. **Backfill is viable.** Reconciliation now runs per-day in the backfill. |
+| Live-feed reconciliation | **Running** since 22 Sep 14:02 IST; reconcile against the 23 Sep bundle. |
 | **C** — results XBRL | Not started |
 | **D** — extraction bake-off | Not started. Needs an OpenAI key and 10 labelled PDFs from Sravanth. |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
@@ -97,7 +98,7 @@ verified, store null plus a flag.
 - All 11 approved dependencies install from cp314 Windows wheels with no source builds.
 - Spikes and the eventual backfill run **on the laptop over a phone hotspot, not the campus
   network** (D19). The VPS runs only the live collector.
-- Branch `main`. No remote yet.
+- Branch `main`, tracking `origin/main` at `github.com/sravanth-dev/tradebot_NSE_order_scraper`. **Push after every commit** (Sravanth's standing instruction). A push carrying the 22 MB label set failed once with HTTP 408 over the hotspot and succeeded after `git config http.postBuffer 524288000`.
 
 ```bash
 source .venv/Scripts/activate
@@ -116,8 +117,6 @@ laptop matches one taken on the VPS.
 
 Needed from Sravanth:
 
-- **Git remote** (and confirmation that `main` is the branch he wants). Still none: every
-  commit lives only on this laptop.
 - **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there; Slice 1
   cannot store a row without it.
 - **`config/holidays_2026.yaml`**, maintained by hand (D27), before the live collector runs.
@@ -125,8 +124,8 @@ Needed from Sravanth:
   name, and how the existing Postgres container is configured.
 - **OpenAI model IDs and prices**, copied from the live pricing page. `config/llm.yaml` holds
   `PLACEHOLDER` deliberately; nothing may be guessed here.
-- **10 order PDFs with hand-labelled expected JSON** for the Spike D bake-off, and later ~50
-  for the eval set.
+- **Ten labelled JSONs.** The 19 candidate PDFs are in `tests/labelled/` with
+  `CANDIDATES.md` and `README.md`; Sravanth labels ten blind before Spike D runs.
 
 Still open in ARCHITECTURE.md §11: scanned PDFs, FX source, OpenAI data-sharing opt-in,
 backup mechanism, and the User-Agent contact string. Spike A2 runs first among the spikes.
@@ -242,6 +241,50 @@ Commit: `7fb1ba1`. ARCHITECTURE.md v0.5 → v0.6.
 
 Created WORKLOG.md and added a pointer to it from CLAUDE.md, so a new session actually reads
 it. No code or design changed.
+
+### 22 Sep 2026 (later) — label set, live-feed poll, reconciliation, power analysis
+
+Remote is live and everything below is pushed.
+
+**Label set (19 PDFs, 22 MB).** Built from URLs already held in saved API responses, so it
+cost 20 requests and no new symbol queries. Spans ~₹130 cr to ~₹287,000 cr and covers foreign
+currency, value-not-disclosed, LoI, LoA, L1, amendment, GST wording, approximation
+qualifiers, both catch-all router cases (`Press Release` = HILINFRA, `General Updates` =
+GREENPOWER), one scanned PDF with no text layer (JISLDVREQS), and a 7 MB image-heavy file
+(ZAGGLE) that will stress pdfplumber against the 512 MB container limit.
+`CANDIDATES.md` states **no extracted values**, so blind labelling stays intact — selection
+used metadata and structural signals only. Two gaps stated rather than hidden: no filing with
+several distinct orders, and no confirmed company-placed-the-order case.
+
+**Live-feed reconciliation (D23's precondition) is running.** Polls the no-date endpoint
+every ~60 s with jitter until 22:00 IST, keeping every distinct record. The headline metric
+is `full_page_all_new`: the endpoint returns only the 20 most recent records, so a poll where
+all 20 are new means the page rolled over between polls and filings were missed. Started
+14:02 IST, so it covers the afternoon and evening only; reconciliation against tomorrow's
+bundle is limited to filings timestamped after that.
+
+Two mistakes worth remembering. `nohup ... &` **inside** a backgrounded Bash call spawned the
+poller twice, both writing the same files — let the tool background it, do not add `&`. And
+the first poll always reports every record as new, which counted as a false overflow until
+the metric excluded poll 1.
+
+**Reconciliation is now production code, not a spike finding.**
+`src/tradebot/backfill/reconcile.py` with six tests against committed fixtures for 17–18 Sep.
+It measures order-filing-company coverage per day over a ±1-day window, emits an offset
+histogram to confirm the report-window model, and gates at 95%. One test asserts that
+**same-day matching understates coverage** — which is the error that made Spike A2 look fatal,
+now locked so it cannot recur silently.
+
+**Power analysis** (`reports/power_analysis_2026-09-22.md`). Measured 5-day excess-return
+noise from real bhavcopies: σ ≈ 3.7%. Consequence: **30 clean events resolves only a ~2.4%
+net edge**, so D22's floor protects against calling a result from a handful of events but
+does not give the study resolution at the size worth trading. Twelve months plausibly yields
+36–184 events; ~170 are needed for a 1% net edge and ~300 to reach the 0.75% hurdle itself,
+which is a 24–36 month window. The recommendation is to **measure before choosing**: the
+contamination rate needs only the PR bundles — no PDFs, no API, no LLM — so download the
+bundles first, get the real event count, then spend.
+
+**BSE**: skipped, D26 final.
 
 ### 22 Sep 2026 — security scan, Spike A2, ARCHITECTURE.md to v0.9
 

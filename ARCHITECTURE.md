@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 0.9 · 22 Sep 2026 · Owner: Sravanth
+Version 1.0 · 22 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v1.0 makes bundle-vs-API reconciliation a permanent backfill step rather than a spike finding (§5.11, `src/tradebot/backfill/reconcile.py`), and records the statistical power of the pre-registered rule: 30 events resolves only a ~2.4% net edge, so §5.11 now states what the floor does and does not buy. D26 is final — BSE is out.
 - v0.9 **corrects two measurement errors of mine** that made the API look far worse than it is. The `an<date>.txt` bundle is a *report* for that date covering filings disseminated since the previous report, so comparing it to the API's same-date query was a category error; and the Spike A claim that the symbol query "stops at 31 Oct 2025" came from string-sorting `DD-Mon-YYYY`. Corrected: **mainboard order coverage is 8 of 8** on the day tested, and the symbol query spans 2004 to the previous day. The backfill is not blocked.
 - v0.8 (Spike A2) measures the API gap **inside the study universe** and finds it fatal: 72% of operating-company filings and 21 of 23 order filings are missing, at a rate that does not improve for recent dates. No parameter reaches the full day. §5.1 now records this; §5.11 and D27 gain the Muhurat rules; §10 gains the Spike D counts.
 - v0.7 (open-loop audit) repairs eight self-contradictions left behind by the v0.5 and v0.6 reversals — most seriously §7, which still described `prev_close` as corporate-action adjusted after Spike B disproved it. Adds **D26** (BSE dropped from Phase 1) and **D27** (trading-day calendar split by direction), and records the router's ambiguous input in §5.4.
@@ -68,7 +69,7 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 | D23 | Live collection | Not deferred to Phase 2. After Slice 0, a **minimal NSE-only live collector** runs on the VPS: raw store only, no BSE, no dedup, no health dashboard. Rationale: `first_seen_at` cannot be backfilled, and forward-collected data is the only honest test for anything found by exploration (§5.11) | Decided |
 | D24 | NSE terms of use | **Sravanth's decision (21 Sep 2026): proceed.** Phase 1 collects public corporate filings for personal research, redistributes nothing and runs at low volume. Recorded as the owner's call on his own risk, not as a legal conclusion reached by this document — the conflicting texts stay quoted in §3 so the decision is auditable | Decided |
 | D25 | No evasion | The collector is a **polite client, not an evasive one** (Decided). Permitted: fixed low rates, jitter, session warm-up, exponential backoff, a single consistent User-Agent, honouring errors. Not built: proxy or IP rotation, User-Agent rotation, browser fingerprint spoofing, CAPTCHA solving, or anything else whose purpose is to defeat the Akamai layer rather than to reduce load. Beyond the principle, this is also what works: bot management scores rotation and spoofing far more harshly than a slow, steady, consistent session, so evasion is the thing most likely to earn the hard block D19 exists to avoid | Decided |
-| D26 | BSE | **Dropped from Phase 1.** D9 already restricted BSE to companies also listed on NSE, which makes it pure duplication for the study, and it was never probed. Dropping it removes a second anti-bot surface and most of Slice 2. The "which exchange publishes first" question that justified keeping both timestamps is answered for free by the API's `difference` field (§5.1). Revisit in Phase 2 only if it earns its place | Decided |
+| D26 | BSE | **Dropped from Phase 1 — final.** Spike A2 passed without it: mainboard order coverage through NSE alone is 8/8 on the day tested, so BSE has nothing to add and will not be probed again in Phase 1. D9 already restricted BSE to companies also listed on NSE, which makes it pure duplication for the study, and it was never probed. Dropping it removes a second anti-bot surface and most of Slice 2. The "which exchange publishes first" question that justified keeping both timestamps is answered for free by the API's `difference` field (§5.1). Revisit in Phase 2 only if it earns its place | Decided |
 | D27 | Trading-day calendar | **Split by direction.** Past dates: a trading day is any date for which a UDiFF bhavcopy or PR bundle exists — free, self-maintaining, and correct because the answer is already known. Future dates: Sravanth uploads `config/holidays_2026.yaml` by hand. The bhavcopy is published *after* the close, so its existence cannot tell the live collector at 08:00 whether today is a trading day; using it that way would put a look-ahead dependency in the one place the system runs forward | Decided |
 
 ---
@@ -458,7 +459,11 @@ For each verified order:
 - Buckets (Default, change freely):
   - value_to_ttm: <5%, 5–15%, 15–40%, >40%;
   - market cap: <₹1,000 cr, ₹1,000–10,000 cr, >₹10,000 cr.
-- Output: `reports/backfill_<date>.md` plus a CSV, showing per bucket (clean vs contaminated) the event count, median and mean excess return, and hit rate.
+- **Per-day reconciliation** (Decided). Every day in the window is reconciled as it is processed, by `src/tradebot/backfill/reconcile.py`: the PR bundle is the complete record of what was filed, the API supplies timestamps and PDF links, and the backfill measures how much of the former the latter can actually serve.
+  - The unit is **order-filing companies covered**, restricted to the mainboard universe. SME and debt are outside the study and would depress the number for no reason.
+  - Matching uses a **±1-day window**, never same-day: the bundle is a *report* covering filings disseminated since the previous report, so a filing after the close on D−1 appears in the report for D (§5.1). The reconciliation also emits an offset histogram; anything outside {0, −1} means the window model is wrong and must be widened rather than silently losing filings.
+  - A day below **95%** coverage is reported, not dropped. Spike A2's 8/8 was one day, which is a pattern and not a rate — this is what turns it into a rate, measured across the whole window instead of inferred from 17–18 Sep.
+- Output: `reports/backfill_<date>.md` plus a CSV, showing per bucket (clean vs contaminated) the event count, median and mean excess return, and hit rate — **and the per-day coverage series**, so a thin sample is visible as a cause rather than discovered as a surprise.
 #### Pre-registered verdict rule (D22)
 
 Fixed in writing **before any returns are computed**. Changing it after seeing results means
@@ -473,6 +478,7 @@ excess return is the primary statistic; the mean is secondary.
 **GO only if all four hold:**
 
 1. At least **30 clean events** in the primary bucket. Fewer is "insufficient data", not GO.
+   **What 30 buys** (`reports/power_analysis_2026-09-22.md`): measured 5-day excess-return noise is σ ≈ 3.7%, so 30 events resolves a median effect of only about **2.4% net of the hurdle** at 80% power — a gross move above 3%. The floor protects against calling a result from a handful of events; it does **not** give the study the resolution to see an edge of the size worth trading. A null result at n ≈ 30 means **underpowered**, and must be reported that way rather than as evidence of no effect. Roughly 170 events are needed to demonstrate a 1% net edge, and ~300 to reach the cost hurdle itself.
 2. Median excess return minus a **0.75% round-trip cost hurdle** is > 0. The +5-day horizon means delivery trades, where STT alone is about 0.2% round trip; brokerage, exchange charges, stamp duty, GST and small-cap impact cost make up the rest.
 3. Mean excess return minus the same hurdle is > 0.
 4. The sign is the **same in both halves** of the 12 months.
@@ -668,6 +674,8 @@ straight after Slice 0, because `first_seen_at` cannot be backfilled).
 6. Revenue loader + point-in-time TTM.
 7. Market data loader + calculator.
 8. 12-month backfill + event-study report → go / no-go.
+
+**Sequencing note for Slice 8** (from the power analysis). Two funnel rates dominate how many clean events the study gets, and they differ in cost. The contamination rate needs **only the PR bundles** — "did this ISIN file anything else non-noise within ±3 trading days" is answerable from company and category alone, with no PDFs, no API, no LLM. So download the bundles for the full candidate window first (~250 requests for 12 months, ~750 for 36), measure the real order-event count and contamination rate from them, and only then choose the window and spend on PDFs and extraction. Extending the window is cheap on the API side, because a `symbol=` query returns a company's whole history in one call regardless of how far back the study reaches — only the bundle downloads scale.
 
 ---
 

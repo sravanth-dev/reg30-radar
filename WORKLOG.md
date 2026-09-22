@@ -18,20 +18,21 @@ the last session entry below.
 
 *Last updated: 22 Sep 2026*
 
-**What this is.** tradebot Phase 1. Collect NSE/BSE corporate announcements, classify them,
-extract order wins, measure order value against revenue and market cap, and test it on 12
-months of history to decide whether order filings move prices tradeably. Nothing in this
-repo places trades, and nothing will in Phase 1.
+**What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
+D26), classify them, extract order wins, measure order value against revenue and market
+cap, and test it on 12 months of history to decide whether order filings move prices
+tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are.** Slice 0 (spikes). Two of five spikes done. **No production code exists
-yet** — `src/tradebot/` is thirteen empty packages. Everything written so far is scaffold,
-tests against fixtures, and throwaway probes in `spikes/`.
+**Where we are.** Slice 0 (spikes). Two of six done, and both reversed a design decision
+that had already been written into the spec. **No production code exists yet** —
+`src/tradebot/` is thirteen empty packages. Everything so far is scaffold, tests against
+fixtures, and throwaway probes in `spikes/`.
 
 | Spike | Status |
 |---|---|
 | **B** — NSE bulk archives | Done. See 21 Sep entry. |
 | **A** — announcements API | Done, but left a blocker. See 22 Sep entry. |
-| **A2** — API completeness | **Proposed, not run. This blocks the backfill design.** |
+| **A2** — API completeness | **Next. Not run. Blocks the backfill design and possibly the study's scope.** |
 | **C** — results XBRL | Not started |
 | **D** — extraction bake-off | Not started. Needs an OpenAI key and 10 labelled PDFs from Sravanth. |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
@@ -41,7 +42,10 @@ tests against fixtures, and throwaway probes in `spikes/`.
 day (563 of ~1,229 filings for 18 Sep 2026, missing whole companies). The API is the only
 source of the PDF URL and filing timestamp. Until Spike A2 establishes whether the full day
 is reachable, **no backfill design should assume a PDF URL is obtainable for an arbitrary
-past order filing**, and the 12-month study cannot be scoped.
+past order filing**, and the 12-month study cannot be scoped. If A2 finds nothing, the
+choice is to shrink the study to whatever window the API serves, or to fall back on D23's
+forward collection and wait 12 months of wall-clock time. That is Sravanth's call, not an
+implementation detail.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -113,17 +117,20 @@ laptop matches one taken on the VPS.
 
 Needed from Sravanth:
 
-- **Git remote** (and confirmation that `main` is the branch he wants).
+- **Git remote** (and confirmation that `main` is the branch he wants). Still none: every
+  commit lives only on this laptop.
+- **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there; Slice 1
+  cannot store a row without it.
+- **`config/holidays_2026.yaml`**, maintained by hand (D27), before the live collector runs.
 - **VPS numbers** for Spike E: free memory, free disk, swap, the external Docker network
   name, and how the existing Postgres container is configured.
 - **OpenAI model IDs and prices**, copied from the live pricing page. `config/llm.yaml` holds
   `PLACEHOLDER` deliberately; nothing may be guessed here.
 - **10 order PDFs with hand-labelled expected JSON** for the Spike D bake-off, and later ~50
   for the eval set.
-- Whether to run **Spike A2** before or instead of Spikes C/D/E.
 
-Still open in ARCHITECTURE.md §11: scanned PDFs, FX source, holiday calendar source, backup
-mechanism, and the User-Agent contact string.
+Still open in ARCHITECTURE.md §11: scanned PDFs, FX source, OpenAI data-sharing opt-in,
+backup mechanism, and the User-Agent contact string. Spike A2 runs first among the spikes.
 
 ---
 
@@ -236,3 +243,41 @@ Commit: `7fb1ba1`. ARCHITECTURE.md v0.5 → v0.6.
 
 Created WORKLOG.md and added a pointer to it from CLAUDE.md, so a new session actually reads
 it. No code or design changed.
+
+### 22 Sep 2026 — open-loop audit, ARCHITECTURE.md to v0.7
+
+Sravanth asked what was still open before the next phase. Documentation only; no code.
+
+**Eight self-contradictions found and repaired**, all left behind by the v0.5 and v0.6
+reversals in sections not edited at the time. The dangerous one: §7 still described
+`prices.prev_close` as "already corporate-action adjusted and what returns chain from" — the
+exact claim Spike B disproved — so the data model contradicted §5.9, and Slice 7 would be
+built from §7. Also: the labelled-PDF exception read "proposed" in §5.5 and §8 while D8 said
+confirmed; §8 had backups before *live use* against D14's before the *backfill*; §11 listed
+the local dev database as both resolved and open; §5.1 carried a **Verify** already answered
+by Spike A; and D23 sat after D25 in the table.
+
+**New finding — the router's input is ambiguous.** `an<date>.txt` is
+`COMPANY NAME SYMBOL : CATEGORY+DESCRIPTION` with **no delimiter** between category and
+description, so a category can only be recovered by prefix-matching a known list. The file
+parses to exactly 1,229 bodies and only 593 (48%) start with one of the 49 `desc` values the
+API returned that day. Since §5.1 makes the bundle the only *complete* record, the router
+needs a canonical category dictionary that does not exist. **The order buckets are safe** —
+`Bagging/Receiving of orders/contracts` is a distinctive prefix — so this constrains Slice 3,
+not the verdict. Spike A2 will collect the list from NSE's filings-page dropdown.
+
+**D26 — BSE dropped from Phase 1.** D9 already made it duplication and it was never probed.
+Removes an anti-bot surface, an unanswered Verify, and most of Slice 2. Intra-NSE dedup
+stays and still matters: MASON filed five times on 18 Sep, four being Sub-para repeats. The
+"which exchange publishes first" question is answered free by the API's `difference` field.
+
+**D27 — trading-day calendar split by direction.** I proposed deriving trading days from
+whether an archive exists for that date. Sravanth corrected it: the bhavcopy publishes
+*after* the close, so at 08:00 it cannot tell the live collector whether today is a trading
+day — that would put a look-ahead dependency in the one place the system runs forward. So
+past dates derive from the archives, future dates come from a hand-maintained
+`config/holidays_2026.yaml`, and a missing or stale file must fail loudly rather than assume
+every day trades.
+
+Also added a fail-closed rule for null spend caps in §6: `config/llm.yaml` ships with nulls
+until Spike D, and treating null as unlimited would silently invert D5.

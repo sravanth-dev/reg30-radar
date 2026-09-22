@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 0.6 · 22 Sep 2026 · Owner: Sravanth
+Version 0.7 · 22 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v0.7 (open-loop audit) repairs eight self-contradictions left behind by the v0.5 and v0.6 reversals — most seriously §7, which still described `prev_close` as corporate-action adjusted after Spike B disproved it. Adds **D26** (BSE dropped from Phase 1) and **D27** (trading-day calendar split by direction), and records the router's ambiguous input in §5.4.
 - v0.6 (Slice 0, Spike A) documents the announcements API record shape (§5.1) and **reverses the hybrid plan again**: the API is a partial view of any past day, while the PR bundle's `an` file is the complete one. `sm_isin` and `smIndustry` answer §5.3's ISIN attachment and §5.8's sector source.
 - v0.5 (Slice 0, Spike B) verifies the NSE bulk-archive URL patterns and depth (§5.2, §5.9) and **reverses the corporate-action design**: `PrvsClsgPric` is *not* adjusted, so returns cannot be chained through it (§5.9, §5.11). Records the robots.txt / terms-of-use conflict in §3.
 - v0.4 (Slice 0, Step 0 review) reworks the LLM routing and verification rules (§6), makes verification provenance-based, fixes the announcement-source plan to a hybrid (§5.1), and settles the data-quality decisions: return chaining, band hitters, Q4 derivation, dedup keys, revision rows, sector column. Adds D23. Corrects D6, D10, D14, D19, D20.
@@ -22,7 +23,7 @@ How to read this file:
 Find out, with evidence, whether NSE order-win filings move stock prices in a way Sravanth can trade, before building anything live.
 
 Phase 1 builds:
-1. **Collector**: every corporate announcement from NSE and BSE, with the exchange timestamp and our first-seen timestamp.
+1. **Collector**: every NSE corporate announcement, with the exchange timestamp and our first-seen timestamp. (BSE dropped by D26.)
 2. **Category lookup (router)**: route each filing to a bucket using the exchange's own category. No LLM.
 3. **Order extractor**: pull order details from the filing PDF and normalize the value to rupees.
 4. **Revenue loader**: point-in-time trailing-12-month (TTM) revenue from NSE quarterly results (XBRL).
@@ -48,7 +49,7 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 | D6 | Polling | 60 s, jittered, from 08:00 to 22:00 IST on trading days; jittered 10 min otherwise. The window runs to 22:00 because a large share of Indian filings arrive after the board meeting ends, between 16:00 and 21:00 | Decided |
 | D7 | PDFs downloaded | Only for order-win, order-candidate and LLM-confirmed catch-all items; links only for the rest | Decided |
 | D8 | PDF retention | Delete each PDF after text extraction; keep text, URL and SHA-256. The `tests/labelled/` PDFs stay in the repo permanently — **exception confirmed** | Decided |
-| D9 | Universe | NSE mainboard only; BSE filings used only for companies also listed on NSE | Decided |
+| D9 | Universe | NSE mainboard only. The original clause about BSE filings for dual-listed companies is moot since D26 dropped BSE from Phase 1 | Decided |
 | D10 | Backfill | 12 months of announcements. Prices, market caps and band hitters: 12 months **+ 30 trading days**, so the −20-day pre-event window and 20-day average volume have room at the start. Results: 24 months, so four quarters precede the earliest event | Decided |
 | D11 | Google Sheets | Phase 2: scored orders + daily digest, one-way (view-only) | Decided |
 | D12 | Python | Same version on laptop and VPS: 3.14. **Windows/cp314 verified** in Step 0 — all 11 approved deps installed from wheels on 3.14.2, no source builds. manylinux still to check (Step 1) | Default |
@@ -62,9 +63,11 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 | D20 | Build order | §10 stays as written for now. A revised build order is proposed **after** Slice 0, from the spike results | Decided |
 | D21 | Price data quality | Corporate actions and circuit limits are handled in Phase 1, not deferred (§5.9, §5.11) | Decided |
 | D22 | Verdict | The go/no-go rule is pre-registered in §5.11 and fixed before any returns are computed | Decided |
+| D23 | Live collection | Not deferred to Phase 2. After Slice 0, a **minimal NSE-only live collector** runs on the VPS: raw store only, no BSE, no dedup, no health dashboard. Rationale: `first_seen_at` cannot be backfilled, and forward-collected data is the only honest test for anything found by exploration (§5.11) | Decided |
 | D24 | NSE terms of use | **Sravanth's decision (21 Sep 2026): proceed.** Phase 1 collects public corporate filings for personal research, redistributes nothing and runs at low volume. Recorded as the owner's call on his own risk, not as a legal conclusion reached by this document — the conflicting texts stay quoted in §3 so the decision is auditable | Decided |
 | D25 | No evasion | The collector is a **polite client, not an evasive one** (Decided). Permitted: fixed low rates, jitter, session warm-up, exponential backoff, a single consistent User-Agent, honouring errors. Not built: proxy or IP rotation, User-Agent rotation, browser fingerprint spoofing, CAPTCHA solving, or anything else whose purpose is to defeat the Akamai layer rather than to reduce load. Beyond the principle, this is also what works: bot management scores rotation and spoofing far more harshly than a slow, steady, consistent session, so evasion is the thing most likely to earn the hard block D19 exists to avoid | Decided |
-| D23 | Live collection | Not deferred to Phase 2. After Slice 0, a **minimal NSE-only live collector** runs on the VPS: raw store only, no BSE, no dedup, no health dashboard. Rationale: `first_seen_at` cannot be backfilled, and forward-collected data is the only honest test for anything found by exploration (§5.11) | Decided |
+| D26 | BSE | **Dropped from Phase 1.** D9 already restricted BSE to companies also listed on NSE, which makes it pure duplication for the study, and it was never probed. Dropping it removes a second anti-bot surface and most of Slice 2. The "which exchange publishes first" question that justified keeping both timestamps is answered for free by the API's `difference` field (§5.1). Revisit in Phase 2 only if it earns its place | Decided |
+| D27 | Trading-day calendar | **Split by direction.** Past dates: a trading day is any date for which a UDiFF bhavcopy or PR bundle exists — free, self-maintaining, and correct because the answer is already known. Future dates: Sravanth uploads `config/holidays_2026.yaml` by hand. The bhavcopy is published *after* the close, so its existence cannot tell the live collector at 08:00 whether today is a trading day; using it that way would put a look-ahead dependency in the one place the system runs forward | Decided |
 
 ---
 
@@ -94,13 +97,13 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 ## 4. System overview
 
 ```
-[collector]  NSE + BSE announcements   (60 s in market window / 10 min otherwise)
+[collector]  NSE announcements   (60 s in market window / 10 min otherwise, jittered)
       |
       v
 raw_announcements  (append-only)
       |
       v
-[normalizer]  attach ISIN → keep NSE-mainboard universe → merge NSE/BSE copies into one event
+[normalizer]  attach ISIN → keep NSE-mainboard universe → merge repeat filings into one event
       |
       v
 [router]  exchange category → bucket  (config/category_map.yaml)
@@ -133,16 +136,17 @@ raw_announcements  (append-only)
 Purpose: capture every announcement exactly once, with the exchange timestamp and our first-seen timestamp.
 
 - **Sources** (all URLs, headers and parameters live in `config/sources.yaml`, never hardcoded):
-  - NSE corporate announcements: the JSON endpoint the NSE announcements page calls (find it in browser dev tools → Network). NSE also publishes an official RSS feed for announcements; use it as a cross-check and fallback. **Verify**: live query, date-range query, and which fields exist (sequence ID, symbol, ISIN, category, attachment URL, industry).
-  - BSE corporate announcements: the JSON endpoint behind BSE's announcements page. **Verify** the same things.
+  - NSE corporate announcements: `GET https://www.nseindia.com/api/corporate-announcements`.
+    **Verified** (Spike A, 22 Sep 2026) — the live query, the date-range query and the full field list are documented below. NSE also publishes an official RSS feed; it is still untested and remains a possible cross-check.
+  - BSE: **removed from Phase 1 by D26.**
 - **Modes**:
   - `live`: poll on the schedule below.
   - `backfill`: date range, resumable (checkpoint per source per day), slow pacing (Default ≥3 s between requests).
-- **Schedule** (D6): trading days 08:00–22:00 IST every 60 s **with jitter**; all other times every 10 min, also jittered. A fixed interval from a datacentre IP is the clearest bot signature there is, so the interval is never exactly periodic. Holiday calendar in `config/holidays_2026.yaml` (source is Open).
+- **Schedule** (D6): trading days 08:00–22:00 IST every 60 s **with jitter**; all other times every 10 min, also jittered. A fixed interval from a datacentre IP is the clearest bot signature there is, so the interval is never exactly periodic. Trading days come from D27: for **past** dates, a day counts as a trading day if a UDiFF bhavcopy or PR bundle exists for it; for **future** dates, from `config/holidays_2026.yaml`, which Sravanth maintains by hand. The live collector **fails loudly** when that file is missing, unparseable, or has no entry covering today — it must never fall back to assuming every day is a trading day, because that failure is silent and would poison `first_seen_at` for the forward-collected sample.
 - **Idempotent**: unique on (source, source_id); re-polling never creates duplicates.
 - **Politeness**: one request at a time per source; exponential backoff with jitter on errors; on 401/403, refresh the session once, then back off; consistent User-Agent.
 - **Health**: update `source_health` on every poll. Log a warning if a source has no successful poll for 10 minutes inside the market window.
-- **Stored** (raw): source (NSE|BSE), source_id, exchange_ts, first_seen_at, symbol or BSE scrip code, company name, ISIN if present, raw category string, headline/description, attachment URL, full payload (jsonb).
+- **Stored** (raw): source, source_id, payload hash, exchange_ts, first_seen_at, symbol, company name, ISIN, raw category string, headline/description, attachment URL, full payload (jsonb). `source` is retained even though D26 leaves only NSE, so adding a second source later needs no migration.
 - **Verified** (Slice 0 Step 0, from `tests/fixtures/an18092026.txt`, 1,265 lines): the PR bundle's announcement file carries **company name, symbol, category and description text — and nothing else**. It has no per-filing timestamp, no attachment URL and no ISIN.
   Consequences: (a) the PR bundle **cannot** drive the backfill on its own, because day-0 determination and point-in-time discipline need the exchange timestamp, and the document pipeline needs the PDF link — both must come from the JSON endpoint or the per-filing page; (b) the file **is** sufficient to test the router (§5.4), which only reads the category string; (c) it is a good completeness cross-check on whatever the JSON endpoint returns for the same day.
 
@@ -223,7 +227,7 @@ completeness is.
   This keeps API traffic proportional to order filings (roughly 22 a day) rather than to all filings (roughly 1,229 a day) — about a 55× reduction against paginating the API for the full history.
 
 ### 5.2 Instruments and ISIN map
-Purpose: one identity per company (ISIN) across NSE symbols and BSE scrip codes. This also defines the universe.
+Purpose: one identity per company (ISIN) behind any NSE symbol. This also defines the universe.
 
 - NSE side: the daily UDiFF bhavcopy gives ISIN, symbol and series.
   - **Verified** (Spike B, 21 Sep 2026). URL pattern:
@@ -232,20 +236,25 @@ Purpose: one identity per company (ISIN) across NSE symbols and BSE scrip codes.
   - 34 columns, and the column set is **identical to the BSE UDiFF fixture** already in `tests/fixtures/`. One parser handles both exchanges, which is what §5.2 assumed.
   - `ISIN`, `TckrSymb`, `SctySrs`, `OpnPric`, `ClsPric` and `PrvsClsgPric` all present on every date checked.
   - Size: about 3,080–3,440 rows across all series, of which roughly 2,380 are `EQ`.
-- BSE side: the BSE UDiFF bhavcopy is used **only as a mapping table** (`FinInstrmId` = BSE scrip code → `ISIN`; e.g. ABB is 500002). It is never a price source.
-- Universe rule (D9): the ISIN has an NSE mainboard listing (series other than SM/ST). BSE filings for ISINs outside the universe are stored raw and not processed.
+- BSE side: **out of scope (D26)**. The BSE UDiFF bhavcopy existed only to map scrip codes to ISINs so BSE filings could be processed, and there are no BSE filings now. `tests/fixtures/BhavCopy_BSE_CM_0_0_0_20260918_F_0000.CSV` stays in the repo as the evidence that both exchanges publish an identical UDiFF column set, which is what lets one parser serve either.
+- Universe rule (D9, unchanged): the ISIN has an NSE mainboard listing (series other than SM/ST). Filings for ISINs outside the universe are stored raw and not processed.
 - Store but don't act on in Phase 1: NSE series (EQ vs BE/BZ), ASM/GSM membership. These become trade-time filters later.
 
 ### 5.3 Normalizer and dedup
-- Attach ISIN: NSE via symbol/ISIN; BSE via the scrip-code map.
+- Attach ISIN: from the announcement's own `sm_isin` field where present (Spike A found it 100% populated on the records it returns), otherwise by symbol against the bhavcopy.
 - Normalize the category string: trim, collapse spaces, strip a trailing `-XBRL`. Keep suffixes like `(Sub-para 4-Para B)` as a separate `para` attribute.
-- **Dedup** (Decided): merge only on an **exact** key — the same attachment SHA-256, or the same (ISIN, `value_inr`). Never on "similar headline". Two reasons: NSE and BSE headlines for one filing often differ substantially, and companies routinely file several *different* order wins on the same day (18 Sep 2026: 22 order filings from 12 companies), so a fuzzy rule would collapse real, distinct events. A merged `event` holds both raw rows and both exchange timestamps; event time = earliest exchange timestamp. Prefer the NSE copy's PDF; don't download the BSE duplicate.
+- **Dedup** (Decided). D26 removes the cross-exchange case, but dedup still matters *within* NSE: MASON filed five times on 18 Sep 2026, four of them `(Sub-para 4-Para B)` repeats of the same order.
+  Merge only on an **exact** key — the same attachment SHA-256, or the same (ISIN, `value_inr`). Never on "similar headline": companies routinely file several *genuinely different* order wins on the same day (18 Sep 2026: 22 order filings from 12 companies), so a fuzzy rule would collapse real, distinct events. A merged `event` holds every contributing raw row; event time = earliest exchange timestamp.
 - **Revisions** (Decided). `raw_announcements` is append-only *and* unique on (source, source_id), which on its own would silently discard NSE's corrections — the same ID returns with amended text or a new attachment and `ON CONFLICT DO NOTHING` drops it with no trace. So the uniqueness key includes a **payload hash**, and a changed payload for an existing source_id is stored as a **new revision row** rather than ignored. If the source turns out to have no stable ID (Spike A), the synthesised key must be built from fields that do not change on a revision.
-- Keeping both timestamps answers, with data, which exchange publishes first.
+- The question of which exchange publishes first, which originally justified keeping a timestamp per exchange, is answered for free by the API's `difference` field — NSE's own filing-to-dissemination lag, per record (§5.1).
 
 ### 5.4 Router (category lookup)
-- `config/category_map.yaml`: (exchange, normalized category) → one bucket from {`noise`, `order_win`, `order_candidate`, `catch_all`, `red_flag`, `other_material`, `results`}.
+- `config/category_map.yaml`: normalized category → one bucket from {`noise`, `order_win`, `order_candidate`, `catch_all`, `red_flag`, `other_material`, `results`}. (The exchange key is gone with D26.)
 - Unknown category → bucket `catch_all` (safe default) and a row in `unknown_categories` for weekly review.
+- **The PR bundle does not emit a clean category field** (audit, 22 Sep 2026). This matters because §5.1 makes the bundle the only *complete* record of a past day, and the router keys on category.
+  Each line of `an<date>.txt` is `COMPANY NAME SYMBOL : CATEGORY+DESCRIPTION` with **no delimiter between the category and the description**, so a category can only be recovered by prefix-matching against a known list. Measured on `an18092026.txt`: the file parses to exactly 1,229 bodies, and only **593 of them (48%)** start with one of the 49 `desc` values the API returned for the same day. Unmatched examples include `Change in Directors/ Key Managerial Personnel/ Auditor/ Compliance Officer/ Share Transfer Agent`, `Alteration Of Capital and Fund Raising-XBRL` and `Board Meeting Intimation`. Part of that gap is the API's own incompleteness, but the conclusion holds either way: **the router needs a canonical category dictionary, and none exists yet.**
+  - **The order buckets are safe.** `Bagging/Receiving of orders/contracts` and `Awarding of order(s)/contract(s)` are distinctive prefixes that match cleanly — that is how the 22 + 1 count for 18 Sep was obtained. The ambiguity bites `noise` versus `other_material`, and the `catch_all` keyword prefilter. It constrains Slice 3; it does not threaten order detection or the go/no-go.
+  - Fix: source the category list from NSE's own filings-page dropdown during Spike A2 and commit it as `config/category_map.yaml`. Until then, any body matching no known category goes to `catch_all` and `unknown_categories`, which is the safe direction.
 - **Keyword prefilter** (catch_all only). A filing becomes an LLM-triage candidate if its headline matches order / contract / award / letter of award / LoA / LoI / work order / purchase order / L1 / lowest bidder. It is suppressed if it matches orders passed / income tax / assessment / NCLT / court. Only candidates reach the LLM.
 - **Rules from the Fri 18 Sep 2026 NSE file** (these become router tests):
   - `Declaration of NAV`, `Shareholders meeting`, `Analysts/Institutional Investor Meet/Con. Call Updates`, `Analyst/Investor Meet Para A`, `Trading Window`, `Copy of Newspaper Publication` → `noise`. Together these were ~40% of the day's filings.
@@ -261,7 +270,7 @@ Purpose: one identity per company (ISIN) across NSE symbols and BSE scrip codes.
 - Steps: download PDF → SHA-256 → extract text (pdfplumber; fallback pypdf) → save text in `documents` → **delete the PDF** (D8).
 - Scanned PDFs (little or no extractable text): set `is_scanned`. Until this is decided, send them to manual review. (Open: local OCR costs CPU/RAM on the CX22; a vision-capable model costs tokens.)
 - Keep URL, SHA-256, page count, text, extraction method and timestamps. If a later re-run needs the PDF, re-download it from the URL and check the hash matches.
-- Exception (proposed, needs Sravanth's confirmation): PDFs in the labelled test set (`tests/labelled/`) stay in the repo permanently.
+- Exception (**confirmed**, D8): PDFs in the labelled test set (`tests/labelled/`) stay in the repo permanently.
 
 ### 5.6 Order extractor
 Target fields. The first group mirrors the disclosure format SEBI requires for order wins (circular dated 13 Jul 2023):
@@ -312,7 +321,7 @@ Order of operations:
 - **Discrete vs cumulative contexts** (Decided). The in-capmkt taxonomy carries both discrete-quarter and cumulative (H1, 9M, FY) contexts. Picking the wrong one double-counts silently, which is the single most likely source of quietly wrong TTM. The parser selects on the context's period length explicitly and records which it used; Spike C must demonstrate both on real filings.
 - **Q4 derivation** (Decided): `Q4 = FY − 9M`. Most Indian filers publish audited full-year results and never file Q4 as a discrete quarter, so a naive "latest four quarters" rule returns null for a large share of companies exactly when TTM is most needed.
 - **Point-in-time TTM** for date D: the sum of the latest four quarterly revenues with `filed_at` ≤ D, all on the same basis. A missing quarter gives null. Never guess.
-- Banks, NBFCs and insurers are excluded from order ratios (Default), because their "revenue" means something different. This needs a **sector / industry column on `instruments`** (Decided) — the exclusion currently has no mechanism, since nothing in the data model identifies a sector. Spike A sources it, ideally from the `industry` field the announcements API is expected to carry.
+- Banks, NBFCs and insurers are excluded from order ratios (Default), because their "revenue" means something different. This needs a **sector / industry column on `instruments`** (Decided). **Verified** (Spike A): the announcements API carries `smIndustry`, populated on 1,035 of 1,035 BEL records — but it was `null` for HILINFRA, so coverage is not total and the exclusion still needs a fallback for the names it misses.
 - Sanity check: when a full-year figure exists, the four quarters should roughly add up to it. Log mismatches.
 - Backfill depth: ~24 months of results, so there are four quarters before the earliest event.
 
@@ -450,6 +459,7 @@ trading. **It can never produce a GO on this same data.**
 - **Cost controls**:
   - Every call logs its tokens and computed cost (tokens × price table) in `llm_calls`.
   - Hard caps: **set after the Spike D bake-off**, once the parser hit rate and the escalation rate are measured (Decided). The earlier defaults of $2/month and $10/backfill were arithmetic guesses, and at any meaningful escalation rate the $10 backfill cap and the escalation policy are not compatible: ~5,500 order events at ~8K input tokens is already ~$4.40 on Batch at the cheapest tier, before a single escalation. The cap follows the measurement, not the other way round. At a cap, items wait as `pending_llm`; nothing is dropped, and nothing retries in a loop.
+  - **A null cap fails closed, never open.** `config/llm.yaml` ships with `live_usd_per_month: null` and `backfill_usd_per_run: null` on purpose, because Spike D has not run. The client must refuse to make a paid call while a cap is null, and say so. Treating null as "no limit" would invert the whole point of D5, and it would do it silently.
   - Second guard: set a monthly budget and alert threshold on the OpenAI project in the dashboard.
   - The backfill uses OpenAI's Batch API (half price, results within 24 hours). Live processing uses the standard API.
   - Prompt layout: fixed instructions and schema first, document text last, which is the right shape for prefix caching. But the **cached-input discount is left out of the cost model** (Decided): it needs a minimum prefix length and byte-identical prefixes, a short rubric may never qualify, and its interaction with the Batch API is unclear. Treat any discount as a pleasant surprise, never as budget.
@@ -472,12 +482,12 @@ trading. **It can never produce a GO on this same data.**
 
 All timestamps `timestamptz`; money `NUMERIC(20,2)`. **Ratios are not money** and get their own type, `NUMERIC(12,6)` — two decimal places would round a 0.4% ratio to zero. Columns abbreviated.
 
-- `raw_announcements`(id, source, source_id, **payload_sha256**, **revision**, exchange_ts, first_seen_at, symbol, bse_code, company, isin, category_raw, headline, attachment_url, payload jsonb) — UNIQUE(source, source_id, payload_sha256); append-only. The hash in the key is what stops an exchange revision being silently swallowed (§5.3); `revision` increments for each re-filing of the same source_id.
-- `events`(id, isin, bucket, category_norm, para, headline, event_ts, nse_raw_id, bse_raw_id, nse_ts, bse_ts, in_universe, status)
+- `raw_announcements`(id, source, source_id, **payload_sha256**, **revision**, exchange_ts, **disseminated_ts**, first_seen_at, symbol, company, isin, industry, category_raw, headline, attachment_url, payload jsonb) — UNIQUE(source, source_id, payload_sha256); append-only. `bse_code` is gone with D26. `disseminated_ts` and `industry` come from the API's `exchdisstime` and `smIndustry` (§5.1). The hash in the key is what stops an exchange revision being silently swallowed (§5.3); `revision` increments for each re-filing of the same source_id.
+- `events`(id, isin, bucket, category_norm, para, headline, event_ts, raw_ids, in_universe, status) — `raw_ids` holds every raw row merged into the event (§5.3). The per-exchange `nse_*` / `bse_*` columns are gone with D26.
 - `documents`(id, event_id, url, sha256, pages, text, is_scanned, method, extracted_at, pdf_deleted_at)
 - `orders`(id, event_id, awarding_entity, domestic_or_international, nature_of_order, significant_terms, execution_period_raw, execution_months, consideration_raw, value_inr, **value_span**, value_flags, gst_inclusive, currency, promoter_interest, related_party, receipt_datetime, company_is_recipient, stage, is_follow_up, extractor, prompt_version, **state**, verified, review_status) — `value_span` is the exact quoted text the value came from, which is what the provenance check verifies (§5.6); `state` is the extraction state machine in §6.
-- `instruments`(isin PK, nse_symbol, nse_series, bse_code, name, board, **sector**, **industry**, first_seen, last_seen) — sector/industry carry the bank / NBFC / insurer exclusion in §5.8, which previously had no mechanism.
-- `prices`(date, isin, open, high, low, close, **prev_close**, volume, series, **corp_ind**, **band_hit**) — PK(date, isin). `prev_close` is NSE's `PREV_CL_PR`, which is already corporate-action adjusted and is what returns chain from (§5.9); `corp_ind` is the ex-date flag; `band_hit` comes from the `bh` band-hitter file.
+- `instruments`(isin PK, nse_symbol, nse_series, name, board, **sector**, **industry**, first_seen, last_seen) — sector/industry carry the bank / NBFC / insurer exclusion in §5.8, which previously had no mechanism.
+- `prices`(date, isin, open, high, low, close, **prev_close**, volume, series, **corp_ind**, **band_hit**) — PK(date, isin). `prev_close` is NSE's `PREV_CL_PR`, stored because it is in the file — **it is NOT corporate-action adjusted** (Spike B, §5.9), so returns are never chained through it. `corp_ind` is the ex-date flag and is what drives the exclusion rule in §5.11; `band_hit` comes from the `bh` band-hitter file.
 - `index_prices`(date, index_name, close) — PK(date, index_name)
 - `market_caps`(date, isin, mcap_inr) — PK(date, isin)
 - `financials`(isin, period_end, period_months, basis, revenue_inr, scale, filed_at, source_url) — UNIQUE(isin, period_end, basis)
@@ -496,11 +506,11 @@ Migrations (Default): plain numbered SQL files in `migrations/` (`0001_init.sql`
 
 - PDFs: downloaded only for the D7 buckets and deleted right after text extraction (D8). Text is kept; it's a few KB per filing.
 - Why keep text: it lets a better parser or prompt re-run over the whole backfill without re-downloading thousands of PDFs from NSE, and any number can be checked against its source later.
-- Exception (proposed): the labelled test-set PDFs stay in the repo. They are the ground truth for judging free models.
+- Exception (**confirmed**, D8): the labelled test-set PDFs stay in the repo. They are the ground truth for the Spike D bake-off and the eval set.
 - Backfill reports in `reports/` **are committed to git** (Decided). They are small, and the history of what each run concluded is worth keeping.
 - Disk guard: log a warning when disk usage passes 80%.
 - Docker logs: json-file driver, `max-size: 10m`, `max-file: 3`.
-- Backups (D14): nightly `pg_dump` of `tradebot` to Google Drive, in place before any live use. Mechanism is Open: rclone, or an n8n workflow.
+- Backups (D14): nightly `pg_dump` of `tradebot` to Google Drive, in place **before the backfill** — the backfill is weeks of scraping plus LLM spend and is the expensive thing to lose, whereas live use risks little. Mechanism is Open: rclone, or an n8n workflow.
 
 ---
 
@@ -508,7 +518,7 @@ Migrations (Default): plain numbered SQL files in `migrations/` (`0001_init.sql`
 
 ```
 tradebot/
-  CLAUDE.md  ARCHITECTURE.md  .env.example  .gitattributes  .gitignore
+  CLAUDE.md  ARCHITECTURE.md  WORKLOG.md  .env.example  .gitattributes  .gitignore
   Dockerfile  docker-compose.yml  pyproject.toml
   config/      sources.yaml  category_map.yaml  llm.yaml  holidays_2026.yaml
   prompts/     triage_v1.md  order_extract_v1.md
@@ -518,9 +528,11 @@ tradebot/
     collector/  normalizer/  router/  documents/  extractor/  units/
     revenue/  market/  calculator/  backfill/  llm/  eval/
   tests/
-    fixtures/  (NSE an18092026.txt, pd18092026.csv, mcap18092026.csv; BSE BhavCopy_BSE_CM_0_0_0_20260918_F_0000.CSV)
+    fixtures/  (an18092026.txt, pd18092026.csv, mcap18092026.csv, bh18092026.csv;
+                BhavCopy_BSE_CM_0_0_0_20260918_F_0000.CSV — kept as UDiFF column evidence)
     labelled/  (hand-labelled order PDFs + expected JSON)
     unit/  live/  (live = hits real sites; skipped unless `-m live`)
+  spikes/      (throwaway probes; spikes/out/ is gitignored)
   reports/
 ```
 
@@ -547,8 +559,10 @@ Each slice ends with passing tests and a short plain-language summary for Sravan
 
 0. **Spikes** (verify unknowns; write findings back into this file). Throwaway probe code lives in `spikes/`, never in `src/`.
    - *Step 0 done*: scaffold, `.gitignore`/`.gitattributes`, `.env.example`, placeholder `config/llm.yaml`, `pyproject.toml`, passing `pytest`. Findings written into §5.1 and §5.9.
-   - **Spike B — historical bulk files. First among the network spikes** (Decided). Archive depth for the UDiFF bhavcopy and the PR bundle (`pd`, `mcap`, `bh`, `an`) across 12 months + 30 trading days. Prove return chaining through `PREV_CL_PR` on one known split or bonus ex-date. Record **NSE's robots.txt and terms-of-use position** as a written finding, so scraping is a decision rather than an accident.
-   - **Spike A — announcement endpoints.** NSE and BSE: live query, date-range query, available fields. Must answer: is there a stable `source_id`, does a revision reuse it, and is there a sector/industry field to carry the bank/NBFC/insurer exclusion (§5.8)?
+   - ~~**Spike B — historical bulk files**~~ **DONE** (21 Sep 2026). URL patterns and archive depth verified (§5.2, §5.9); robots.txt and terms of use recorded (§3); and the `PREV_CL_PR` return-chaining idea **disproved** rather than proved — the field is not adjusted, so §5.9 now excludes capital actions instead of adjusting for them.
+   - ~~**Spike A — announcement endpoint**~~ **DONE** (22 Sep 2026). Record shape, identity and filtering documented in §5.1. `sm_isin` and `smIndustry` found. Left one blocker, below.
+   - **Spike A2 — API completeness. Now the first spike, because it can invalidate the study's scope.** The date-range query returns 563 of ~1,229 filings for 18 Sep 2026 and misses whole companies, yet it is the only known source of the filing timestamp and the PDF URL, and that URL is not constructible. Test other `index` values, a pagination parameter, and the CSV export implied by the null `csvName` field. Also collect the canonical category list from the filings-page dropdown, which §5.4 needs. Budget 12 requests.
+     **If A2 finds nothing, the 12-month backfill is not possible as specified.** The honest options are then to shrink the study to whatever window the API does serve, or to fall back on D23's forward collection, which costs 12 months of wall-clock time. That is a scoping decision for Sravanth, and it must be settled before any slice is built on the assumption that history is reachable.
    - **Spike C — results XBRL.** Parse one Integrated Filing – Financial and one older Financial Results filing. Must show **both** a discrete-quarter and a cumulative context, and demonstrate the Q4 = FY − 9M derivation.
    - **Spike D — extraction bake-off.** Four arms on 10 labelled PDFs: parser alone, GPT-5 nano, gpt-4.1-mini, GPT-5.6 Luna. Per-field accuracy, tokens, cost per document, every failure. **Hard stop $0.50.** Sets tier 1, decides whether a second tier is needed at all, and only then sets the spend caps. Also covers the OpenAI data-sharing page: eligibility and covered models.
    - **Spike E — VPS preflight.** Read-only: free memory, free disk, swap, the external Docker network name, and how the existing Postgres container is configured. Sets the `mem_limit` and `cpus` values.
@@ -561,7 +575,7 @@ still needed for order filings), and D23 (a minimal NSE-only live collector star
 straight after Slice 0, because `first_seen_at` cannot be backfilled).
 
 1. Collector (NSE live + backfill mode), raw store, source health.
-2. Instruments / ISIN map, BSE collector, normalizer, dedup.
+2. Instruments / ISIN map, normalizer, intra-NSE dedup. (Much smaller since D26 removed the BSE collector and cross-exchange dedup.)
 3. Router + unknown-category log; tests from the Fri 18 Sep fixture (§5.4).
 4. Document pipeline (download → text → delete), annexure parser, unit normalizer (test vectors in §5.7).
 5. LLM client (OpenAI SDK): routing tiers and escalation triggers, spend caps, structured output + validation, logging, Batch mode for backfill. Plus labelled-set evaluation.
@@ -573,31 +587,41 @@ straight after Slice 0, because `first_seen_at` cannot be backfilled).
 
 ## 11. Open decisions
 
-Resolved since v0.2: the model acceptance threshold (§6 — kept at 95%, but recorded as a smoke test), the T2 upgrade path (superseded by the Spike D bake-off), spend cap amounts (set after Spike D), the local dev database (D19), and the market-window edges (D6).
+Resolved since v0.2: the model acceptance threshold (§6 — kept at 95%, but recorded as a smoke test), the T2 upgrade path (superseded by the Spike D bake-off), spend cap amounts (set after Spike D), the local dev database (D19), the market-window edges (D6), whether BSE is in Phase 1 (D26), and the trading-day calendar source (D27).
 
 Still open:
 
 - User-Agent: one consistent browser-like UA, per D25 — chosen once, never rotated. Whether to append a contact string to it is still open.
 - Scanned PDFs: local OCR, a vision-capable model, or manual review only.
 - FX source for foreign-currency orders.
-- NSE holiday calendar source.
 - Opting into OpenAI data sharing for this project (free daily tokens vs sharing prompts).
 - Backup mechanism (rclone or n8n).
-- Local dev database (§9).
 - Event-study bucket edges (§5.11) — *narrowed*: the **primary** bucket is now fixed by D22 (value_to_ttm ≥ 15%, market cap < ₹10,000 cr, +5 days). The remaining reporting cells stay Default and are exploratory.
 
-Raised by Slice 0 Step 0:
+Raised by the spikes:
 
-- The full `CORP_IND` code list (XD/XI/XO seen; XB/XS/XR expected). Needed before Slice 7.
-- Source of circuit-band membership (5/10/20%), for the tradeable-vs-paper return split (D21).
-- Repo remote and branch name. The `user.email` typo is fixed and `reports/` is committed.
+- The full `CORP_IND` code list (XD/XI/XO/XR seen; XB/XS expected). Needed before Slice 7.
+- Source of circuit-band membership (5/10/20%), for the tradeable-vs-paper return split (D21). The `bh` file says *who hit a band*, not *what the band was*.
+
+### Blocked on Sravanth, before the next build phase
+
+Work only he can do:
+
+1. **Git remote.** There is none. Every commit exists only on the laptop — no offsite copy of the spikes, fixtures or decisions, and D1's deploy path (laptop push → VPS pull) does not exist.
+2. **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there and Slice 1 cannot store a row without it.
+3. **Ten order PDFs with hand-labelled expected JSON**, which gate Spike D. (~50 later for the eval set.)
+4. **`config/holidays_2026.yaml`**, per D27, before the live collector runs.
+
+Promised before the phases that need them: **VPS numbers** (Spike E — free memory, free disk, swap, the Docker network name, how Postgres is configured) and the **OpenAI model IDs and prices** (Spike D).
+
+Decisions owed, each blocking a slice: scanned PDFs (Slice 4) · FX source (Slice 4) · OpenAI data-sharing opt-in (Spike D) · User-Agent contact string (Slice 1) · backup mechanism (before the backfill, D14).
 
 ---
 
 ## 12. Glossary
 
 - **Bucket**: the router's label for a filing (noise, order_win, …).
-- **Event**: one real-world announcement, merging its NSE and BSE copies.
+- **Event**: one real-world announcement. Repeat filings of the same order are merged into one event (§5.3).
 - **TTM revenue**: the sum of the last four quarters' revenue.
 - **Point-in-time**: using only data that was public at that moment. Prevents look-ahead bias in the backfill.
 - **Contamination**: another material filing near an order, which could explain the price move instead.

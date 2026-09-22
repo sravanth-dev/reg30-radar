@@ -98,6 +98,11 @@ verified, store null plus a flag.
 - All 11 approved dependencies install from cp314 Windows wheels with no source builds.
 - Spikes and the eventual backfill run **on the laptop over a phone hotspot, not the campus
   network** (D19). The VPS runs only the live collector.
+- **Local database** (D19): PostgreSQL **16** on Windows, service `postgresql-x64-16`,
+  `psql` at `C:\Program Files\PostgreSQL\16\bin\psql`, listening on `127.0.0.1:5432`.
+  Role and database are both `tradebot`; the password lives only in the gitignored `.env`.
+  The venv has `psycopg` 3.3.6. `migrations/` is still empty — there is no schema yet, so a
+  successful connection proves the server, not the tables.
 - Branch `main`, tracking `origin/main` at `github.com/sravanth-dev/tradebot_NSE_order_scraper`. **Push after every commit** (Sravanth's standing instruction). A push carrying the 22 MB label set failed once with HTTP 408 over the hotspot and succeeded after `git config http.postBuffer 524288000`.
 
 ```bash
@@ -117,8 +122,12 @@ laptop matches one taken on the VPS.
 
 Needed from Sravanth:
 
-- **Postgres on the laptop**, with `DATABASE_URL` set. D19 puts the backfill there; Slice 1
-  cannot store a row without it.
+- ~~**Postgres on the laptop.**~~ **Installed and running, 22 Sep 2026** — PostgreSQL 16,
+  service `postgresql-x64-16`, listening on `127.0.0.1:5432`, and the `tradebot` role
+  exists. Remaining: the real password still has to be saved into the local `.env`,
+  which currently holds the `CHANGEME` placeholder. That file is machine-local and
+  gitignored by design, so no later session can confirm this from the repo — if a
+  connection fails, check `.env` first.
 - ~~`config/holidays_2026.yaml`~~ **supplied 22 Sep 2026** and committed. Still outstanding
   inside it: NSE has not published the 8 Nov Muhurat timings, so `session` is null.
 - **VPS numbers** for Spike E: free memory, free disk, swap, the external Docker network
@@ -452,3 +461,30 @@ Written by text substitution on the template rather than `json.dump`, so the bla
 grouping survives and each file stays diffable against `_template.json`. Verified: all
 nineteen parse, every non-`_source` field is byte-identical to the template, each SHA-256 is
 64 hex characters, and the stems pair one-to-one with the PDFs with no orphans either way.
+
+### 22 Sep 2026 (night) — laptop Postgres verified, .env password still missing
+
+Sravanth set up Postgres on the laptop and said he had put the connection string into
+`.env`. Checked it, and the picture is split.
+
+**What is verified working.** PostgreSQL **16** is installed, the `postgresql-x64-16`
+service is running, and something is listening on `127.0.0.1:5432`. The **`tradebot` role
+exists** — a deliberate connection attempt came back `FATAL: password authentication failed
+for user "tradebot"`, and that error is the evidence: had the role been missing the server
+would have said `role "tradebot" does not exist` instead, and had the database been missing
+it would have named the database. So the server-side setup is genuinely done. `psycopg`
+3.3.6 is in the venv, and `psql` is on PATH at `C:\Program Files\PostgreSQL\16\bin`.
+
+**What did not land.** `.env` still carries `DATABASE_URL=postgresql://tradebot:CHANGEME@...`,
+and its mtime is 22:20:12, the moment it was created earlier this session — byte-for-byte
+unchanged, one `DATABASE_URL` line, and no second env file anywhere in the tree. So the edit
+was never saved to this file. Flagged rather than worked around: asking for the password in
+chat would put a secret in a transcript, which CLAUDE.md's secrets rule exists to prevent.
+
+**Why this is worth writing down for a cold session.** `.env` is gitignored by design, so a
+later session cannot confirm any of this from the repo — it will only ever see the failure.
+If a connection fails, check `.env` before suspecting the server. The connection was **not**
+verified end to end, and this entry deliberately does not claim it was.
+
+Also confirmed while looking: `migrations/` is empty. There is no schema, so even a working
+connection would reach an empty database — Slice 1 still has to write `0001_init.sql`.

@@ -585,3 +585,32 @@ only for now.
 - The `jitter_seconds: [0.4, 1.6]` in config is read literally as an extra delay, so a 60 s
   poll lands at 60.4–61.6 s. It breaks exact periodicity but is small; revisit if NSE's
   behaviour suggests it matters.
+
+### 23 Sep 2026 (afternoon) — first real overflow, and it was caused by the laptop, not NSE
+
+Two hours into collection: 120 polls, 0 failures, 119 filings, average latency 336 ms.
+Ordinary polls land 63 s apart, which is D6's 60 s plus jitter plus the request itself.
+
+**One genuine overflow fired, at 13:10:11 — and the cause was on our side.** The previous
+poll was at 12:46:15, so the collector had stalled for **1,436 seconds (24 minutes)**, almost
+certainly the laptop sleeping. Every other gap in the whole run is 63 s. The endpoint only
+ever holds the 20 most recent filings, so a 24-minute silence is exactly the condition that
+rolls filings off the page before we ever see them.
+
+**The overflow machinery behaved correctly.** The poll came back full and entirely new, the
+flag was set, the catch-up re-poll ran once at the 3 s pace, and the following page overlapped
+what we held. But catching up does not recover what already rolled off — it only proves where
+the boundary is.
+
+**The measured cost was a two-minute hole, not twenty-four.** The newest filing held from
+before the stall is timestamped 12:45:09; the oldest on the recovery page is 12:47:11.
+Anything filed strictly between those two is gone. It is a small hole because midday filing
+volume is low enough that 20 records still reached back 23 minutes — at 18:00, when the day's
+filings are concentrated, the same 24-minute stall would have cost far more.
+
+**What this confirms.** The known gap recorded this morning — "a background process on the
+laptop, not a service" — is not theoretical; it cost data on day one. It also shows the
+`overflow` column earning its place: without it this hole would be invisible, and the data
+would look complete. D23's move to the VPS is the actual fix. Until then, check
+`source_health` for gaps before trusting any day's data, and treat a filing count that looks
+low as a stall until proven otherwise.

@@ -128,21 +128,33 @@ def now_ist() -> datetime:
     return datetime.now(IST)
 
 
-def in_market_window(moment: datetime, pacing: dict) -> bool:
-    """Is this moment inside D6's 08:00-22:00 IST collection window?"""
-    start_s, end_s = pacing["market_window_ist"]
-    start, end = _as_time(start_s), _as_time(end_s)
-    return start <= moment.timetz().replace(tzinfo=None) < end
+def band_for(moment: datetime, pacing: dict) -> dict | None:
+    """The pacing band this moment falls in, or None if it falls outside all of them.
+
+    Bands are half-open, [from, to), so adjacent bands cannot both claim the boundary
+    minute and 15:30 belongs unambiguously to the post-close band.
+    """
+    clock = moment.timetz().replace(tzinfo=None)
+    for band in pacing.get("bands") or []:
+        if _as_time(band["from"]) <= clock < _as_time(band["to"]):
+            return band
+    return None
 
 
 def poll_seconds(moment: datetime, cal: TradingCalendar, pacing: dict) -> int:
-    """The base interval for right now: 60 s inside the window on a trading day, else 10 min.
+    """The base interval for right now (D6, revised 23 Sep 2026).
+
+    On a trading day the rate comes from whichever band contains the moment: fast while
+    continuous trading is on, slower but far from idle after the close, because that is
+    when most filings actually arrive. Everything else falls back to the off-window rate.
 
     Jitter is applied by the caller, never here - a pure function that returns a different
     number every call cannot be tested.
     """
-    if cal.is_trading_day(moment.date()) and in_market_window(moment, pacing):
-        return int(pacing["market_window_seconds"])
+    if cal.is_trading_day(moment.date()):
+        band = band_for(moment, pacing)
+        if band is not None:
+            return int(band["seconds"])
     return int(pacing["off_window_seconds"])
 
 

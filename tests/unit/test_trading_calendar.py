@@ -16,9 +16,13 @@ from tradebot.common import calendar as cal
 IST = ZoneInfo("Asia/Kolkata")
 CAL = cal.load(2026)
 
+# Mirrors config/sources.yaml. D6 was revised on 23 Sep 2026 into three bands, after
+# measurement showed roughly two thirds of a day's filings arrive after 16:00.
 PACING = {
-    "market_window_ist": ["08:00", "22:00"],
-    "market_window_seconds": 60,
+    "bands": [
+        {"from": "08:00", "to": "15:30", "seconds": 60},
+        {"from": "15:30", "to": "22:00", "seconds": 180},
+    ],
     "off_window_seconds": 600,
 }
 
@@ -66,22 +70,34 @@ def test_a_year_with_no_file_raises_rather_than_assuming():
         cal.load(2099)
 
 
-def test_poll_interval_follows_d6():
-    trading_morning = datetime(2026, 9, 23, 10, 0, tzinfo=IST)
-    trading_late = datetime(2026, 9, 23, 23, 30, tzinfo=IST)
-    holiday_midday = datetime(2026, 12, 25, 12, 0, tzinfo=IST)
+@pytest.mark.parametrize("hh, mm, expected", [
+    (7, 59, 600),    # before the window opens
+    (8, 0, 60),      # window opens
+    (10, 0, 60),     # continuous trading
+    (15, 29, 60),    # last minute of continuous trading
+    (15, 30, 180),   # the close: post-close band takes over, slower but not idle
+    (17, 0, 180),    # the busiest hour of the day, measured 17 and 21 Sep
+    (21, 59, 180),   # last minute of the collection window
+    (22, 0, 600),    # window closes
+    (23, 30, 600),
+])
+def test_poll_interval_follows_the_three_bands(hh, mm, expected):
+    moment = datetime(2026, 9, 23, hh, mm, tzinfo=IST)   # a Wednesday, trading day
+    assert cal.poll_seconds(moment, CAL, PACING) == expected
 
-    assert cal.poll_seconds(trading_morning, CAL, PACING) == 60
-    assert cal.poll_seconds(trading_late, CAL, PACING) == 600
-    assert cal.poll_seconds(holiday_midday, CAL, PACING) == 600
+
+def test_bands_do_not_apply_on_a_non_trading_day():
+    # 17:00 is the busiest filing hour, but on Christmas nothing is trading, so the
+    # collector must drop to the off-window rate rather than the post-close rate.
+    assert cal.poll_seconds(datetime(2026, 12, 25, 17, 0, tzinfo=IST), CAL, PACING) == 600
+    assert cal.poll_seconds(datetime(2026, 9, 26, 17, 0, tzinfo=IST), CAL, PACING) == 600
 
 
-def test_market_window_edges():
-    # D6's window is 08:00 to 22:00 IST, inclusive of the start and exclusive of the end.
-    assert cal.in_market_window(datetime(2026, 9, 23, 8, 0, tzinfo=IST), PACING)
-    assert cal.in_market_window(datetime(2026, 9, 23, 21, 59, tzinfo=IST), PACING)
-    assert not cal.in_market_window(datetime(2026, 9, 23, 7, 59, tzinfo=IST), PACING)
-    assert not cal.in_market_window(datetime(2026, 9, 23, 22, 0, tzinfo=IST), PACING)
+def test_bands_are_half_open_so_1530_belongs_to_one_band_only():
+    # Adjacent bands must not both claim the boundary minute.
+    assert cal.band_for(datetime(2026, 9, 23, 15, 30, tzinfo=IST), PACING)["seconds"] == 180
+    assert cal.band_for(datetime(2026, 9, 23, 15, 29, tzinfo=IST), PACING)["seconds"] == 60
+    assert cal.band_for(datetime(2026, 9, 23, 22, 0, tzinfo=IST), PACING) is None
 
 
 def test_next_year_warning_only_fires_in_december():

@@ -614,3 +614,45 @@ laptop, not a service" — is not theoretical; it cost data on day one. It also 
 would look complete. D23's move to the VPS is the actual fix. Until then, check
 `source_health` for gaps before trusting any day's data, and treat a filing count that looks
 low as a stall until proven otherwise.
+
+### 23 Sep 2026 (evening) — D6 revised: three pacing bands, not a flat 60 s
+
+Sravanth asked why the collector was still polling every minute at 16:40 when the market
+closes at 15:30, and proposed dropping to 10 min after the close. **The premise turned out
+to be backwards, and measuring it changed the answer.**
+
+**Filings do not stop at 15:30 — that is roughly when they start.** From the two full-day
+API dumps already in `spikes/out/`, and from our own live feed:
+
+| Source | Share of filings after the close |
+|---|---|
+| 17 Sep 2026 (full day) | **64%** after 16:00 |
+| 21 Sep 2026 (full day) | **67%** after 16:00 |
+| 23 Sep live feed (to 16:38, day unfinished) | **32%** after 15:30 |
+
+The single busiest hour on both full days is **17:00** (83 and 89 filings) — ninety minutes
+after the close. It matters for the study specifically, not just in aggregate: **3 of 11** and
+**4 of 9** order filings on those days arrived after 16:00.
+
+**Why 10 minutes was rejected.** The endpoint returns only the 20 most recent filings, so a
+10-minute gap holding more than 20 loses the excess permanently. Today's **16:10 window held
+23** — that one poll would already have dropped filings, and the 17:00–19:00 peak had not
+started. Against the *API dumps* a 10-minute poll looked safe (worst window 18 and 21), but
+those dumps are the incomplete date-range query Spike A2 measured, so they understate density.
+The live feed is the right instrument and it disagreed.
+
+**Decided: three bands** — 60 s from 08:00 to 15:30, 3 min from 15:30 to 22:00, 10 min
+otherwise. That honours the instinct to ease off once trading stops, cuts evening requests
+about threefold, and leaves a wide overflow margin: a 3-minute window would need 20+ filings
+in 3 minutes, against a measured worst of 23 in 10.
+
+Implementation: `config/sources.yaml` now carries `pacing.bands` instead of a single
+window, and `poll_seconds` reads them. Bands are **half-open** so 15:30 belongs to exactly one
+of them. Tests went 45 → 54, covering each boundary minute and the case that would otherwise
+be easy to get wrong — 17:00 on a holiday must use the off-window rate, not the post-close
+rate, because no filings follow a board meeting that did not happen.
+
+Collector restarted on the new schedule and resumed from 347 stored hashes, so the restart
+cost nothing. **A general lesson worth keeping:** this file now holds two decisions whose
+stated rationale was checked against data for the first time this session, and one of them
+was wrong in its premise. Measuring was cheap — the dumps were already on disk.

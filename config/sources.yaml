@@ -48,9 +48,21 @@ nse:
       band_hitters: bh
 
   pacing:
-    # ARCHITECTURE.md D6 and Sect.5.1.
-    market_window_seconds: 60
+    # ARCHITECTURE.md D6 (revised 23 Sep 2026) and Sect.5.1.
+    #
+    # Three bands on a trading day, because filings do not stop when the market does.
+    # Measured on 17 and 21 Sep 2026 and again live on 23 Sep: roughly two thirds of a
+    # day's filings arrive AFTER 16:00, and the single busiest hour is 17:00 - companies
+    # file when the board meeting ends, not when trading closes. So the post-close window
+    # is slower than the trading window but nowhere near idle.
+    #
+    # Anything outside every band, and any non-trading day, uses off_window_seconds.
+    bands:
+      - {from: "08:00", to: "15:30", seconds: 60}    # continuous trading
+      - {from: "15:30", to: "22:00", seconds: 180}   # post-close: where most filings land
     off_window_seconds: 600
+
+    # Used by the overflow catch-up re-poll as well as the backfill: the fastest rate this
+    # project ever asks of NSE.
     backfill_min_gap_seconds: 3.0
     jitter_seconds: [0.4, 1.6]
-    market_window_ist: ["08:00", "22:00"]

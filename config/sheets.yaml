@@ -1,0 +1,22 @@
+# The Google Sheets mirror of raw_announcements - browsing only, never a source of truth.
+# Postgres stays the master copy; `python -m tradebot.sheets --rebuild` regenerates the
+# Sheet from it at any time. See WORKLOG.md, 23 Sep 2026 (night) for why this exists and
+# ARCHITECTURE.md Sect.9 for the layout.
+#
+# Credentials are NOT here: the service-account key path and the spreadsheet ID are
+# machine-local, not shared config, so they go in .env and are read through
+# tradebot.common.config.env() (CLAUDE.md D13).
+
+sheets:
+  api_base: https://sheets.googleapis.com/v4/spreadsheets
+  tab_name: raw_announcements
+
+  # How often the mirror catches up. Independent of the collector's D6 pacing bands on
+  # purpose - this process only ever reads our own database, never NSE, so none of the
+  # scraping politeness rules apply to it.
+  interval_seconds: 300
+  jitter_seconds: [1.0, 4.0]
+
+  # Rows per values.update call. Comfortably under the Sheets API's request-size limits
+  # even at this project's widest column (attachment_url).
+  chunk_size: 2000

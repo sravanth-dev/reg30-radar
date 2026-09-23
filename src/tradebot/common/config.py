@@ -63,5 +63,9 @@ def nse() -> dict:
     return sources()["nse"]
 
 
+def sheets() -> dict:
+    return load_yaml("sheets.yaml")["sheets"]
+
+
 def database_url() -> str:
     return env("DATABASE_URL")

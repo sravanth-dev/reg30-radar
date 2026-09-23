@@ -17,6 +17,7 @@ dependencies = [
   "APScheduler",
   "python-dotenv",
   "PyYAML",
+  "google-auth",
 ]
 
 [project.optional-dependencies]

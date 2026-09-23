@@ -29,7 +29,7 @@ def test_dependencies_are_the_approved_list():
     approved = {
         "requests", "feedparser", "pdfplumber", "pypdf", "lxml",
         "psycopg[binary]", "pydantic", "openai", "APScheduler",
-        "python-dotenv", "PyYAML",
+        "python-dotenv", "PyYAML", "google-auth",
     }
     declared = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert set(declared["project"]["dependencies"]) == approved

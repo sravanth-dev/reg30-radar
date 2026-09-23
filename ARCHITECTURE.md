@@ -1,8 +1,14 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 1.1 · 23 Sep 2026 · Owner: Sravanth
+Version 1.2 · 23 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v1.2 pulls part of **D11** forward from Phase 2: a one-way, view-only mirror of
+  `raw_announcements` into a Google Sheet (`src/tradebot/sheets/`), so the collector's
+  output can be browsed without writing SQL each time. Postgres stays authoritative; the
+  Sheet is disposable and `--rebuild` regenerates it. Scored orders and the daily digest
+  stay in Phase 2, per D11 as written. Adds `google-auth` to §9's approved dependencies and
+  a `sheets_sync` watermark table to §7.
 - v1.1 revises **D6** from a flat 60 s to three pacing bands, after measuring when filings actually arrive: 64–67% of a day's filings land after 16:00 and the busiest hour is 17:00, so the post-close window is eased to 3 min rather than the 10 min first proposed — 10 min would overflow the endpoint's 20-record page, which a measured 23-filing window on 23 Sep showed is not hypothetical. §5.1 and `config/sources.yaml` follow.
 - v1.0 makes bundle-vs-API reconciliation a permanent backfill step rather than a spike finding (§5.11, `src/tradebot/backfill/reconcile.py`), and records the statistical power of the pre-registered rule: 30 events resolves only a ~2.4% net edge, so §5.11 now states what the floor does and does not buy. D26 is final — BSE is out.
 - v0.9 **corrects two measurement errors of mine** that made the API look far worse than it is. The `an<date>.txt` bundle is a *report* for that date covering filings disseminated since the previous report, so comparing it to the API's same-date query was a category error; and the Spike A claim that the symbol query "stops at 31 Oct 2025" came from string-sorting `DD-Mon-YYYY`. Corrected: **mainboard order coverage is 8 of 8** on the day tested, and the symbol query spans 2004 to the previous day. The backfill is not blocked.
@@ -37,7 +43,10 @@ Phase 1 builds:
 We collect and classify everything, but act only on order wins.
 
 ### Not in Phase 1
-Order placement or any broker code · media sources (Moneycontrol etc.) · live alerts · Google Sheets sync · intraday prices · SME-platform companies · everything in §5.12.
+Order placement or any broker code · media sources (Moneycontrol etc.) · live alerts ·
+**scored-orders / daily-digest Google Sheets sync** (D11's Phase 2 scope — a plain
+view-only mirror of the raw filings runs now, §7 `sheets_sync`) · intraday prices ·
+SME-platform companies · everything in §5.12.
 
 ---
 
@@ -55,7 +64,7 @@ Order placement or any broker code · media sources (Moneycontrol etc.) · live 
 | D8 | PDF retention | Delete each PDF after text extraction; keep text, URL and SHA-256. The `tests/labelled/` PDFs stay in the repo permanently — **exception confirmed** | Decided |
 | D9 | Universe | NSE mainboard only. The original clause about BSE filings for dual-listed companies is moot since D26 dropped BSE from Phase 1 | Decided |
 | D10 | Backfill | 12 months of announcements. Prices, market caps and band hitters: 12 months **+ 30 trading days**, so the −20-day pre-event window and 20-day average volume have room at the start. Results: 24 months, so four quarters precede the earliest event | Decided |
-| D11 | Google Sheets | Phase 2: scored orders + daily digest, one-way (view-only) | Decided |
+| D11 | Google Sheets | Phase 2: scored orders + daily digest, one-way (view-only). **Narrowed forward, v1.2**: a plain one-way mirror of `raw_announcements` (no scoring, no digest) runs now, so the filings can be browsed without SQL — see §7 `sheets_sync` and §9 | Decided |
 | D12 | Python | Same version on laptop and VPS: 3.14. **Windows/cp314 verified** in Step 0 — all 11 approved deps installed from wheels on 3.14.2, no source builds. manylinux still to check (Step 1) | Default |
 | D13 | Secrets | `.env` on each machine only; `.env.example` committed | Default |
 | D14 | Backups | Nightly `pg_dump` of `tradebot` to Google Drive, in place **before the backfill**, not before live use: the backfill is weeks of scraping plus LLM spend and is the expensive thing to lose | Default (mechanism Open) |
@@ -589,6 +598,13 @@ All timestamps `timestamptz`; money `NUMERIC(20,2)`. **Ratios are not money** an
 - `unknown_categories`(exchange, category_raw, first_seen, count)
 - `backfill_checkpoints`(job, key, done_at)
 - `schema_migrations`(version, applied_at)
+- `sheets_sync`(id, run_at, ok, rows_written, first_row, last_row, **last_raw_id**, error) —
+  the watermark for the Google Sheets mirror (v1.2, D11, `src/tradebot/sheets/`), one row
+  per sync run like `source_health`. `last_raw_id` and `last_row` are only ever read back
+  from a row where `ok` is true, which is what makes a retried write idempotent: a run
+  whose write reaches the Sheet but then fails before this row is recorded leaves the next
+  run to redo that chunk, writing the same content to the same sheet rows rather than a
+  new position.
 
 Migrations (Default): plain numbered SQL files in `migrations/` (`0001_init.sql`, …) applied by a small runner. No ORM magic, so every schema change is readable.
 
@@ -618,7 +634,7 @@ tradebot/
   src/tradebot/
     common/  (config, db, logging, time, http, migrate)
     collector/  normalizer/  router/  documents/  extractor/  units/
-    revenue/  market/  calculator/  backfill/  llm/  eval/
+    revenue/  market/  calculator/  backfill/  llm/  eval/  sheets/
   tests/
     fixtures/  (an18092026.txt, pd18092026.csv, mcap18092026.csv, bh18092026.csv;
                 BhavCopy_BSE_CM_0_0_0_20260918_F_0000.CSV — kept as UDiFF column evidence)
@@ -628,7 +644,8 @@ tradebot/
   reports/
 ```
 
-- **Approved dependencies** (Default): requests, feedparser, pdfplumber, pypdf, lxml, psycopg[binary] (v3), pydantic, openai, APScheduler, python-dotenv, PyYAML, pytest. Ask before adding anything else.
+- **Approved dependencies** (Default): requests, feedparser, pdfplumber, pypdf, lxml, psycopg[binary] (v3), pydantic, openai, APScheduler, python-dotenv, PyYAML, pytest,
+  **google-auth** (v1.2 — service-account auth for the Sheets mirror in `src/tradebot/sheets/`; not `gspread` or `google-api-python-client`, which are not on this list). Ask before adding anything else.
 - **Docker Compose** (Default): one image, two services:
   - `collector`: live polling;
   - `worker`: router, documents, extractor, calculator, and scheduled revenue/market jobs.

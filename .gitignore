@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Google service-account key files must never land in the repo, wherever they are saved.
+secrets/
+*service-account*.json
+
 # Virtualenv (Windows layout is .venv/Scripts, Linux is .venv/bin)
 .venv/
 

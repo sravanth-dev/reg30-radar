@@ -80,6 +80,11 @@ python -m tradebot.common.migrate       # apply migrations/*.sql in order
 python -m tradebot.collector --once
 python -m tradebot.backfill --from 2025-09-22 --to 2026-09-18
 
+# browse raw_announcements as a Google Sheet, view-only mirror (D11, v1.2)
+python -m tradebot.sheets --once        # one sync, then exit
+python -m tradebot.sheets --rebuild     # clear the sheet and resync everything
+python -m tradebot.sheets               # run continuously, every 5 min
+
 # VPS
 git pull && docker compose up -d --build
 docker compose logs -f collector

@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 22 Sep 2026*
+*Last updated: 23 Sep 2026 (night)*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -46,6 +46,12 @@ category error; and "the symbol query stops at Oct 2025" came from string-sortin
 `DD-Mon-YYYY`. Re-measured over a two-day window, **mainboard order coverage is 8 of 8**, and
 the symbol query returns a company's whole 22-year history in one call — so the backfill is
 one request per company, not per company-day. Caveats in §5.1.
+
+**Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
+`raw_announcements` into a Google Sheet, view-only, so Sravanth can browse filings without
+writing SQL. Built 23 Sep 2026 night, pulling a narrow slice of D11 forward from Phase 2.
+Needs a one-time Google Cloud service-account setup (his side) before its first live run;
+code and tests do not depend on that.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -656,3 +662,79 @@ Collector restarted on the new schedule and resumed from 347 stored hashes, so t
 cost nothing. **A general lesson worth keeping:** this file now holds two decisions whose
 stated rationale was checked against data for the first time this session, and one of them
 was wrong in its premise. Measuring was cheap — the dumps were already on disk.
+
+### 23 Sep 2026 (night) — decision: mirror raw filings to Google Sheets now
+
+Sravanth wants to browse the collected filings like a spreadsheet instead of writing SQL.
+He described them as "scraped from n8n"; they are not — the only scraped announcements are
+the Python collector's, in the laptop `tradebot` database (709 filings from 537 companies,
+23 Sep 09:39–21:55 at the time). He confirmed that is the data he meant.
+
+**Decided: automatic Google Sheets sync, pulled forward from Phase 2.** Chosen over a CSV
+export and over pgAdmin (already installed with Postgres 16, and the zero-code fallback).
+This brings part of **D11** forward, narrowly: a one-way, view-only **mirror of
+`raw_announcements`**. D11's scored-orders tab and daily digest stay in Phase 2.
+
+**Dependency approved: `google-auth`** (pure Python), for service-account auth against the
+Sheets REST API through its `AuthorizedSession`. Not `gspread` or
+`google-api-python-client` — one small package and plain `requests`-style calls.
+
+Shape, so a cold session does not re-derive it: a separate process
+(`python -m tradebot.sheets`), never inside the collector, because a Sheets failure must not
+cost forward data; fixed-position writes (sheet row r = the (r−1)-th filing by id) so a
+write that lands but times out on the hotspot is retried into the same cells rather than
+duplicated; `valueInputOption=RAW` so a filing headline can never become a formula;
+Postgres stays the truth and `--rebuild` regenerates the Sheet. Not n8n: it runs on the VPS,
+cannot reach the laptop database, and rule 7 keeps us out of it.
+
+**Blocked on Sravanth for the live run only**: a Google Cloud service account, its JSON key
+saved outside the repo, a blank Sheet shared with the account's email, and both paths in
+`.env`. The code and its tests do not need them.
+
+### 23 Sep 2026 (night, cont.) — Sheets mirror built, tested, migrated; live run still blocked
+
+What changed: `python -m tradebot.sheets`, a new process that mirrors `raw_announcements`
+into a Google Sheet — view-only, one-way, Postgres stays authoritative. Why: recorded in
+the decision entry just above. New table `sheets_sync` (`migrations/0002_sheets_sync.sql`)
+holds one row per sync run and the watermark the retry logic reads back.
+
+**Design point worth keeping**, because it is the part most likely to be gotten wrong on a
+naive read of the plan: the watermark is only ever read from a row where `ok = true`. If a
+sync's write reaches Google but the process dies before it can record success — plausible
+on the hotspot — the *next* run does not know the write happened, and simply redoes the
+same chunk. Because every row is pinned to a fixed sheet position
+(row *r* = the (*r*−1)-th filing by `raw_announcements.id`), redoing it overwrites the same
+cells with the same content rather than appending a duplicate. Verified with a unit test
+that forces a write to "land" and then raises before the record step, then reruns the sync
+and checks the retry's first write call is byte-for-byte the one the failed run would have
+made.
+
+**Verified, not just written:**
+- 68 unit tests pass, 14 of them new for this slice: row formatting —
+  UTC→IST, `None`→`""`, the 50,000-character cell cap; the Sheets client's request shape —
+  `valueInputOption=RAW` always, the A1 range math, grid-growth only when needed; and the
+  sync/retry/rebuild behaviour above). No network, no real database — a small in-memory
+  fake stands in for the psycopg connection, dispatching on which of the three queries
+  sync.py sent.
+- `python -m tradebot.common.migrate` applied `0002_sheets_sync` cleanly against the real
+  laptop database. Confirmed by reading back the table's columns and confirming
+  `raw_announcements`'s row count only changed by ordinary collector activity (709 → 714
+  between the two checks) — this migration touches nothing in it.
+
+**Not yet verified: an actual live sync.** That needs the service-account key and Sheet ID
+Sravanth has to create by hand (steps recorded above and in
+`.claude/plans/actually-from-n8n-we-sorted-crab.md`, also summarized in the reply to him).
+Once those are in `.env`, `python -m tradebot.sheets --once` is the first real test, and it
+should be checked against `select count(*) from raw_announcements` per the plan's
+verification section.
+
+**Dependency added**: `google-auth`, for `AuthorizedSession` — a `requests.Session` that
+refreshes its own service-account bearer token. Not `gspread` or
+`google-api-python-client`. Added to `pyproject.toml` and the pinned set in
+`tests/unit/test_scaffold.py`.
+
+ARCHITECTURE.md → v1.2 (D11 narrowed forward, §7 gains `sheets_sync`, §9 gains
+`google-auth` and the `sheets/` package). CLAUDE.md's Commands section lists the three
+invocations. `.env.example` gains `GOOGLE_SERVICE_ACCOUNT_FILE` / `GOOGLE_SHEET_ID` as
+`CHANGEME`. `.gitignore` gains `secrets/` and `*service-account*.json`, since a key file
+must never reach the repo even by accident.

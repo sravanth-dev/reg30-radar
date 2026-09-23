@@ -49,9 +49,9 @@ one request per company, not per company-day. Caveats in §5.1.
 
 **Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
 `raw_announcements` into a Google Sheet, view-only, so Sravanth can browse filings without
-writing SQL. Built 23 Sep 2026 night, pulling a narrow slice of D11 forward from Phase 2.
-Needs a one-time Google Cloud service-account setup (his side) before its first live run;
-code and tests do not depend on that.
+writing SQL. Built and **verified live** 23 Sep 2026 night, pulling a narrow slice of D11
+forward from Phase 2. Not yet running continuously - `--once` has been run by hand twice;
+leaving it running (`python -m tradebot.sheets`, 5 min interval) is still to do.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -94,6 +94,12 @@ real test.
 
 **Money is `Decimal`, never float. Never guess a number.** If a value cannot be extracted and
 verified, store null plus a flag.
+
+**Editing a Windows path (backslashes) through `bash -c "python -c '...'"` goes through two
+layers of escaping and silently corrupts it.** A `.env` fix once turned `\t` into a literal
+tab character, splitting a filename in two, with no error raised anywhere - the file just
+had a wrong value that later failed a completely different way. Write the edit to a real
+`.py` file with `pathlib` and run it by path instead; that is one layer of escaping, not two.
 
 ---
 
@@ -721,12 +727,55 @@ made.
   `raw_announcements`'s row count only changed by ordinary collector activity (709 → 714
   between the two checks) — this migration touches nothing in it.
 
-**Not yet verified: an actual live sync.** That needs the service-account key and Sheet ID
-Sravanth has to create by hand (steps recorded above and in
-`.claude/plans/actually-from-n8n-we-sorted-crab.md`, also summarized in the reply to him).
-Once those are in `.env`, `python -m tradebot.sheets --once` is the first real test, and it
-should be checked against `select count(*) from raw_announcements` per the plan's
-verification section.
+**Live sync now verified end to end (23 Sep 2026, later the same night).** Sravanth set up
+the service account and Sheet and asked for it to be tested.
+
+Two setup problems, both fixed without going back to him:
+
+1. `.env`'s `GOOGLE_SERVICE_ACCOUNT_FILE` pointed at the key's **folder**, not the file -
+   an easy mistake since `os.path.exists()` is true for a directory too, which is why the
+   plan's own smoke test should have checked `os.path.isfile`, not `os.path.exists`.
+   Fixing it in place became its own small lesson: a first attempt via `python3 -c` with a
+   Windows path through two layers of shell/string escaping silently corrupted the line -
+   a literal tab landed where a backslash should have been, splitting `trade-bot-...` into
+   `t` + `rade-bot-...`. Redone as a standalone script using `pathlib`, with the full
+   correct path written directly rather than built by string surgery on the corrupted
+   value. **Lesson for next time**: never edit a Windows path via an inline shell `-c`
+   string; write a small script file and run it, so there is only one layer of escaping
+   (Python's), not two.
+2. A brand-new Google Sheet's default tab is named `Sheet1`, not `raw_announcements`
+   (`config/sheets.yaml`'s `tab_name`). Renamed it via the same `batchUpdate` endpoint the
+   client already uses for freezing the header row, rather than sending Sravanth back to
+   the UI - a one-line, non-destructive, easily-reversed call.
+
+**One real bug, caught by the live run and not by any test**: `client.py`'s `_properties()`
+built the Sheets API `fields` mask as `"sheets.properties,protectedRanges"` when asked for
+the protection info. That parses as *two separate top-level* selectors, and
+`protectedRanges` only exists per-sheet, not at the spreadsheet's top level - so the API
+rejected it with `INVALID_ARGUMENT`. None of the 68 unit tests caught this because the fake
+HTTP session in `tests/unit/test_sheets.py` never validated the `fields` parameter's
+syntax, only the calls made around it. Fixed to nest correctly: `"sheets(properties,
+protectedRanges)"`. **Worth remembering**: a fake that answers *any* well-formed request
+verifies the code's control flow, not its wire format - the wire format only gets checked
+by hitting the real API at least once.
+
+**Verified against the real Sheet, not assumed:**
+- First sync wrote all **719** filings then in `raw_announcements` (max id 722; the id gaps
+  are ordinary - Postgres's identity sequence advances even on an `ON CONFLICT DO NOTHING`
+  skip, so the count and the max id were never expected to match).
+- A second `--once` run wrote **0** new rows and recorded `ok=true` with the same watermark
+  - confirmed in `sheets_sync`, not just from the absence of a log line.
+- Pulled the header and first two data rows back over the API by hand: correct columns,
+  IST-formatted timestamps, real filing text (NTPCGREEN, PILANIINVS).
+- The header row is frozen (`frozenRowCount: 1`) and a warning-only protected range exists
+  on the tab, both confirmed by reading the Sheet's properties back, not just by the write
+  call succeeding.
+
+The Google Cloud project is `trade-bot-509516`; the service account is
+`trade-bot@trade-bot-509516.iam.gserviceaccount.com`. Neither the key file's contents nor
+the database password were ever read into this session, in either direction - only paths,
+booleans and the one non-secret config line (`GOOGLE_SERVICE_ACCOUNT_FILE`'s value, a file
+path, not a credential) were inspected while debugging.
 
 **Dependency added**: `google-auth`, for `AuthorizedSession` — a `requests.Session` that
 refreshes its own service-account bearer token. Not `gspread` or

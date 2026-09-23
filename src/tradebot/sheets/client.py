@@ -70,7 +70,11 @@ class SheetsClient:
         return f"'{self.tab_name}'!{range_in_tab}"
 
     def _properties(self, extra_fields: str = "") -> dict:
-        fields = "sheets.properties" + (f",{extra_fields}" if extra_fields else "")
+        # Both extras must nest inside the same `sheets(...)` selector - "sheets.properties,
+        # protectedRanges" parses as two top-level fields, and protectedRanges only exists
+        # per-sheet, not at the spreadsheet's top level, so the API rejects it outright.
+        inner = "properties" + (f",{extra_fields}" if extra_fields else "")
+        fields = f"sheets({inner})"
         r = self.session.get(self._url(), params={"fields": fields})
         _raise_for_status(r)
         for sheet in r.json().get("sheets", []):

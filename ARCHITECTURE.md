@@ -584,7 +584,7 @@ All timestamps `timestamptz`; money `NUMERIC(20,2)`. **Ratios are not money** an
 - `financials`(isin, period_end, period_months, basis, revenue_inr, scale, filed_at, source_url) — UNIQUE(isin, period_end, basis)
 - `materiality`(order_id, ttm_revenue_inr, ttm_asof, basis, mcap_inr, mcap_date, value_to_ttm, next12m_to_ttm, value_to_mcap, flags) — the three ratios are `NUMERIC(12,6)`.
 - `llm_calls`(id, ts, tier, model, prompt_version, purpose, event_id, in_tokens, cached_tokens, out_tokens, cost_usd, batch_id, latency_ms, status, escalation_reason, error)
-- `source_health`(id, source, checked_at, ok, error) — **one row per poll, not one per source**. A single mutable row answers "is it up now?" and nothing else; keeping history is what makes an outage diagnosable afterwards.
+- `source_health`(id, source, checked_at, ok, error, **http_status**, **latency_ms**, **records_returned**, **new_records**, **overflow**) — **one row per poll, not one per source**. A single mutable row answers "is it up now?" and nothing else; keeping history is what makes an outage diagnosable afterwards. The last five columns were added in Slice 1 (`migrations/0001_init.sql`) for a reason specific to the live endpoint: it returns only the **20 most recent** filings, so a full page that is entirely new means the page may have rolled over since the last poll and filings in between are gone. `overflow` records each such poll, which is what turns that risk into a measured rate rather than an assumption.
 - `unknown_categories`(exchange, category_raw, first_seen, count)
 - `backfill_checkpoints`(job, key, done_at)
 - `schema_migrations`(version, applied_at)
@@ -666,7 +666,7 @@ hybrid source plan in §5.1 (the PR bundle cannot carry timestamps or PDF links,
 still needed for order filings), and D23 (a minimal NSE-only live collector starts on the VPS
 straight after Slice 0, because `first_seen_at` cannot be backfilled).
 
-1. Collector (NSE live + backfill mode), raw store, source health.
+1. Collector (NSE live + backfill mode), raw store, source health. — **Live half DONE** (23 Sep 2026): `src/tradebot/collector/` polls the announcements endpoint on D6's schedule, stores every filing in `raw_announcements` and every poll in `source_health`, with the trading-day calendar failing loudly per D27. **Backfill mode is not built yet**, and is the remaining half of this slice.
 2. Instruments / ISIN map, normalizer, intra-NSE dedup. (Much smaller since D26 removed the BSE collector and cross-exchange dedup.)
 3. Router + unknown-category log; tests from the Fri 18 Sep fixture (§5.4).
 4. Document pipeline (download → text → delete), annexure parser, unit normalizer (test vectors in §5.7).
@@ -685,7 +685,7 @@ Resolved since v0.2: the model acceptance threshold (§6 — kept at 95%, but re
 
 Still open:
 
-- User-Agent: one consistent browser-like UA, per D25 — chosen once, never rotated. Whether to append a contact string to it is still open.
+- ~~User-Agent: whether to append a contact string.~~ **Decided 23 Sep 2026: no contact string.** The collector sends exactly the browser-like UA already in `config/sources.yaml`, which every spike and the live collector have now proven against Akamai. Sect.3 records the tension — an honest UA is what robots.txt invites and is also what bot management is most likely to refuse — and the call is to keep the proven string rather than risk the hard block D19 exists to avoid. The UA lives in `config/sources.yaml` only; `HTTP_USER_AGENT` has been removed from `.env`/`.env.example`, because it is not a secret and two places to set it invites exactly the rotation D25 forbids.
 - Scanned PDFs: local OCR, a vision-capable model, or manual review only.
 - FX source for foreign-currency orders.
 - Opting into OpenAI data sharing for this project (free daily tokens vs sharing prompts).

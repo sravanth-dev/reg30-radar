@@ -23,10 +23,10 @@ D26), classify them, extract order wins, measure order value against revenue and
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are.** Slice 0 (spikes). Two of six done, and both reversed a design decision
-that had already been written into the spec. **No production code exists yet** —
-`src/tradebot/` is thirteen empty packages. Everything so far is scaffold, tests against
-fixtures, and throwaway probes in `spikes/`.
+**Where we are.** Slice 0 (spikes) plus **the live half of Slice 1, which is running**.
+The collector polls NSE and writes to the local Postgres — this is the first production
+code in the repo, and the first data that cannot be re-created if lost (D23:
+`first_seen_at` cannot be backfilled). Spikes C, D and E are still not started.
 
 | Spike | Status |
 |---|---|
@@ -520,3 +520,68 @@ harmless — `timestamptz` stores UTC internally and the edges convert with
 timestamp. Not worth changing, but worth recognising rather than re-investigating.
 
 `migrations/` is still empty, so the database has no schema. Slice 1 writes `0001_init.sql`.
+
+### 23 Sep 2026 — Slice 1 live collector: built, verified, running
+
+The live feed is collecting into the laptop Postgres. `python -m tradebot.collector`
+polls the announcements endpoint on D6's schedule and writes every filing to
+`raw_announcements` and every poll to `source_health`. First production code in the repo.
+
+**Two decisions Sravanth made, both of which were blocking.**
+
+1. **User-Agent: no contact string** (Sect.11 was Open, and named as blocking Slice 1). The
+   collector sends exactly the browser-like UA already in `config/sources.yaml`. Sect.3's
+   tension is real — an honest UA is what robots.txt invites and what bot management is most
+   likely to refuse — and the call is to keep the string every spike has proven rather than
+   risk the hard block D19 exists to avoid. Consequence: `HTTP_USER_AGENT` is **gone** from
+   `.env` and `.env.example`, because it is not a secret and two places to set it is exactly
+   how the rotation D25 forbids happens by accident.
+2. **Overflow handling: 60 s base, re-poll on overflow.** The endpoint returns only the **20
+   most recent** filings, and ~1,229 arrive a day, concentrated 16:00–21:00. A burst above 20
+   between two polls is lost permanently. So D6's 60 s stands as the base rate, and when a
+   poll comes back full *and* entirely new the collector re-polls at the backfill pace (3 s)
+   until a page overlaps what it holds — the proof nothing fell through. Bounded at 20 extra
+   polls so a permanently-full page cannot spin.
+
+**The earlier live-feed spike did not do what this file claimed.** The previous entry said it
+was "running since 22 Sep 14:02, reconcile against the 23 Sep bundle". It actually **died at
+14:18 after 15 polls**, when the session that started it ended. It was clean while alive — 15
+polls, 0 errors, 26 records, no overflow — but the one-day reconciliation never happened, so
+the question it existed to answer is still open: does the live endpoint carry the same
+completeness as the symbol query? The new collector is the better instrument for it anyway,
+because `source_health` now records the overflow signal on every poll.
+
+**A bug found by running it.** The first poll flagged `OVERFLOW` — a false positive, because
+from an empty database every record is new by definition. The spike had guarded against this
+explicitly and my rewrite dropped the guard. Fixed (cold start is excluded), and the one bad
+`source_health` row was corrected in place rather than left to inflate the very rate that
+column exists to measure. `raw_announcements` was untouched: those 20 filings are real.
+
+**Verified against the database, not assumed:**
+
+- re-polling an unchanged filing inserts **nothing** (unique on source, source_id, hash);
+- an **amended** payload under the same `source_id` lands as **revision 2** rather than being
+  silently dropped — the failure Sect.5.3 was written about;
+- `UPDATE` and `DELETE` on `raw_announcements` are **refused by a trigger**, so CLAUDE.md's
+  append-only rule is a property of the database and not just prose;
+- timestamps come back `+05:30` and tz-aware; the collector resumes from stored hashes
+  across restarts.
+
+Live numbers from the first minutes: 4 polls, 0 failures, 0 overflows, median latency 132 ms,
+22 filings stored, one of them an order win (SKIPPER, `Bagging/Receiving of orders/contracts`).
+
+**What is deliberately not built.** Backfill mode — the other half of Slice 1. No router, no
+dedup into events, no document downloads; those are Slices 2–4, and D23 specifies raw store
+only for now.
+
+**Known gaps, stated rather than discovered later:**
+
+- **The collector is a background process on the laptop, not a service.** It will die when the
+  machine sleeps or reboots — which is exactly how the spike died. D23 puts it on the VPS;
+  until then, treat a gap in `source_health` as the expected failure mode and check it.
+- **No database-backed tests.** The 45 unit tests cover parsing, hashing, identity and the
+  calendar, all without a database. Dedup, revisions and the append-only trigger were verified
+  by hand this session. That should become a marked test suite rather than a one-off.
+- The `jitter_seconds: [0.4, 1.6]` in config is read literally as an extra delay, so a 60 s
+  poll lands at 60.4–61.6 s. It breaks exact periodicity but is small; revisit if NSE's
+  behaviour suggests it matters.

@@ -16,17 +16,18 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 24 Sep 2026 (later)*
+*Last updated: 25 Sep 2026 (past midnight, same working session as "24 Sep night")*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are.** Slice 0 (spikes) plus **the live half of Slice 1, which is running**.
-The collector polls NSE and writes to the local Postgres — this is the first production
-code in the repo, and the first data that cannot be re-created if lost (D23:
-`first_seen_at` cannot be backfilled). Spikes C, D and E are still not started.
+**Where we are.** Slice 0 (spikes), the live half of Slice 1, and now a first working slice
+of Slice 3+4+5 together: a minimal order-relevance gate, the document pipeline, and LLM
+extraction, run for real against a full day of live-collected filings. Spikes C and E are
+still not started; Spike D (the model bake-off) was superseded for now by Sravanth's direct
+model choice (see the night/continued entries below).
 
 | Spike | Status |
 |---|---|
@@ -35,8 +36,9 @@ code in the repo, and the first data that cannot be re-created if lost (D23:
 | **A2** — API completeness | Done. **Backfill is viable.** Reconciliation now runs per-day in the backfill. |
 | Live-feed reconciliation | **Running** since 22 Sep 14:02 IST; reconcile against the 23 Sep bundle. |
 | **C** — results XBRL | Not started |
-| **D** — extraction bake-off | **Arm 1 done** (24 Sep): parser alone scores **44%** exact `value_inr` on 18 labelled docs. Arms 2-4 need an OpenAI key. |
-| Slice 4 (document pipeline) | **Built and unit-tested** (24 Sep, later): download -> SHA-256 -> extract -> store -> delete-the-PDF, in `src/tradebot/documents/`. **Not yet wired to the collector** — nothing downloads a filing's PDF automatically yet; §5.4's router has to exist first to decide which filings qualify (D7). |
+| **D** — extraction bake-off | **Superseded for now** (24 Sep night, continued): Sravanth chose `tier1_model`/`ocr_model = gpt-6-luna` directly rather than waiting for the bake-off. Arm 1 (parser alone) still stands at **44%** on 18 labelled docs; the full T0+LLM chain reaches **67%** on the same set (a development number, not a bake-off-gated one). The bake-off itself is not cancelled - still the right way to confirm or revise the model choice once ~50 labelled PDFs exist. |
+| Order-relevance gate + extraction (§5.4-§5.6) | **Built and run for real** (24-25 Sep, night): `router/orders.py`, `extractor/{provenance,llm_extract}.py`, `orders/` (`run.py`/`store.py`/`report.py`/`__main__.py` - both `--date`/`--from`/`--to` and `--follow` branches share one core). Run live against 23 Sep's 725 filings: 124 downloaded (widened D7 - see below), 10 order-related (3 of them found only via the catch_all keyword prefilter, not by category), 5 verified, real cost $0.008236 (corrected - see below). Reports: `reports/orders_2026-09-23.md`/`.csv` (one row per filing) and `orders_2026-09-23_detail.md` (every extracted field, in prose). `--follow` (the continuous live branch) is built and tested but has not yet been started running. |
+| Slice 4 (document pipeline) | **Built and unit-tested** (24 Sep, later): download -> SHA-256 -> extract -> store -> delete-the-PDF, in `src/tradebot/documents/`. Extended (24 Sep, night) with a per-page quality ladder (`quality.py`) and dormant vision OCR (`ocr.py`, `llm/client.py`); **the LLM client is no longer dormant** (24 Sep night, continued) - `config/llm.yaml` carries a real model, prices and $1/month caps. **Now wired to a caller** (`orders/run.py`), gated by `router/orders.py` - the first real download-and-extract traffic in the repo beyond tests. |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
 | Python 3.14 wheels | Windows half verified; manylinux not checked. |
 
@@ -101,6 +103,23 @@ layers of escaping and silently corrupts it.** A `.env` fix once turned `\t` int
 tab character, splitting a filename in two, with no error raised anywhere - the file just
 had a wrong value that later failed a completely different way. Write the edit to a real
 `.py` file with `pathlib` and run it by path instead; that is one layer of escaping, not two.
+
+**A new PDF fixture outside `tests/labelled/` needs its own `.gitignore` negation, or it
+never gets committed.** `.gitignore` ignores `*.pdf` globally and un-ignores only
+`tests/labelled/*.pdf` (D8: downloaded PDFs are deleted after extraction; the labelled set
+is the one standing exception). Adding `tests/fixtures/scans/hmt_glyphless.pdf` on 24 Sep
+2026 night silently matched the global ignore - `git status` showed every other new file
+but not it - until a `git status`/`git check-ignore` check caught it and a second negation
+line was added. Check `git status` for every new fixture before assuming it will be
+committed; a silent miss here means a fresh clone's tests quietly skip instead of failing.
+
+**`env(name, required=False)` does not apply the `CHANGEME` placeholder check - only
+`required=True` does.** Building `llm/client.py`'s "missing key must refuse" path with
+`required=False` (so a missing key refuses gracefully instead of crashing) meant a
+still-`CHANGEME` `.env` value came back as a truthy string, was treated as a real key, and
+the test sent it to OpenAI as a real API key - a genuine network call from inside `pytest`,
+caught only because it 401'd immediately. Any future `env(required=False)` caller has to
+check for the literal `"CHANGEME"` string itself; it is not filtered out for you.
 
 ---
 
@@ -903,3 +922,271 @@ harmless since nothing downstream reads it yet.
 
 Diagnostic re-download was to `spikes/out/diag/`, outside the pipeline's own delete path,
 and was cleaned up by hand afterward.
+
+### 24 Sep 2026 (night) — per-page quality ladder built, vision OCR built dormant
+
+Executed the plan at `.claude/plans/read-claude-md-and-architecture-md-ethereal-valley.md`
+(Parts A, B and C) to close the `is_scanned` gap from the entry above. Built and tested:
+
+- `documents/quality.py` — per-page verdicts `empty` / `broken_font` / `garbled` / `ok`.
+- `documents/text.py` — rewritten for a per-page ladder: pdfplumber -> pypdf -> vision OCR
+  -> `unreadable`. Only `ok` text reaches `documents.text`; everything else lands in the
+  new `rejected_text` column, kept for audit, never fed to the parser or a model.
+- `documents/ocr.py` + `llm/client.py` — the single OpenAI entry point CLAUDE.md requires,
+  pulled forward from Slice 5. Fails closed on a null cap, logs every call to `llm_calls`,
+  never retries. Dormant: `config/llm.yaml`'s `ocr_model` ships `PLACEHOLDER` and
+  `caps.ocr_usd_per_month` ships `null`, so every OCR call is refused until Sravanth
+  activates it (§11's now-closed scanned-PDF item lists exactly what he needs to supply).
+- `prompts/ocr_transcribe_v1.md`, `config/documents.yaml`, migrations `0004_document_quality`
+  and `0005_llm_calls` (both applied to the local Postgres).
+- Fixture: re-downloaded `HMT_22092026135910_TWC.pdf` (one polite NSE request, via the
+  existing `PdfFetcher`) as `tests/fixtures/scans/hmt_glyphless.pdf` — the permanent
+  regression fixture for the garbled-OCR gap.
+- `eval/__main__.py` now prints each document's `quality` alongside its scan/method flags.
+- 35 new tests (`test_quality.py`, `test_text_extraction.py`, `test_llm_client.py`,
+  `test_ocr.py`); 136 passing overall, up from 101. `python -m tradebot.eval` re-run:
+  headline unchanged at 8/18 (44%), as expected — extraction logic didn't change, only
+  which pages reach it, and all 41 labelled pages still assess `ok`.
+
+**A finding that reversed part of the plan, found by actually measuring rather than
+trusting the plan's stated numbers.** The plan expected a whole-page word-readability score
+to separate HMT's garbled page from the 41 accepted ones, citing a measured range of
+0.18-0.58 for the good pages with HMT sitting "far below" it. Rebuilding that measurement
+against the real re-downloaded fixture, it does not hold: HMT's readability score — tried
+three ways (a broad filing-vocabulary word list, a tight closed-class function-word list,
+and a single-character-token ratio) — lands *inside* the accepted range every time, and
+specifically inside the range of BEL_20260731_1, a page already in the labelled set with
+the exact same pattern: a garbled bilingual header sitting next to a clean, correct English
+body that contains BEL's real order value ("Rs.847 Crore"). No threshold on a whole-page
+ratio can catch HMT without also catching BEL, and BEL's real, extractable content would
+then be lost for nothing — confirmed by direct measurement, not assumed.
+
+What actually separates them is font provenance, not readability: BEL/HECPROJECT/HEG's
+full-page-image pages use real, named fonts (Helvetica, Times, Calibri) — the text was
+typed into the PDF, and a garbled fragment is a font-encoding artifact (a legacy 8-bit
+Hindi font), not evidence the content is unreliable. HMT's entire page, including the part
+that reads as ordinary English, comes from one font literally named `GlyphLessFont` — a
+third-party OCR tool's own invisible text layer, un-checkable by us. So the shipped rule is:
+**a page sourced entirely from a `glyphless` font is never trusted on the strength of
+looking readable**, independent of any ratio. Verified against real data: zero false alarms
+on the 41 labelled pages (none use such a font) and a correct `garbled` verdict on HMT. Full
+reasoning is in `quality.py`'s module docstring, and it is the reason a "recorded, not ruled
+on" line in the plan for `GlyphLessFont` was *not* followed as written — the font check
+became the primary signal, not a side note, once the readability score demonstrably failed
+its one job. The word-ratio score stays in as a general safety net, calibrated well under
+the 41 pages' measured floor (0.15 vs. 0.250) so it stays inert on real filings.
+
+**A real bug caught by testing `llm/client.py` for real, not just reasoning about it.**
+`common/config.py`'s `env(name, required=False)` returns the literal string `"CHANGEME"`
+instead of `None` for an unfilled `.env` placeholder — the CHANGEME check only runs when
+`required=True`. The client's first draft used `required=False` (so a missing key refuses
+rather than crashes) and treated any non-empty return as a real key, so a "missing key must
+refuse" test actually sent `CHANGEME` to OpenAI as a real API key and made one genuine
+network call (caught immediately by the 401 response, not by inspection). Fixed by checking
+for the literal placeholder explicitly in `llm/client.py`; regression-tested
+(`test_missing_api_key_refuses`). Worth remembering for any future `env(required=False)`
+caller: the CHANGEME check does not come along for free.
+
+**A second, related network leak, found the same evening once a real key existed.** After
+Sravanth added a real `OPENAI_API_KEY` to `.env` (24 Sep, night, continued), the fixed test
+above started making genuine calls to OpenAI *again* - this time reaching the API with a
+real key and failing only on an unrelated 404 (a fake test model name). Cause:
+`test_missing_api_key_refuses` used `monkeypatch.delenv("OPENAI_API_KEY")` to simulate a
+missing key, but `common/config.py`'s `_load_env_once()` is cached once per process
+(`functools.cache`) and only actually calls `load_dotenv()` the first time `env()` runs
+anywhere in that pytest session. If that first call happens *after* the test's
+`monkeypatch.delenv`, `load_dotenv()` sees no existing value in `os.environ` and dutifully
+fills it back in from the real `.env` - silently undoing the delete. **Lesson: never test a
+"missing/invalid secret" path by deleting an env var when the code loads `.env` lazily and
+caches that load; the loader can refill the var out from under the test, and whether it does
+depends on unrelated test ordering.** Fixed by monkeypatching `env()` itself
+(`tradebot.llm.client.env`) instead, which has no dependency on `.env`'s real content or
+load order. Every other test in the file was audited and found safe: each one either fails
+before the API-key check (a cap or price check) or injects a fake `openai_client`, so the
+real SDK constructor is never reached regardless of what `.env` holds.
+
+**Left for a future session, deliberately out of scope for this slice:**
+- Part B stays dormant. Activating it needs Sravanth to supply `OPENAI_API_KEY`, a
+  vision-capable `ocr_model` id with prices, and `caps.ocr_usd_per_month` (§11).
+- `document_id=2` in the local Postgres is a fresh demo row from an end-to-end round-trip
+  check (real DB, a byte-modified copy of the HMT fixture to dodge the sha256 dedup on the
+  existing `document_id=1` demo row) — confirms `quality`, `page_report` (jsonb),
+  `rejected_text` and `ocr_pages` all round-trip correctly. Same status as `document_id=1`:
+  known demo data, harmless, nothing downstream reads it yet.
+- The document pipeline is still not wired to the collector (§5.4's router doesn't exist
+  yet) — unchanged from the entry above.
+
+### 24 Sep 2026 (night, continued) — decisions for the first order-extraction run
+
+The live collector had 725 filings for 23 Sep 2026 in `raw_announcements` by this point, all
+with attachment URLs. Sravanth asked to extract them and send only order-related ones to the
+LLM, with the LLM structurally unreachable for anything else. Decisions made in that
+conversation, ahead of building:
+
+- **Download scope widens D7.** Previously D7 downloaded PDFs only for `order_win`,
+  `order_candidate` and LLM-confirmed `catch_all`. Measured on the 725: only 7 sit in the
+  order categories (5 Bagging/Receiving, 2 Awarding), but 117 are catch-all
+  (`General Updates`/`Updates`/`Press Release`), 52 of them with a generic headline that
+  hides whatever the PDF actually says (the same shape as HILINFRA in §5.4). Sravanth chose
+  to download all 124 rather than only the 7, so a real order filed as a Press Release isn't
+  missed. `Action(s) taken or orders passed` (2 filings) stays out of scope - red flag, never
+  order.
+- **Model: `gpt-6-luna`**, $0.10 / $0.50 per million input/output tokens, Sravanth's own
+  choice, given directly rather than through the Spike D bake-off. Single tier -
+  `tier2_model` stays unset. `OPENAI_API_KEY` is filled in in `.env` (checked only that it
+  is non-empty and not `CHANGEME`, never what it says).
+- **Spend caps: $1/month each for OCR and for extraction**, separately enforced. Estimated
+  cost for the 23 Sep run is under $0.10 at these prices.
+- **Escalations allowed, order-related filings only:** vision OCR for an unreadable page,
+  and LLM field extraction when the parser can't produce a provenance-verified value.
+- **Two branches asked for, same processing core:** one that runs over already-scraped data
+  for a date or range, and one (`--follow`) that runs continuously next to the live
+  collector, so every filing gets processed going forward, not just this one backfill.
+
+Building now, against the plan at
+`.claude/plans/we-have-extracted-around-joyful-gizmo.md`.
+
+**Built** (24 Sep 2026, night, continued): `config/category_map.yaml`, `router/orders.py`
+(the gate - `classify`, `refine_with_body`, `llm_allowed`, `in_scope`), `extractor/
+provenance.py`, `extractor/llm_extract.py` + `prompts/order_extract_v1.md`, `llm/client.py`
+extended with a shared `_call` and `extract_json` (structured output, `response_format:
+json_schema`, confirmed against the installed SDK the same way the vision call shape was
+in the previous session), `migrations/0006_order_extractions.sql`, and `orders/` (`store.py`,
+`run.py`'s `process_pending` - the one core both branches call - `report.py`, `__main__.py`
+with `--date`/`--from`/`--to`/`--follow`). `config/llm.yaml` now carries Sravanth's model
+choice for real: `tier1_model`/`ocr_model: gpt-6-luna`, priced, `live_usd_per_month` and
+`ocr_usd_per_month` both $1. Confirmed the model id exists via a free `models.retrieve`
+call before anything spent a cent. 72 new tests (`test_router_orders.py`,
+`test_provenance.py`, `test_llm_extract.py`, `test_orders_run.py`,
+`test_orders_sql_smoke.py`); 186 passing overall, up from 168.
+
+**Two findings from building this, both worth remembering:**
+
+- **The plan called for testing both branches "with a real local Postgres test transaction
+  that rolls back" - that mechanism does not work, and would have quietly left permanent
+  test rows in `raw_announcements` if built as specified.** The code under test commits
+  explicitly and deliberately, more than once per filing (`documents/pipeline.py`'s own
+  comment explains why: the PDF must not be deleted before its text is committed) - a
+  rollback issued at the end of a test cannot undo a commit that already happened partway
+  through it. Worse, `raw_announcements` has a hard append-only trigger
+  (`migrations/0001_init.sql`) with no delete path at all, so even a test that avoided
+  relying on rollback and tried to clean up afterward could never remove a row it inserted
+  there. Fixed by dependency-injecting `documents.pipeline.process_url` and
+  `documents.store.get_text` into `orders/run.py` (defaulting to the real functions in
+  production), so `test_orders_run.py` runs entirely against in-memory fakes and never
+  touches a real database at all - consistent with §9's "most tests need no database"
+  rather than an exception to it. `documents.pipeline.process_url` itself already has its
+  own real-Postgres-backed coverage from the previous session. A separate, genuinely
+  read-only smoke-test file (`test_orders_sql_smoke.py`) checks the hand-written SQL in
+  `select_latest_revisions` and the report queries against the real local Postgres, since
+  nothing else does - it only ever reads, so there is nothing to clean up.
+- **Activating `config/llm.yaml` (real model, real non-null caps) could have silently
+  turned an earlier "dormant by default" test into a live network call.**
+  `test_ocr.py::test_maybe_transcribe_with_no_configuration_at_all_does_not_raise`
+  constructs a bare `LlmClient()` with no injected client, relying on the *real* config
+  being inert. Once `ocr_model` and `ocr_usd_per_month` both became real values, the
+  "unset model" and "null cap" refusals it relied on stopped firing - it stayed safe only
+  because `LlmClient()`'s default `conn=None` still trips `_check_cap`'s separate "cap is
+  set but no database connection was given" refusal. That is incidental, not designed-in:
+  the moment any code path passes a real `conn` without a real API key, that specific
+  safety net is gone. Checked explicitly (grepped every test for a bare `LlmClient()`/
+  `maybe_transcribe()` with no `config=`/`client=` override) and re-ran the full suite
+  after the config change to confirm nothing else was exposed. Worth checking again the
+  next time `config/llm.yaml` moves a value from dormant to live.
+
+**Dry run, real spend, on the 18 labelled PDFs** (plan verification step 5, before touching
+the real 23 Sep data): the full T0→LLM chain hit **12/18 exact `value_inr` (67%)**, up from
+T0-alone's 44% baseline, at a real cost of **$0.0028** for 9 LLM calls - confirms the
+per-document cost estimate. This is a **development number, not a §6 gate measurement**:
+Sravanth's model choice skipped the Spike D bake-off (§6, above), so there is no 95%-gate
+certification behind it. Below that gate, per the plan: results are exploratory, not
+certified - `order_extractions.review_status` already carries this per filing
+(`verified` only when provenance passes), so the report is meaningful even without a
+gate-level guarantee. Remaining misses, checked one by one: BEML and WAAREEENER are T0
+inventing a number where none exists (the "invented a number" failure mode already
+recorded against T0 in the original 44%-baseline entry, 24 Sep 2026 later - not something
+this session's LLM work introduced); MCLOUD is T0 off by a rounding step (also pre-existing);
+GKENERGY (LLM invents), GREENPOWER and NEWGEN (LLM misses a real value) are the LLM's own
+imperfection at this un-benchmarked model choice. Confirmed `gpt-6-luna` exists on the
+account first via a free `models.retrieve` call, before any of this ran.
+
+**First real run, `python -m tradebot.orders --date 2026-09-23`, refused to start - a real
+bug, caught immediately because it fails loudly rather than doing the wrong thing
+silently.** `--max-requests` (default 200) was checked against every *pending*
+`raw_announcements` row (723 for that day), not the in-scope subset that would actually be
+downloaded (~124) - most of a day's filings are `Trading Window`/`Shareholders meeting`/etc.
+and never reach a download at all. Fixed by classifying before counting in
+`process_pending` (`orders/run.py`): `--max-requests` now guards the number of downloads
+the run is about to make, which is what it was always meant to mean. Added
+`test_max_requests_counts_only_in_scope_rows_not_every_pending_row` so this specific shape
+of bug - a guard counting the wrong population - can't come back unnoticed. 187 tests
+passing after the fix. Nothing was downloaded or spent before this was caught; the guard
+did its job of stopping before any request went out, just for the wrong reason.
+
+**The real run, `python -m tradebot.orders --date 2026-09-23`, succeeded end to end**: 124
+filings downloaded (all - 0 download failures), 10 turned out order-related, 5 verified by
+provenance, 5 sent to `needs_review`, 114 correctly resolved as not-an-order, 0 pending, 8
+LLM extraction calls + 3 OCR pages, real cost **$0.008236** against the $1/month caps
+(reconciled - see the cost-tracking bug below). Gate audit: **0 LLM calls and 0 OCR pages on
+a non-order-related filing**, confirmed both in the report and by a direct query of
+`order_extractions`/`llm_calls`. `data/orders_work/` was empty after the run (D8). Report at
+`reports/orders_2026-09-23.md` and `.csv`, committed.
+
+**The widened D7 scope paid for itself on the first run**: of the 10 order-related filings
+found, **3 (ASHOKA, DHRUV, SILVERTUC) were hidden in `catch_all` categories** with no
+category-level signal at all - exactly the HILINFRA pattern §5.4 was written about, now
+observed for real rather than from one September day's fixture. The old order-only D7 scope
+would have missed all three. One extraction is worth reading literally: **SUBEXLTD's order
+is in US$, correctly left unconverted** (`value_inr` null, `provenance_ok` False, forced to
+`needs_review`) rather than guessed - the FX-stays-Open design (§11) doing exactly its job
+on real data for the first time.
+
+**A second real bug, found by reconciling the run's own numbers against `llm_calls` after
+it finished.** `Summary.llm_cost_usd` and each filing's stored `order_extractions.
+llm_cost_usd` only counted T1 extraction cost, never OCR cost - `documents.ocr.
+maybe_transcribe`'s contract is `str | None` (fixed by the previous session's
+`documents/text.py`, §5.5 Part A/B), so `orders/run.py` had no way to see what an OCR call
+had cost. The report's own total silently undercounted real spend by exactly the OCR
+portion: BCPL's one OCR'd filing had a real cost of $0.003975 (3 pages, $0.003768 in OCR
++ $0.000207 extraction) but was stored and reported as $0.000207. Not a safety issue - the
+$1 caps are enforced from the real `llm_calls` log regardless of what the summary displays
+- but a report whose own numbers don't add up is a "never guess a number" violation on its
+own terms. Fixed in `orders/run.py` with `_cost_since(conn, purpose, since)`, which reads
+the real cost back from `llm_calls` for the window right after `process_url_fn` runs (calls
+are sequential, so this window belongs to exactly one filing) and folds it into both the
+per-filing row and the run's `Summary`. Regression-tested
+(`test_ocr_cost_is_folded_into_the_filings_reported_llm_cost`). The one already-stored,
+already-wrong row (BCPL, raw_announcement_id 458) was corrected by adding the real OCR cost
+already logged in `llm_calls` (a targeted `UPDATE` on `order_extractions`, which is not
+append-only, unlike `raw_announcements`), and `reports/orders_2026-09-23.md`/`.csv` were
+regenerated from the corrected data - the total moved from $0.004468 to the true $0.008236.
+188 tests passing.
+
+**A third gap, found by reading the run's own output field by field** (Sravanth asked for a
+detailed per-filing write-up of the order-related results, `reports/
+orders_2026-09-23_detail.md`, which is what surfaced it): **`company_is_recipient` and
+`stage` were always null on the T0 path.** `extractor/annexure.py` already has
+`parse_company_is_recipient`/`parse_stage` - `eval/__main__.py`'s `predict()` has used them
+since the 44%-baseline session - but `orders/run.py`'s `_t0_row` never called them, so a
+filing verified entirely by the deterministic parser (BDL, GHCL) reported both fields as
+null while an LLM-escalated one reported real values, for no principled reason. Fixed by
+wiring both functions into `_t0_row`; regression-tested
+(`test_t0_verified_order_still_fills_company_is_recipient_and_stage`). Re-derived and
+corrected the two already-stored rows from their real document text rather than leaving
+them null, and regenerated both reports.
+
+**Read the corrected numbers, and one of them exposed a genuine, separate parser
+weakness, not a bug in this session's work: BDL's `stage` now reads "amendment", which is
+almost certainly wrong** - BDL's own category and headline are unambiguous that this is a
+new order win. `parse_stage` checks for `amend|revis(?:ed|ion)|terminat` *before* anything
+else in the document, so any occurrence of those words anywhere in the filing (a boilerplate
+clause, a reference to an unrelated earlier revision) wins regardless of what the filing is
+actually about. This is a pre-existing property of `extractor/annexure.py`'s heuristic,
+first exposed by running it live rather than only against the labelled set - recorded here,
+not fixed, since fixing `parse_stage`'s priority order is a T0-parser-quality question
+outside tonight's scope and deserves its own look against more real examples, not a
+one-off patch driven by a single filing. 189 tests passing.
+
+**Detailed per-filing report published:** `reports/orders_2026-09-23_detail.md` - every
+extracted field for all 10 order-related filings, in plain prose rather than a table, with
+both findings above called out inline next to the filings they affect (BDL, SUBEXLTD).

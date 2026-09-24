@@ -1,0 +1,29 @@
+# NSE category string -> bucket (ARCHITECTURE.md §5.4). Minimal on purpose: only the
+# buckets §5.4 has already decided, for the categories this order-extraction run needs to
+# tell apart. The full router (noise, other_material, results, the unknown-category log)
+# is Slice 3's job; an unmapped category here is simply out of this run's scope, not
+# silently treated as noise.
+#
+# Matching is on the category string with a trailing "-XBRL" and a "(Sub-para ...)"
+# suffix stripped first (§5.3's normalisation), so "Bagging/Receiving of orders/contracts
+# (Sub-para 4-Para B)" matches the same rule as the plain string.
+
+order_win:
+  - "Bagging/Receiving of orders/contracts"
+
+order_candidate:
+  - "Awarding of order(s)/contract(s)"
+
+# The word "order" is misleading here - never treat these as order wins (§5.4).
+red_flag:
+  - "Action(s) taken or orders passed"
+  - "Actions initiated/taken or orders passed"
+  - "Amendment or termination of orders/contracts"
+
+# A real order win has arrived under each of these at least once (§5.4: HILINFRA under
+# Press Release, GREENPOWER under General Updates). The keyword prefilter decides which
+# ones actually reach the LLM.
+catch_all:
+  - "General Updates"
+  - "Updates"
+  - "Press Release"

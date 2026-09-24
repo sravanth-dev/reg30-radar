@@ -138,17 +138,22 @@ def test_pipeline_reports_a_failed_download_without_raising(tmp_path):
 
 
 def test_pipeline_flags_a_scan_for_review(tmp_path, monkeypatch):
-    """A filing with no text layer must reach the §5.5 review queue, not pass silently."""
+    """A filing that comes out unreadable must reach the §5.5 review queue, not pass
+    silently. The gate is `quality <> 'ok'`, not the old char-count `is_scanned` check -
+    see documents/quality.py's module docstring for why that check was replaced.
+    """
     from tradebot.documents import pipeline as mod
 
-    def fake_extract(path):
+    def fake_extract(path, **kwargs):
         from tradebot.documents.text import Extracted
-        return Extracted(text="", pages=3, method="pdfplumber", is_scanned=True)
+        return Extracted(text="", pages=3, method="pdfplumber", is_scanned=True,
+                          quality="unreadable", rejected_text="garbage")
 
     monkeypatch.setattr(mod, "extract", fake_extract)
     out = process_url("https://example.invalid/scan.pdf", work_dir=tmp_path,
                       fetcher=FakeFetcher(SAMPLE))
     assert out.is_scanned
+    assert out.quality == "unreadable"
     assert out.needs_review
     # Still deleted: a scan's bytes are no more worth keeping than any other (D8).
     assert out.pdf_deleted is True

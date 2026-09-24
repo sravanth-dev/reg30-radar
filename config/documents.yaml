@@ -1,0 +1,22 @@
+# Operational settings for the dormant vision-OCR step (documents/ocr.py, ARCHITECTURE.md
+# §5.5 Part B). The per-page quality thresholds (empty/broken_font/garbled) live as
+# calibrated constants in documents/quality.py, next to the fixtures they were measured
+# against - config/*.yaml is for facts about the outside world (CLAUDE.md's scraping
+# rules), and those thresholds are heuristics about text, not endpoints or infra limits.
+
+ocr:
+  dpi: 200                      # resolution for the page render sent to vision OCR
+  grayscale: true
+  # The per-document page cap lives in config/llm.yaml (ocr_max_pages_per_document),
+  # next to the other spend guards, not here.
+
+# src/tradebot/orders/ (ARCHITECTURE.md §5.4-§5.6): the order-relevance gate, extraction
+# and the live `--follow` worker. The bounded-retry constants (MAX_ATTEMPTS, RETRY_DELAY)
+# live as calibrated constants in orders/store.py, same reasoning as the quality
+# thresholds above; this is only the live worker's polling cadence, which is genuinely
+# about the outside world (how often it is polite to re-check for new filings).
+orders:
+  follow_interval_seconds: 120   # --follow's cycle: pick up whatever the collector has
+                                  # saved since the last pass
+  follow_jitter_seconds: [5, 20] # never exactly periodic (§5.1's reasoning applies here
+                                  # too, even though this polls our own database, not NSE)

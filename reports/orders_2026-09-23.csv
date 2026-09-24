@@ -1,0 +1,11 @@
+symbol,category_raw,bucket,relevance_reason,quality,path,consideration_raw,value_inr,provenance_ok,company_is_recipient,stage,review_status,llm_cost_usd
+ASHOKA,General Updates,catch_all,catch_all; body keyword 'Letter of Intent',ok,llm,,,False,True,LoI,needs_review,0.000381
+AVANTEL,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,Rs.177.35 Crores (Rupees One Hundred and Seventy-Seven Crores and Thirty-Five Lakhs Only),1773500000.00,False,True,PO,needs_review,0.000421
+BCPL,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),partial,llm,Rs 6.22 crores,62200000.00,True,True,contract,verified,0.003975
+BDL,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,t0,or size of the order(s) Rs. 810.79 Crore,8107900000.00,True,,amendment,verified,0.000000
+DHRUV,Updates,catch_all,catch_all; body keyword 'Letter of Award',ok,llm,"Rs. 3,79,08,000/- (Rupees Three Crore Seventy-Nine Lakh Eight Thousand Only) excluding GST",37908000.00,True,True,LoA,verified,0.000354
+GHCL,Awarding of order(s)/contract(s),order_candidate,category is order_candidate ('Awarding of order(s)/contract(s)'),ok,t0,"or size of the 6.8797 Hectares Area for Composite license with 5,67,337",567337.00,True,True,LoI,verified,0.000000
+GMRAIRPORT,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,~ Rs. 49 crs and ~Rs. 109 crs.,490000000.00,True,True,contract,verified,0.000427
+SILVERTUC,General Updates,catch_all,catch_all; body keyword 'order worth',partial,llm,,,False,,,needs_review,0.002093
+SKIPPER,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,₹ 797 crores,7970000000.00,True,True,unknown,needs_review,0.000288
+SUBEXLTD,Awarding of order(s)/contract(s),order_candidate,category is order_candidate ('Awarding of order(s)/contract(s)'),ok,llm,US$ 5 million,,False,True,contract,needs_review,0.000297

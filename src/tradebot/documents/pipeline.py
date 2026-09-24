@@ -23,9 +23,11 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from tradebot.common.config import documents as documents_config
+from tradebot.common.config import llm as llm_config
 from tradebot.documents.fetch import Fetched, PdfFetcher, sha256_of
 from tradebot.documents.store import DocumentRow, find_by_sha256, insert, mark_pdf_deleted
-from tradebot.documents.text import extract
+from tradebot.documents.text import OcrFn, extract
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -39,6 +41,8 @@ class Outcome:
     pages: int = 0
     chars: int = 0
     is_scanned: bool = False
+    quality: str = "ok"
+    ocr_pages: int = 0
     method: str | None = None
     pdf_deleted: bool = False
     already_stored: bool = False
@@ -75,12 +79,17 @@ def process_url(
     fetcher: PdfFetcher | None = None,
     event_id: int | None = None,
     raw_announcement_id: int | None = None,
+    ocr: OcrFn | None = None,
 ) -> Outcome:
     """Run one attachment through the whole pipeline.
 
     `conn` may be None, which runs everything except the database write. That is what the
     eval harness uses, and it keeps the extraction path testable without a database
     (§9: most tests need none).
+
+    `ocr` is None by default - §5.5 Part B stays dormant unless a caller explicitly passes
+    `tradebot.documents.ocr.maybe_transcribe` (which itself no-ops until Sravanth configures
+    a vision model and cap). Nothing here reaches the network for OCR on its own.
     """
     fetcher = fetcher or PdfFetcher()
     got: Fetched = fetcher.fetch(url, work_dir)
@@ -96,10 +105,16 @@ def process_url(
             return Outcome(True, url, sha256=got.sha256, document_id=existing["id"],
                            pages=existing["pages"] or 0,
                            is_scanned=bool(existing["is_scanned"]),
+                           quality=existing["quality"], ocr_pages=existing["ocr_pages"] or 0,
                            method=existing["method"], pdf_deleted=deleted,
-                           already_stored=True)
+                           already_stored=True,
+                           needs_review=existing["quality"] != "ok")
 
-    doc = extract(got.path)
+    docs_cfg = documents_config()["ocr"]
+    max_ocr_pages = int(llm_config().get("ocr_max_pages_per_document", 10))
+    doc = extract(
+        got.path, ocr=ocr, dpi=int(docs_cfg["dpi"]), max_ocr_pages=max_ocr_pages,
+    )
     now = datetime.now(IST)
 
     document_id = None
@@ -107,6 +122,8 @@ def process_url(
         document_id = insert(conn, DocumentRow(
             url=url, sha256=got.sha256, size_bytes=got.size_bytes,
             pages=doc.pages, text=doc.text, is_scanned=doc.is_scanned,
+            quality=doc.quality, page_report=doc.page_report,
+            rejected_text=doc.rejected_text, ocr_pages=doc.ocr_pages,
             method=doc.method, extracted_at=now,
             event_id=event_id, raw_announcement_id=raw_announcement_id,
         ))
@@ -123,10 +140,12 @@ def process_url(
     return Outcome(
         ok=True, url=url, sha256=got.sha256, document_id=document_id,
         pages=doc.pages, chars=len(doc.text.strip()), is_scanned=doc.is_scanned,
+        quality=doc.quality, ocr_pages=doc.ocr_pages,
         method=doc.method, pdf_deleted=deleted,
-        # §5.5 sends a scan to manual review, because whether it gets OCR or a vision model
-        # is still Open (§11).
-        needs_review=doc.is_scanned,
+        # §5.5's manual-review queue is `quality <> 'ok'`, replacing the old char-count
+        # `is_scanned` gate - which a garbled-but-plentiful text layer could pass (WORKLOG,
+        # 24 Sep 2026 evening).
+        needs_review=doc.quality != "ok",
     )
 
 

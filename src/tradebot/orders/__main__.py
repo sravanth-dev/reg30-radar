@@ -1,0 +1,183 @@
+"""Order extraction and the §5.6 escalation gate, in two branches sharing one processing
+core (`orders/run.py`):
+
+    python -m tradebot.orders --date 2026-09-23             one day, already scraped
+    python -m tradebot.orders --from 2026-09-20 --to 2026-09-24   a date range
+    python -m tradebot.orders --follow                       live, next to the collector
+
+**Why `--follow` is a separate process rather than something the collector does inline.**
+Downloading a PDF, running the per-page quality ladder and possibly calling the LLM can
+take tens of seconds per filing. Doing that inside the collector's poll loop would delay
+the next poll, and the announcements endpoint only shows the **20 most recent** filings
+(§5.1) - a late poll can lose filings for good, and `first_seen_at` cannot be backfilled
+(D23). So the collector stays raw-store only, and this worker follows the
+`raw_announcements` table instead of hooking into the collector's loop: every saved row
+gets processed exactly once, whether `--follow` was running when it arrived or picks it up
+on its next cycle after a restart. The collector polls the API host; this polls the archive
+host for attachments and the LLM - separate sessions, matching the split
+`documents/fetch.py` already made.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import signal
+import sys
+import time
+from datetime import date, datetime, timedelta
+
+from tradebot.common.calendar import IST
+from tradebot.common.config import documents as documents_config
+from tradebot.common.db import connect
+from tradebot.collector.nse import jittered
+from tradebot.documents.fetch import PdfFetcher
+from tradebot.llm.client import LlmClient
+from tradebot.orders import report, run as run_mod
+
+log = logging.getLogger("orders")
+
+
+def _work_dir():
+    from tradebot.common.config import ROOT
+    return ROOT / "data" / "orders_work"
+
+
+_stopping = False
+
+
+def _handle_stop(signum, frame):
+    global _stopping
+    _stopping = True
+    log.info("stop requested; finishing the current filing and exiting")
+
+
+def _day_bounds(d: date) -> tuple[datetime, datetime]:
+    """One calendar day in IST, as the UTC-aware bounds `first_seen_at` is compared
+    against (D17: IST at the edges, timestamptz everywhere in storage).
+    """
+    start = datetime(d.year, d.month, d.day, tzinfo=IST)
+    return start, start + timedelta(days=1)
+
+
+def run_batch(*, since: date, until: date, max_requests: int) -> int:
+    """`--date` / `--from`/`--to`: process everything pending in [since, until), then
+    write a report for every date touched, then exit.
+    """
+    start, _ = _day_bounds(since)
+    _, end = _day_bounds(until)
+    work_dir = _work_dir()
+
+    with connect() as conn:
+        client = LlmClient(conn=conn)
+        fetcher = PdfFetcher()
+        raw_rows = run_mod.select_latest_revisions(conn, since=start, until=end)
+        log.info("%d filings in range; classifying and processing pending ones",
+                  len(raw_rows))
+        summary = run_mod.process_pending(
+            conn, raw_rows, fetcher=fetcher, client=client, work_dir=work_dir,
+            max_requests=max_requests,
+        )
+        for touched in sorted(summary.dates_touched):
+            md_path, csv_path = report.write(conn, touched)
+            log.info("wrote %s and %s", md_path, csv_path)
+
+        log.info(
+            "done: considered=%d downloaded=%d order_related=%d verified=%d "
+            "needs_review=%d not_order=%d pending=%d llm_calls=%d llm_cost=$%s "
+            "ocr_pages=%d%s",
+            summary.considered, summary.downloaded, summary.order_related,
+            summary.verified, summary.needs_review, summary.not_order,
+            summary.pending_llm + summary.download_failed, summary.llm_calls,
+            summary.llm_cost_usd, summary.ocr_pages,
+            f"  STOPPED EARLY: {summary.stopped_early}" if summary.stopped_early else "",
+        )
+        if summary.gate_violations:
+            log.error("GATE VIOLATION: LLM/OCR reached a non-order-related filing: %s",
+                       summary.gate_violations)
+            return 2
+    return 0
+
+
+def run_follow() -> int:
+    """`--follow`: a long-running worker, one cycle per interval, until stopped."""
+    cfg = documents_config()["orders"]
+    interval = float(cfg["follow_interval_seconds"])
+    jitter = tuple(float(x) for x in cfg["follow_jitter_seconds"])
+    work_dir = _work_dir()
+
+    while not _stopping:
+        try:
+            with connect() as conn:
+                client = LlmClient(conn=conn)
+                fetcher = PdfFetcher()
+                while not _stopping:
+                    raw_rows = run_mod.select_latest_revisions(conn)
+                    summary = run_mod.process_pending(
+                        conn, raw_rows, fetcher=fetcher, client=client, work_dir=work_dir,
+                    )
+                    if summary.considered:
+                        log.info(
+                            "cycle: considered=%d downloaded=%d order_related=%d "
+                            "verified=%d needs_review=%d llm_calls=%d llm_cost=$%s%s",
+                            summary.considered, summary.downloaded, summary.order_related,
+                            summary.verified, summary.needs_review, summary.llm_calls,
+                            summary.llm_cost_usd,
+                            f"  STOPPED EARLY: {summary.stopped_early}"
+                            if summary.stopped_early else "",
+                        )
+                        if summary.gate_violations:
+                            log.error(
+                                "GATE VIOLATION: LLM/OCR reached a non-order-related "
+                                "filing: %s", summary.gate_violations,
+                            )
+                    for touched in sorted(summary.dates_touched):
+                        report.write(conn, touched)
+                    if _stopping:
+                        return 0
+                    time.sleep(jittered(interval, jitter))
+        except Exception:
+            if _stopping:
+                return 0
+            log.exception("orders --follow loop failed; reconnecting in 60s")
+            time.sleep(60)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m tradebot.orders")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--date", type=date.fromisoformat,
+                       help="process one day already in raw_announcements (YYYY-MM-DD)")
+    mode.add_argument("--follow", action="store_true",
+                       help="run continuously, processing new filings as the collector saves them")
+    parser.add_argument("--from", dest="date_from", type=date.fromisoformat,
+                         help="range start (YYYY-MM-DD), with --to; replaces --date")
+    parser.add_argument("--to", dest="date_to", type=date.fromisoformat,
+                         help="range end, inclusive (YYYY-MM-DD)")
+    parser.add_argument("--max-requests", type=int, default=200,
+                         help="refuse to start a batch run needing more downloads than this")
+    parser.add_argument("--log-level", default="INFO")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=args.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    signal.signal(signal.SIGINT, _handle_stop)
+    signal.signal(signal.SIGTERM, _handle_stop)
+
+    if args.follow:
+        if args.date_from or args.date_to:
+            parser.error("--follow cannot be combined with --from/--to")
+        return run_follow()
+
+    if bool(args.date_from) != bool(args.date_to):
+        parser.error("--from and --to must be given together")
+    since = args.date_from or args.date
+    until = args.date_to or args.date
+    return run_batch(since=since, until=until, max_requests=args.max_requests)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

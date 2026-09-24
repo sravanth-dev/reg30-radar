@@ -67,5 +67,17 @@ def sheets() -> dict:
     return load_yaml("sheets.yaml")["sheets"]
 
 
+def documents() -> dict:
+    return load_yaml("documents.yaml")
+
+
+def category_map() -> dict:
+    return load_yaml("category_map.yaml")
+
+
+def llm() -> dict:
+    return load_yaml("llm.yaml")
+
+
 def database_url() -> str:
     return env("DATABASE_URL")

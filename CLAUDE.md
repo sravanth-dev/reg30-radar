@@ -80,6 +80,11 @@ python -m tradebot.common.migrate       # apply migrations/*.sql in order
 python -m tradebot.collector --once
 python -m tradebot.backfill --from 2025-09-22 --to 2026-09-18
 
+# order extraction: gate + T0 parser + LLM fallback, only for order-related filings (§5.4-5.6)
+python -m tradebot.orders --date 2026-09-23                     # one already-scraped day
+python -m tradebot.orders --from 2026-09-20 --to 2026-09-24      # a date range
+python -m tradebot.orders --follow                               # live, next to the collector
+
 # browse raw_announcements as a Google Sheet, view-only mirror (D11, v1.2)
 python -m tradebot.sheets --once        # one sync, then exit
 python -m tradebot.sheets --rebuild     # clear the sheet and resync everything

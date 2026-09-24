@@ -80,6 +80,7 @@ def predict(pdf: Path) -> dict:
         "_pages": doc.pages,
         "_method": doc.method,
         "_chars": len(doc.text.strip()),
+        "_quality": doc.quality,
     }
 
 
@@ -187,8 +188,9 @@ def main() -> int:
     print("=" * 74)
     for stem, label, got in sorted(rows, key=lambda r: r[2]["_rows_found"]):
         flag = "  SCANNED" if got["is_scanned"] else ""
+        quality_flag = f"  quality={got['_quality']}" if got["_quality"] != "ok" else ""
         print(f"  {stem:<28} {got['_rows_found']}/7 rows   {got['_pages']} pages, "
-              f"{got['_chars']:>6} chars, {got['_method']}{flag}")
+              f"{got['_chars']:>6} chars, {got['_method']}{flag}{quality_flag}")
 
     spans = sum(1 for _, label, _ in rows if label.get("value_span"))
     print(f"\nprovenance not scored: value_span is filled on {spans}/{n} labels, so the "

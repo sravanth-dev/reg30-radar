@@ -18,12 +18,14 @@ build/
 dist/
 .pytest_cache/
 
-# Downloaded PDFs are deleted after text extraction (D8). The labelled test set is the
-# one exception and stays in the repo permanently, so it is un-ignored below.
-# Note: tests/labelled/ itself is never ignored, because a negation cannot rescue a file
-# that sits inside an ignored directory.
+# Downloaded PDFs are deleted after text extraction (D8). Two exceptions stay in the repo
+# permanently and are un-ignored below: the labelled test set, and the HMT regression
+# fixture for the garbled-OCR gap (§5.5, WORKLOG 24 Sep 2026 night).
+# Note: neither directory itself is ignored, because a negation cannot rescue a file that
+# sits inside an ignored directory.
 *.pdf
 !tests/labelled/*.pdf
+!tests/fixtures/scans/*.pdf
 
 # Scratch space for spikes and any working copies of exchange bundles.
 data/

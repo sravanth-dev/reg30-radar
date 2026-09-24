@@ -874,3 +874,32 @@ the pipeline to the collector before the router exists would mean downloading ev
 filing's PDF, which is exactly what D7 exists to prevent.
 
 Migration `0003_documents` applied to the local Postgres.
+
+### 24 Sep 2026 (evening) — live demo exposes a gap: `is_scanned` misses garbled OCR text
+
+Sravanth asked where extracted text is stored and whether the pipeline can handle a real
+live PDF, not just the labelled fixtures. Answered by actually running `process_url`
+against a genuine URL captured in Tuesday's live-feed poll (HMT, `General Updates`),
+through the real local Postgres. It worked end to end: downloaded, hashed, extracted,
+stored as `documents.id=1`, deleted — work directory empty afterward, confirming D8.
+
+**But the extracted text for that file is garbage**, and `is_scanned` said `False` when it
+should not have. Diagnosed rather than left alone: both pdfplumber and pypdf independently
+produce identical mangled output, which rules out an extraction bug, and the font is named
+literally `GlyphLessFont` — a scanned document with an invisible OCR text layer whose
+character mapping is corrupted. Plenty of characters are present, so the char-count
+heuristic in `documents/text.py` passes it as real text.
+
+**Consequence**: this class of file currently skips the §5.5 manual-review queue it should
+land in. Downstream the annexure parser will find nothing and stay silent (the safe
+direction), but the document is recorded as a clean, usable extraction when it is not —
+which pollutes any later count of "how many filings were readable."
+
+Not fixed yet. This connects to the still-open scanned-PDF/OCR decision in §11, and Spike
+D's job of counting scanned-vs-text-layer PDFs by market-cap band (§10) should be widened
+to also catch this — a `GlyphLessFont`-style corrupted layer, not just an empty one.
+`document_id=1` in the local database is this demo row and is known to be misleading;
+harmless since nothing downstream reads it yet.
+
+Diagnostic re-download was to `spikes/out/diag/`, outside the pipeline's own delete path,
+and was cleaned up by hand afterward.

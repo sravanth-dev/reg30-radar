@@ -1,39 +1,45 @@
 {
   "_source": {
     "symbol": "CEINSYS",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "64884049d399fcfac1aee876d7512124c655c48a771afc860d977fdc7bfba8ed"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
-  "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "awarding_entity": "T Second Inc, USA",
+  "domestic_or_international": "international",
+  "nature_of_order": "Ceinsys Tech Limited have received Orders from T Second Inc. USA for Supply of T-U.2 32TB Drives along with AI Change Detection & Asset Monitoring Services - AI-powered Change Detection and Asset Monitoring services delivered through the edge AI platform, including: Delivery of GIS-compatible output vector layers and associated change analytics synchronized back to the customer environment.",
+  "significant_terms": "Ceinsys Tech Limited have received Orders from T Second Inc. USA for Supply of Supply of T-U.2 32TB Drives along with AI Change Detection & Asset Monitoring Services - AI-powered Change Detection and Asset Monitoring services delivered through the edge AI platform, including: Delivery of GIS-compatible output vector layers and associated change analytics synchronized back to the customer environment.",
+  "execution_period_raw": "Within 1 month from the date of order.",
+  "execution_months": 1,
+  "consideration_raw": "Total: $ 25,12,500.00 / Rs. 24,10,49,250.00 @ 95.94 conversion rate",
+  "value_inr": 241049250,
   "value_span": null,
   "gst_inclusive": null,
-  "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
-  "receipt_datetime": null,
+  "currency": "USD",
+  "promoter_interest": false,
+  "related_party": false,
+  "receipt_datetime": "2026-09-16",
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "order",
   "is_follow_up": false,
-
-  "multiple_orders": false,
-  "orders": null,
-
+  "multiple_orders": true,
+  "orders": [
+    {
+      "significant_terms": "Supply of T-U.2 32TB Drives",
+      "consideration_raw": "$ 23,17,500.00 (Rs. 22,23,40,950.00 @ 95.94)",
+      "value_inr": 222340950,
+      "currency": "USD"
+    },
+    {
+      "significant_terms": "AI Change Detection & Asset Monitoring Services - AI-powered Change Detection and Asset Monitoring services delivered through the edge AI platform, including: Delivery of GIS-compatible output vector layers and associated change analytics synchronized back to the customer environment.",
+      "consideration_raw": "$ 1,95,000.00 (Rs. 1,87,08,300.00 @ 95.94)",
+      "value_inr": 18708300,
+      "currency": "USD"
+    }
+  ],
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Two orders from the same customer, received 16 Sep 2026; breakdown in orders[]. INR values are the company's own conversion at USD/INR 95.94. 'Supply of Supply of' is verbatim from the annexure. GST inclusion not stated."
 }

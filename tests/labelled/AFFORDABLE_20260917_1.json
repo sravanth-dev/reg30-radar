@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "AFFORDABLE",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "210bb5b02a5a572611946e761425d96e19f6656d8b3e2f0281724ef4d5921bed"
   },
-
   "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Turnkey Project",
+  "significant_terms": "Supply of robotic welding line",
+  "execution_period_raw": "Material Should be Delivered by March 2027",
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "Approx. ₹ 11,05,83,735/- (Rupees Eleven Crore Five Lakh Eighty-Three Thousand Seven Hundred Thirty-Five Only).",
+  "value_inr": 110583735,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
+  "promoter_interest": false,
+  "related_party": false,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "purchase_order",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Awarding entity not disclosed due to confidentiality. Execution given as a delivery deadline (March 2027), not a duration, so execution_months left null. GST inclusion not stated."
 }

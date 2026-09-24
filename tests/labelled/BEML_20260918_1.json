@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "BEML",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-18",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "44e500343853654e963273ef3f61bb9dbf86ec4deafc55db2219e08f783edfba"
   },
-
-  "awarding_entity": null,
+  "awarding_entity": "National High Speed Rail Corporation Limited (NHSRCL)",
   "domestic_or_international": null,
   "nature_of_order": null,
-  "significant_terms": null,
-
+  "significant_terms": "Supply and maintenance of High Speed Rolling Stock and allied works for the Mumbai Ahmedabad High Speed Rail (MAHSR) Corridor",
   "execution_period_raw": null,
   "execution_months": null,
-
-  "consideration_raw": null,
+  "consideration_raw": "over ₹ 5,400/- Crores",
   "value_inr": null,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
   "promoter_interest": null,
   "related_party": null,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "order",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Value stated only as a lower bound ('over ₹5,400 Crores'), so value_inr left null pending decision. No annexure: domestic/international, execution period, GST, promoter interest and related-party status not stated. Letter says order is in normal course of business."
 }

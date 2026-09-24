@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 23 Sep 2026 (night)*
+*Last updated: 24 Sep 2026*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -35,7 +35,7 @@ code in the repo, and the first data that cannot be re-created if lost (D23:
 | **A2** — API completeness | Done. **Backfill is viable.** Reconciliation now runs per-day in the backfill. |
 | Live-feed reconciliation | **Running** since 22 Sep 14:02 IST; reconcile against the 23 Sep bundle. |
 | **C** — results XBRL | Not started |
-| **D** — extraction bake-off | Not started. Needs an OpenAI key and 10 labelled PDFs from Sravanth. |
+| **D** — extraction bake-off | **Arm 1 done** (24 Sep): parser alone scores **44%** exact `value_inr` on 18 labelled docs. Arms 2-4 need an OpenAI key. |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
 | Python 3.14 wheels | Windows half verified; manylinux not checked. |
 
@@ -787,3 +787,53 @@ ARCHITECTURE.md → v1.2 (D11 narrowed forward, §7 gains `sheets_sync`, §9 gai
 invocations. `.env.example` gains `GOOGLE_SERVICE_ACCOUNT_FILE` / `GOOGLE_SHEET_ID` as
 `CHANGEME`. `.gitignore` gains `secrets/` and `*service-account*.json`, since a key file
 must never reach the repo even by accident.
+
+### 24 Sep 2026 — first extraction run scored: 44%
+
+Sravanth labelled the 18 candidate PDFs and asked for the first extraction run to be scored
+**once**, reported, and nothing changed afterwards. Done, and nothing has been changed.
+
+**8 / 18 — 44% exact `value_inr`.** 43% where the filing states a value (6/14), 50% where it
+states none and null is the right answer (2/4). Full write-up in
+`reports/extraction_baseline_2026-09-24.md`. §6's gate is ≥ 95% for the whole T0→T1→T2 chain;
+this is T0 alone, and on this evidence the parser cannot carry extraction by itself.
+
+There was no extraction code before today — `extractor/`, `units/` and `eval/` were empty
+packages. So "the first run" meant building Slice 4's T0 half: `units/money.py`,
+`extractor/annexure.py`, `documents/text.py`, and `eval/__main__.py` to score it.
+
+**The discipline that makes the number mean something.** The parser was written from §5.6 and
+§5.7 and **committed (`8a24cd5`) before the labels were opened**, tuned only against §5.7's
+published vectors, which predate the labelled set. Prior exposure disclosed in the report: the
+same PDFs were read once before to classify edge-case *categories* for `CANDIDATES.md`, never
+values.
+
+**The failures, worst first.** Two inventions — a number where the label says none. WAAREEENER
+reads "Supply of 2 GW Solar modules" and the parser returned **₹2**, reading a physical
+capacity as money, because the normalizer defaults to INR when no currency marker is present.
+BEML stacked a mis-sliced span on top of a labelling judgement ("over ₹5,400 Crores" labelled
+as no stated value). Seven misses: BEL and VIVIANA are press releases with **0 of 7 annexure
+rows** — no SEBI table to parse at all — and RAILTEL found the row but the value ran onto the
+next line, which the parser does not follow. One near-miss: MCLOUD prints
+"₹44.60 Lakh (Rs. 44,60,400/-)" and the parser preferred the scale-word numeral over the exact
+parenthetical.
+
+Underneath several of these is one defect: label patterns match **inside longer words**, so
+`order value` matches inside "order *valued* at", the slice starts mid-token and can lose the
+trailing scale word. That single bug produced both an invention and a wrong number.
+
+**Two caveats recorded so the per-field table is not over-read.** `stage` scored 0/18 but is
+mostly a **vocabulary mismatch**: the labels use `purchase_order`, `LOA`, `LOI`, `agreement`;
+§5.6 and the labelling README specify `PO`, `LoA`, `LoI`, `contract`. GKENERGY and RAILTEL are
+the *same answer* scored wrong on case. Settling that enum is a change, so it has not been
+made. `consideration_raw` 0/18 is a convention difference — the parser returns the whole cell,
+the label records just the money phrase — which is why `value_inr` is the number to trust.
+`company_is_recipient` at **89%** is the genuine bright spot, and it is exactly the judgement
+§5.4 built the `order_candidate` bucket around.
+
+**Provenance is unmeasured.** `value_span` is empty on all 18 labels, so §5.6's span check —
+the main defence against a model lifting a number from a date — has no ground truth yet.
+
+**This set is now spent as a clean baseline.** Re-scoring these same 18 after fixing the
+defects is a *development* number, not an independent one. A fresh set should be held in
+reserve for any score that decides something.

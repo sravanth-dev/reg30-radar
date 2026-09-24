@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "GPTINFRA",
-    "isin": "",
+    "isin": "INE390G01014",
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "85651c1a5a15561cf902a6867f9c92d6c5d51b3a3acc02f9804b63638939339d"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
-  "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "awarding_entity": "Chief Project Manager, Rail Vikas Nigam Limited, Bhubaneshwar",
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Bridge works for Railways",
+  "significant_terms": "Construction of Important Bridge 544 (32x65.84m) Open Web Steel Girder over river Mahanadi at Ch. 406305m in connection with construction of 3rd and 4th line between Nergundi-Barang section in Khurda Road Division of East Coast Railway",
+  "execution_period_raw": "1,095 days from Appointed Date",
+  "execution_months": 36,
+  "consideration_raw": "₹ 483.72 Crore including GST (₹ 409.94 Crore excluding GST)",
+  "value_inr": 4837200000,
   "value_span": null,
-  "gst_inclusive": null,
+  "gst_inclusive": true,
   "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
+  "promoter_interest": false,
+  "related_party": false,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
-  "is_follow_up": false,
-
+  "stage": "contract",
+  "is_follow_up": true,
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Follow-up to L1 intimation dated 2 Sep 2026. Value excluding GST: ₹409.94 Cr. execution_months = 1,095 days converted to months."
 }

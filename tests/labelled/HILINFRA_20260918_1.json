@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "HILINFRA",
-    "isin": "",
+    "isin": "INE00RL01028",
     "filing_date": "2026-09-18",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "037406efd6446be194655fd4ec100b3cbfd8ace09056636cfd294ea6bcd3c1de"
   },
-
-  "awarding_entity": null,
+  "awarding_entity": "Uttar Pradesh Expressways Industrial Development Authority (UPEIDA)",
   "domestic_or_international": null,
   "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
-  "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "significant_terms": "Toll collection and allied operations on the Gorakhpur Link Expressway: collection of user fees and operation of toll plazas, along with the deployment of four patrol-cum-safety vehicles with the required personnel",
+  "execution_period_raw": "initial period of two years, with a provision for extension of up to six months at UPEIDA's discretion",
+  "execution_months": 24,
+  "consideration_raw": "The total contract value for the two-year period is Rs. 220.66 crore. The amount payable for the first year is Rs. 105.08 crore, followed by a 10% escalation in the second year.",
+  "value_inr": 2206600000,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
   "promoter_interest": null,
   "related_party": null,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "LOA",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Letter of Acceptance. Possible 6-month extension not included in execution_months. Domestic/international, GST, promoter interest and related-party status not stated."
 }

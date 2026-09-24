@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "HEG",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-18",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "75bfc212d7c7fd3c6fbe9c26810b7ff227b2707532586f0471543ca37ee1f4ef"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "awarding_entity": "Indus Towers Limited (formerly Bharti Infratel Limited)",
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Supply of Lithium-Ion Battery Banks",
+  "significant_terms": "General condition as per purchase orders.",
+  "execution_period_raw": "On or before March 31, 2027 or such extended date as may be mutually agreed upon between the parties.",
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "Rs. 217.56 Crore (Rupees Two Hundred Seventeen Crore Fifty Six Lakh only), inclusive of GST",
+  "value_inr": 2175600000,
   "value_span": null,
-  "gst_inclusive": null,
+  "gst_inclusive": true,
   "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
+  "promoter_interest": false,
+  "related_party": false,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
-  "is_follow_up": false,
-
-  "multiple_orders": false,
+  "stage": "purchase_order",
+  "is_follow_up": true,
+  "multiple_orders": true,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Orders received by subsidiary Replus Engitech Private Limited. Revised disclosure correcting the original filing of 18 Sep 2026, which omitted 'Crore' after 'Rs. 217.56' (is_follow_up=true for dedupe). Multiple purchase orders with one aggregate value; no breakdown. Execution is a deadline, so execution_months left null."
 }

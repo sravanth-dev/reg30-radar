@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "BEL",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-07-31",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "e612b59085619959eed4a810d07fc113eeeb54d30a19ee02b6ebabd006b1918d"
   },
-
   "awarding_entity": null,
   "domestic_or_international": null,
   "nature_of_order": null,
-  "significant_terms": null,
-
+  "significant_terms": "Major orders received include electro optics, security operation centre, seekers, components, spares, services etc.",
   "execution_period_raw": null,
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "Rs.847 Crore",
+  "value_inr": 8470000000,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
   "promoter_interest": null,
   "related_party": null,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "order",
   "is_follow_up": false,
-
-  "multiple_orders": false,
+  "multiple_orders": true,
   "orders": null,
-
-  "is_scanned": false,
-  "labeller_notes": null
+  "is_scanned": true,
+  "labeller_notes": "Press release aggregating additional orders secured since the last disclosure on 13 July 2026; no awarding entity, per-order breakdown or Schedule III annexure given. Scanned PDF with OCR layer (Hindi text garbled in OCR)."
 }

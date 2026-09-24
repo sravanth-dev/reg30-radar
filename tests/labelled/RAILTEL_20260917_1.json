@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "RAILTEL",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "8c46ff0d2e05d453fa8a801db8333fcd8bad2ca9d31f1c3be16bff505f95bf2b"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "awarding_entity": "Prasar Bharti (Broadcasting Corporation Of India) Director General, Doordashan",
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Service",
+  "significant_terms": "Letter of Intent/Award for additional features/services on existing WAVES OTT Platform",
+  "execution_period_raw": "11-FEB-29",
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "The Estimated Size of Order as per LoI is Rs. 63,15,14,433/- (Including Tax)",
+  "value_inr": 631514433,
   "value_span": null,
-  "gst_inclusive": null,
+  "gst_inclusive": true,
   "currency": "INR",
-
   "promoter_interest": null,
-  "related_party": null,
-  "receipt_datetime": null,
+  "related_party": false,
+  "receipt_datetime": "2026-09-16T17:37:00",
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "LOI",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Letter dated 16 Sep 2026 (filename date 17 Sep 2026). Value is an estimate and stated as 'Including Tax' (read as GST-inclusive). Promoter interest answered 'Na', so left null. Receipt time given without timezone. Execution is a deadline (11 Feb 2029), so execution_months left null. Reporting delay answered 'Na'."
 }

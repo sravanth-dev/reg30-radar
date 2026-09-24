@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "VIVIANA",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "c607c5ac99db45317a29f2be54b6a6b88f977050c9f739cbe1cfa0b7db486e23"
   },
-
   "awarding_entity": null,
   "domestic_or_international": null,
   "nature_of_order": null,
-  "significant_terms": null,
-
+  "significant_terms": "Supply, installation and associated works for conversion of overhead 11 kV HT lines into underground cable networks with Ring Main System at Mota Mava and Madhapar Sub-Divisions of Rajkot City Circle under the SI Scheme of PGVCL",
   "execution_period_raw": null,
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "Rs.139.49 Cr",
+  "value_inr": 1394900000,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
   "promoter_interest": null,
   "related_party": null,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "L1",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "L1 stage only; company states Schedule III details will be given separately once the Letter of Intent/Award is received. Awarding entity not explicitly named (works are 'under the SI Scheme of PGVCL'), so left null. Domestic/international, execution period, GST, promoter interest and related-party status not stated."
 }

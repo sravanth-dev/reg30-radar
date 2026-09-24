@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "ZAGGLE",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-18",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "f15aa3b566da865d8069415c25b7f6f20445d49a571697735256a09446d416ee"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "awarding_entity": "Bandhan AMC Limited",
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Agreement",
+  "significant_terms": "Zaggle shall provide Zaggle Zoyer platform to Bandhan AMC Limited",
+  "execution_period_raw": "This Agreement shall be valid and in force unless terminated in accordance with the provisions of this Agreement.",
   "execution_months": null,
-
-  "consideration_raw": null,
+  "consideration_raw": "Value of order(s)/contract(s): The quantum of SaaS/Software fee depends on the number of active users for the respective months on the platform and the corresponding program fee from this would depend upon the actual spends done by the users over a period of time. In such a case it would be difficult to ascertain the value/amount of the contract at this stage.",
   "value_inr": null,
   "value_span": null,
   "gst_inclusive": null,
-  "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
-  "receipt_datetime": null,
+  "currency": null,
+  "promoter_interest": false,
+  "related_party": false,
+  "receipt_datetime": "2026-09-18",
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "agreement",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Contract value not ascertainable per the company (usage-based SaaS/program fees), so value_inr and currency left null. Agreement has no fixed term (valid until terminated)."
 }

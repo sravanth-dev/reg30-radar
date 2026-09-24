@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "GREENPOWER",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-17",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "11074149b675fd2ff4d56abb83a474f8073f88a93c3151bb93bbed2e3c07a1ce"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
+  "awarding_entity": "Beta Wind Farm Private Limited",
+  "domestic_or_international": "domestic",
   "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "significant_terms": "Renfra shall set up 2 (Two) Wind Turbine Generators (WTGs) of 3.3 MW each aggregating to 6.6 MW in Karur District, Tamil Nadu on a turnkey basis.",
+  "execution_period_raw": "Commissioning on or before November 30, 2026, subject to acquisition of a portion of land parcels and receipt of approvals from regulatory authorities.",
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "The consideration agreed under the EPC Contract is ~Rs. 62.00 Crores (inclusive of GST).",
+  "value_inr": 620000000,
   "value_span": null,
-  "gst_inclusive": null,
+  "gst_inclusive": true,
   "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
-  "receipt_datetime": null,
+  "promoter_interest": false,
+  "related_party": false,
+  "receipt_datetime": "2026-09-17",
   "reporting_delay_reason": null,
-
-  "company_is_recipient": true,
-  "stage": "unknown",
-  "is_follow_up": false,
-
+  "company_is_recipient": false,
+  "stage": "contract",
+  "is_follow_up": true,
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Company is the awarder, not the recipient: its material subsidiary Beta Wind Farm Private Limited executed an EPC contract with Renfra Energy India Limited (domestic) on 17 Sep 2026. receipt_datetime is the contract execution date. Follow-up to LOI intimation dated 20 May 2026. Commissioning is a deadline, so execution_months left null."
 }

@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "WAAREEENER",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-21",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "dd4716d2919c4e2484d498abd112225daee80965a8dcab85e6da319b0264e377"
   },
-
   "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
+  "domestic_or_international": "domestic",
+  "nature_of_order": "One time",
+  "significant_terms": "Supply of Solar Modules",
+  "execution_period_raw": "Supply of 2 GW Solar modules in Financial Year 2026-27 & 2027-28.",
   "execution_months": null,
-
-  "consideration_raw": null,
+  "consideration_raw": "Supply of 2 GW Solar modules",
   "value_inr": null,
   "value_span": null,
   "gst_inclusive": null,
-  "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
-  "receipt_datetime": null,
+  "currency": null,
+  "promoter_interest": false,
+  "related_party": false,
+  "receipt_datetime": "2026-09-21",
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "order",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Customer not named ('renowned customer who is a leading solar developer'). No monetary value disclosed; size stated only as 2 GW of solar modules, so value_inr and currency left null. Execution given as FY range, so execution_months left null. Cover letter refers to 'Annexure I' but the annexure is headed 'Annexure A'."
 }

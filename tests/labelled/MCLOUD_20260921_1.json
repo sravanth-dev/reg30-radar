@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "MCLOUD",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-21",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "c900a541858ff80bbf31f15eca493e0985b3a6437294b5850a689f5406936825"
   },
-
-  "awarding_entity": null,
+  "awarding_entity": "Nayara Energy Limited",
   "domestic_or_international": null,
   "nature_of_order": null,
-  "significant_terms": null,
-
+  "significant_terms": "Implement an advanced AI-powered Automatic Number Plate Recognition (ANPR) and Video Analytics Platform across selected Retail Outlets and Oil Depots",
   "execution_period_raw": null,
   "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "consideration_raw": "₹44.60 Lakh (Rs. 44,60,400/-)",
+  "value_inr": 4460400,
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
-
   "promoter_interest": null,
   "related_party": null,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "purchase_order",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Purchase order received by wholly owned subsidiary Provigil Surveillance Limited. Cover letter dated 21 Sep 2026; press release dated 20 Sep 2026. Domestic/international, execution period, GST, promoter interest and related-party status not stated."
 }

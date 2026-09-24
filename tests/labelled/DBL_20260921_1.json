@@ -1,39 +1,32 @@
 {
   "_source": {
     "symbol": "DBL",
-    "isin": "",
+    "isin": null,
     "filing_date": "2026-09-21",
-    "category_raw": "",
-    "pdf_url": "",
+    "category_raw": null,
+    "pdf_url": null,
     "pdf_sha256": "b7a9d2ead9c703a5511008fc661291f333c55c7f1e0e82208391e9fd5327a83c"
   },
-
-  "awarding_entity": null,
-  "domestic_or_international": null,
-  "nature_of_order": null,
-  "significant_terms": null,
-
-  "execution_period_raw": null,
-  "execution_months": null,
-
-  "consideration_raw": null,
-  "value_inr": null,
+  "awarding_entity": "REC Power Development and Consultancy Limited (RECPDCL)",
+  "domestic_or_international": "domestic",
+  "nature_of_order": "Development, financing, design, engineering, procurement, construction, testing, commissioning, operation and maintenance of transmission assets",
+  "significant_terms": "Selection of Dilip Buildcon Limited as Successful Bidder to acquire 100% equity of the Project SPV and act as Transmission Service Provider (TSP) for development, ownership, operation, and maintenance of the Intra-State Transmission System on Build, Own, Operate and Transfer (BOOT) basis under Tariff Based Competitive Bidding (TBCB) route and Transmission Service Agreement (TSA)",
+  "execution_period_raw": "Construction and commissioning to be completed within 24 months from the Effective Date, as per RFP",
+  "execution_months": 24,
+  "consideration_raw": "Awarded Project to be implemented under Tariff Based Competitive Bidding (TBCB) model. | EPC for DBL (excluding GST): INR 1265 crore (excluding GST)",
+  "value_inr": 12650000000,
   "value_span": null,
-  "gst_inclusive": null,
+  "gst_inclusive": false,
   "currency": "INR",
-
-  "promoter_interest": null,
-  "related_party": null,
+  "promoter_interest": false,
+  "related_party": false,
   "receipt_datetime": null,
   "reporting_delay_reason": null,
-
   "company_is_recipient": true,
-  "stage": "unknown",
+  "stage": "L1",
   "is_follow_up": false,
-
   "multiple_orders": false,
   "orders": null,
-
   "is_scanned": false,
-  "labeller_notes": null
+  "labeller_notes": "Declared L-1 / successful bidder for 400 kV GIS Solapur/Paranda Switching Station (Dist. Dharashiv), Maharashtra. RECPDCL acts as Bid Process Coordinator on behalf of Maharashtra State Transmission Utility. 'Broad consideration' row gives no figure; value_inr taken from the separate 'EPC for DBL (excluding GST)' row. Operation period is 35 years from COD after the 24-month construction period."
 }

@@ -47,6 +47,15 @@ nse:
       market_cap: mcap
       band_hitters: bh
 
+  documents:
+    # Attachment downloads (ARCHITECTURE Sect.5.5). The ceiling is not decoration: the
+    # worker runs under mem_limit 512m beside n8n on a 2-vCPU box (Sect.9), and pdfplumber
+    # holds a page's objects in memory while parsing, so one unexpectedly large file is the
+    # single download that can take the container down. A capped stream turns that into a
+    # recorded refusal instead of an OOM kill.
+    max_bytes: 26214400      # 25 MiB. The largest in the labelled set is ~7 MB.
+    chunk_bytes: 65536
+
   pacing:
     # ARCHITECTURE.md D6 (revised 23 Sep 2026) and Sect.5.1.
     #

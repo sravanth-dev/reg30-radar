@@ -1,0 +1,131 @@
+"""Download one filing PDF, politely and with a size ceiling.
+
+Reuses the collector's session discipline (D25): one warmed-up session, browser-like
+headers from `config/sources.yaml`, one request at a time, jittered pacing, backoff on
+failure. Nothing here rotates anything.
+
+The size ceiling is not decoration. The worker runs under `mem_limit: 512m` beside n8n on a
+2-vCPU box (Sect.9), and pdfplumber holds a page's objects in memory while parsing, so an
+unexpectedly huge file is the one download that can take the container down. Streaming with
+a cap turns that into a recorded refusal instead.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import random
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import requests
+
+from tradebot.common.config import nse as nse_config
+
+
+@dataclass
+class Fetched:
+    ok: bool
+    path: Path | None = None
+    sha256: str | None = None
+    size_bytes: int = 0
+    http_status: int | None = None
+    error: str | None = None
+
+
+class PdfFetcher:
+    """A warmed-up session for attachment downloads.
+
+    Separate from NseClient because the two have different jobs and different rates: the
+    collector polls one JSON endpoint on a schedule, this pulls files from the archive host
+    at the backfill pace. Sharing one session would make the slower job's backoff interfere
+    with the faster job's schedule.
+    """
+
+    def __init__(self) -> None:
+        self.cfg = nse_config()
+        docs = self.cfg.get("documents", {})
+        self.max_bytes = int(docs.get("max_bytes", 25 * 1024 * 1024))
+        self.chunk = int(docs.get("chunk_bytes", 64 * 1024))
+        pacing = self.cfg["pacing"]
+        self.min_gap = float(pacing["backfill_min_gap_seconds"])
+        self.jitter = tuple(float(x) for x in pacing["jitter_seconds"])
+        self.session = requests.Session()
+        self.session.headers.update({k: str(v) for k, v in self.cfg["headers"].items()})
+        self._warm = False
+        self._last = 0.0
+
+    def warm_up(self) -> None:
+        self.session.get(self.cfg["warmup_url"], timeout=60)
+        self._warm = True
+
+    def _pace(self) -> None:
+        """Never faster than the backfill gap, and never exactly periodic (Sect.5.1)."""
+        wait = self.min_gap + random.uniform(*self.jitter) - (time.monotonic() - self._last)
+        if self._last and wait > 0:
+            time.sleep(wait)
+        self._last = time.monotonic()
+
+    def fetch(self, url: str, dest_dir: Path) -> Fetched:
+        """Stream one PDF into `dest_dir`, hashing as it goes.
+
+        Hashing during the stream rather than re-reading the file afterwards means the hash
+        describes exactly the bytes received, which is what the Sect.5.5 re-download check
+        compares against later.
+
+        Returns a Fetched rather than raising: a failed download is a recorded outcome, and
+        an exception escaping here would lose the record of what went wrong.
+        """
+        if not self._warm:
+            self.warm_up()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        self._pace()
+
+        digest = hashlib.sha256()
+        size = 0
+        tmp = dest_dir / f"download-{int(time.time() * 1000)}.part"
+        try:
+            with self.session.get(url, timeout=90, stream=True) as r:
+                if r.status_code != 200:
+                    return Fetched(False, http_status=r.status_code,
+                                   error=f"HTTP {r.status_code}")
+                with tmp.open("wb") as fh:
+                    for block in r.iter_content(chunk_size=self.chunk):
+                        if not block:
+                            continue
+                        size += len(block)
+                        if size > self.max_bytes:
+                            fh.close()
+                            tmp.unlink(missing_ok=True)
+                            return Fetched(
+                                False, http_status=r.status_code, size_bytes=size,
+                                error=f"exceeds max_bytes ({self.max_bytes}); refused")
+                        digest.update(block)
+                        fh.write(block)
+        except Exception as exc:
+            tmp.unlink(missing_ok=True)
+            return Fetched(False, error=f"{type(exc).__name__}: {exc}")
+
+        sha = digest.hexdigest()
+        # Name the file by its hash: two events sharing one attachment (Sect.5.3's dedup
+        # case) then collide on disk instead of downloading twice.
+        final = dest_dir / f"{sha}.pdf"
+        tmp.replace(final)
+
+        with final.open("rb") as fh:
+            if fh.read(4) != b"%PDF":
+                # A 200 that is not a PDF is usually an Akamai interstitial. Keep nothing.
+                final.unlink(missing_ok=True)
+                return Fetched(False, sha256=sha, size_bytes=size, http_status=200,
+                               error="response is not a PDF")
+
+        return Fetched(True, path=final, sha256=sha, size_bytes=size, http_status=200)
+
+
+def sha256_of(path: Path) -> str:
+    """Hash a file already on disk, for the Sect.5.5 re-download check."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as fh:
+        for block in iter(lambda: fh.read(64 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()

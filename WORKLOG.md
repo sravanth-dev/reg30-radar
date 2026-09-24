@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 24 Sep 2026*
+*Last updated: 24 Sep 2026 (later)*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -36,6 +36,7 @@ code in the repo, and the first data that cannot be re-created if lost (D23:
 | Live-feed reconciliation | **Running** since 22 Sep 14:02 IST; reconcile against the 23 Sep bundle. |
 | **C** — results XBRL | Not started |
 | **D** — extraction bake-off | **Arm 1 done** (24 Sep): parser alone scores **44%** exact `value_inr` on 18 labelled docs. Arms 2-4 need an OpenAI key. |
+| Slice 4 (document pipeline) | **Built and unit-tested** (24 Sep, later): download -> SHA-256 -> extract -> store -> delete-the-PDF, in `src/tradebot/documents/`. **Not yet wired to the collector** — nothing downloads a filing's PDF automatically yet; §5.4's router has to exist first to decide which filings qualify (D7). |
 | **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
 | Python 3.14 wheels | Windows half verified; manylinux not checked. |
 
@@ -837,3 +838,39 @@ the main defence against a model lifting a number from a date — has no ground 
 **This set is now spent as a clean baseline.** Re-scoring these same 18 after fixing the
 defects is a *development* number, not an independent one. A fresh set should be held in
 reserve for any score that decides something.
+
+### 24 Sep 2026 (later) — §5.5 document pipeline built
+
+Sravanth's instruction: keep the labelling/eval procedure as-is, move on to converting PDFs
+to text, checking first whether it already existed. It half did: `documents/text.py` (the
+extract-with-pdfplumber-or-pypdf step) was written yesterday as a side effect of building
+the eval harness. Everything around it — download, hashing, the `documents` table, the
+delete-after-extraction step, tests — did not exist.
+
+Built: `documents/fetch.py` (streamed download reusing the collector's D25 session
+discipline, capped at `nse.documents.max_bytes` in `config/sources.yaml` — the worker's
+`mem_limit: 512m` alongside n8n makes an oversized file the one download that can OOM-kill
+the container, so it is now a recorded refusal instead), `documents/pipeline.py`
+(`process_url`, the full download-extract-store-delete sequence), `documents/store.py`
+(the `documents` table, dedup on `sha256`). `migrations/0003_documents.sql` adds the table.
+
+Two properties are enforced in code, not left to caller discipline, because both protect
+something expensive to lose. The delete step **refuses any path outside its own work
+directory**, even through a `..` traversal — `tests/labelled/` is D8's one permanent
+exception and a pipeline bug reaching it would destroy the project's only hand-labelled
+ground truth, so this is a hard `UnsafeDeletePath` exception, tested. And the PDF is
+**deleted only after the text is committed**, never before, so a crash mid-run leaves the
+file on disk (visible via `store.undeleted()`) rather than silently losing a filing whose
+URL might not stay live.
+
+12 new tests, all offline: a fake fetcher copies a real PDF from `tests/labelled/` into a
+tmp work directory, so the real extractor runs against real text with no network and no
+Postgres, matching §9's "most tests need none" rule. 101 passing overall.
+
+**Deliberately not done in this pass**: nothing in `src/tradebot/collector/` calls
+`process_url` yet. §5.5 only runs for `order_win`/`order_candidate`/LLM-confirmed
+`catch_all` (D7), and that routing decision is §5.4's job, which has not been built. Wiring
+the pipeline to the collector before the router exists would mean downloading every
+filing's PDF, which is exactly what D7 exists to prevent.
+
+Migration `0003_documents` applied to the local Postgres.

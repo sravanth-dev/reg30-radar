@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 1.2 · 23 Sep 2026 · Owner: Sravanth
+Version 1.3 · 24 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v1.3 builds the §5.5 document pipeline (`src/tradebot/documents/`): download, SHA-256, extract, store, delete-the-PDF. The unit normalizer and annexure parser (`units/`, `extractor/`) and the eval harness (`eval/`) were already built and scored once against the labelled set (44% exact `value_inr`, T0 alone — see `reports/extraction_baseline_2026-09-24.md`); this slice is the pipeline that will feed them PDFs from the live collector rather than from `tests/labelled/`. Adds the `documents` table (`migrations/0003_documents.sql`) and `nse.documents` to `config/sources.yaml`.
 - v1.2 pulls part of **D11** forward from Phase 2: a one-way, view-only mirror of
   `raw_announcements` into a Google Sheet (`src/tradebot/sheets/`), so the collector's
   output can be browsed without writing SQL each time. Postgres stays authoritative; the
@@ -363,6 +364,11 @@ Purpose: one identity per company (ISIN) behind any NSE symbol. This also define
 ### 5.5 Document pipeline
 - Runs only for `order_win`, `order_candidate` and LLM-confirmed `catch_all` items (D7).
 - Steps: download PDF → SHA-256 → extract text (pdfplumber; fallback pypdf) → save text in `documents` → **delete the PDF** (D8).
+- **Built** (24 Sep 2026): `src/tradebot/documents/fetch.py` (streamed download, capped at `nse.documents.max_bytes` in `config/sources.yaml` — 25 MiB by default, because the worker runs under `mem_limit: 512m` alongside n8n and pdfplumber holds a page's objects in memory while parsing, so an oversized file is the one download that can take the container down); `text.py` (extraction, already existed); `pipeline.py` (`process_url`, orchestrating the whole sequence); `store.py` (the `documents` table).
+  - **Safety property, tested**: the delete step refuses any path outside the work directory it was given, even via a `..` traversal. `tests/labelled/` is D8's one permanent exception, and a pipeline bug that reached it would destroy the project's only hand-labelled ground truth — so the refusal is enforced in code (`UnsafeDeletePath`), not left to caller discipline.
+  - **Ordering property, tested**: the PDF is deleted only *after* the extracted text is committed, never before. Deleting first would turn one failed transaction into a permanently lost filing, since the attachment URL is not guaranteed to stay live.
+  - Dedup reuses `sha256`: a second sighting of an already-stored hash is recognised before extraction and the pipeline just deletes the redundant download, per §5.3.
+  - Runs without a database (`conn=None`) for testing, matching §9's rule that most tests need none — this is what let 12 new tests run against a real labelled PDF with no live network and no Postgres.
 - Scanned PDFs (little or no extractable text): set `is_scanned`. Until this is decided, send them to manual review. (Open: local OCR costs CPU/RAM on the CX22; a vision-capable model costs tokens.)
 - Keep URL, SHA-256, page count, text, extraction method and timestamps. If a later re-run needs the PDF, re-download it from the URL and check the hash matches.
 - Exception (**confirmed**, D8): PDFs in the labelled test set (`tests/labelled/`) stay in the repo permanently.
@@ -687,7 +693,7 @@ straight after Slice 0, because `first_seen_at` cannot be backfilled).
 1. Collector (NSE live + backfill mode), raw store, source health. — **Live half DONE** (23 Sep 2026): `src/tradebot/collector/` polls the announcements endpoint on D6's schedule, stores every filing in `raw_announcements` and every poll in `source_health`, with the trading-day calendar failing loudly per D27. **Backfill mode is not built yet**, and is the remaining half of this slice.
 2. Instruments / ISIN map, normalizer, intra-NSE dedup. (Much smaller since D26 removed the BSE collector and cross-exchange dedup.)
 3. Router + unknown-category log; tests from the Fri 18 Sep fixture (§5.4).
-4. Document pipeline (download → text → delete), annexure parser, unit normalizer (test vectors in §5.7).
+4. Document pipeline (download → text → delete), annexure parser, unit normalizer (test vectors in §5.7). — **Built and tested 24 Sep 2026** (`src/tradebot/documents/`: `fetch.py`, `text.py`, `pipeline.py`, `store.py`; `units/money.py`, `extractor/annexure.py` already existed from the extraction baseline). **Not yet wired to the live collector** — `process_url` exists and is exercised in `tests/unit/test_documents.py` against a real labelled PDF, but nothing in `src/tradebot/collector/` calls it yet, so `order_win`/`order_candidate` filings are not currently downloaded. That wiring, plus the router (§5.4) that decides which filings qualify, is the remaining work in this slice.
 5. LLM client (OpenAI SDK): routing tiers and escalation triggers, spend caps, structured output + validation, logging, Batch mode for backfill. Plus labelled-set evaluation.
 6. Revenue loader + point-in-time TTM.
 7. Market data loader + calculator.

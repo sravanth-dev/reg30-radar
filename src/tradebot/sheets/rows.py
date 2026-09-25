@@ -34,7 +34,9 @@ _CELL_LIMIT = 50_000
 _TRUNCATED_MARKER = " …[truncated for Sheets' 50,000-character cell limit]"
 
 
-def _text(value) -> str:
+def text_cell(value) -> str:
+    """Any value -> a plain-text Sheets cell. Public (not `_text`) because sheets/orders.py
+    reuses it, so the empty-cell rule and the length cap live in exactly one place."""
     if value is None:
         return ""
     s = str(value)
@@ -44,7 +46,9 @@ def _text(value) -> str:
     return s
 
 
-def _ist(value: datetime | None) -> str:
+def ist_cell(value: datetime | None) -> str:
+    """Any tz-aware timestamp -> `YYYY-MM-DD HH:MM:SS` in IST. Public for the same reason
+    as `text_cell`."""
     if value is None:
         return ""
     return value.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S")
@@ -62,14 +66,14 @@ def to_sheet_row(record: tuple) -> list[str]:
      industry, isin, first_seen_at, revision) = record
     return [
         str(row_id),
-        _ist(exchange_ts),
-        _text(symbol),
-        _text(company),
-        _text(category_raw),
-        _text(headline),
-        _text(attachment_url),
-        _text(industry),
-        _text(isin),
-        _ist(first_seen_at),
+        ist_cell(exchange_ts),
+        text_cell(symbol),
+        text_cell(company),
+        text_cell(category_raw),
+        text_cell(headline),
+        text_cell(attachment_url),
+        text_cell(industry),
+        text_cell(isin),
+        ist_cell(first_seen_at),
         str(revision),
     ]

@@ -1,8 +1,9 @@
 # ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
 
-Version 1.4 · 24 Sep 2026 · Owner: Sravanth
+Version 1.5 · 25 Sep 2026 · Owner: Sravanth
 
 Change log:
+- v1.5 adds a second tab, `orders`, to the same Google Sheet (`src/tradebot/sheets/orders.py`), mirroring `order_extractions` - order-related filings only, with the value, extractor, and review status - so Sravanth can see the pipeline's output online without SQL. A further, still-narrow piece of D11 pulled forward, same as v1.2's raw mirror: view-only, no scoring. Unlike the raw tab, `order_extractions` rows change after they're first written (`pending_llm` → `verified`), so there is no append-only position to pin a row to; the tab is rewritten whole each cycle instead, skipped when a content hash shows nothing changed. `client.py` gains `ensure_tab()` (so a new tab no longer needs the hand rename v1.2's first live sync required), `write_numbers()` (one `USER_ENTERED` column, value-shape-checked before any HTTP call, so the sortable ₹-crore column can never receive filing text), and `clear_from()`.
 - v1.4 replaces the §5.5 char-count `is_scanned` heuristic with a per-page quality ladder (`documents/quality.py`, `documents/text.py`) after a live demo showed it could pass a genuinely garbled document (an invisible-OCR text layer with a broken font, plenty of characters, all wrong). Builds vision OCR as the closing move on the §11 scanned-PDF item, but dormant: `llm/client.py` (the single provider entry point CLAUDE.md requires, pulled forward from Slice 5), `documents/ocr.py`, `prompts/ocr_transcribe_v1.md`, `migrations/0004_document_quality.sql`, `migrations/0005_llm_calls.sql`. Adds the §5.6/§6 provenance rule for vision-read numbers. Records a finding that reversed part of the plan: a whole-page readability score cannot separate the regression fixture from an already-accepted page with the same garbled-bilingual-header pattern (BEL) — the two are told apart by font provenance instead. See §5.5 for the full reasoning.
 - v1.3 builds the §5.5 document pipeline (`src/tradebot/documents/`): download, SHA-256, extract, store, delete-the-PDF. The unit normalizer and annexure parser (`units/`, `extractor/`) and the eval harness (`eval/`) were already built and scored once against the labelled set (44% exact `value_inr`, T0 alone — see `reports/extraction_baseline_2026-09-24.md`); this slice is the pipeline that will feed them PDFs from the live collector rather than from `tests/labelled/`. Adds the `documents` table (`migrations/0003_documents.sql`) and `nse.documents` to `config/sources.yaml`.
 - v1.2 pulls part of **D11** forward from Phase 2: a one-way, view-only mirror of
@@ -66,7 +67,7 @@ SME-platform companies · everything in §5.12.
 | D8 | PDF retention | Delete each PDF after text extraction; keep text, URL and SHA-256. The `tests/labelled/` PDFs stay in the repo permanently — **exception confirmed** | Decided |
 | D9 | Universe | NSE mainboard only. The original clause about BSE filings for dual-listed companies is moot since D26 dropped BSE from Phase 1 | Decided |
 | D10 | Backfill | 12 months of announcements. Prices, market caps and band hitters: 12 months **+ 30 trading days**, so the −20-day pre-event window and 20-day average volume have room at the start. Results: 24 months, so four quarters precede the earliest event | Decided |
-| D11 | Google Sheets | Phase 2: scored orders + daily digest, one-way (view-only). **Narrowed forward, v1.2**: a plain one-way mirror of `raw_announcements` (no scoring, no digest) runs now, so the filings can be browsed without SQL — see §7 `sheets_sync` and §9 | Decided |
+| D11 | Google Sheets | Phase 2: scored orders + daily digest, one-way (view-only). **Narrowed forward, v1.2**: a plain one-way mirror of `raw_announcements` (no scoring, no digest) runs now, so the filings can be browsed without SQL — see §7 `sheets_sync` and §9. **Extended, v1.5**: a second tab mirrors `order_extractions` (order-related filings, extractor, value, status) - still view-only and still not the Phase 2 scored/digest tab, since `value_to_ttm` and the other ratios don't exist yet (§5.10 is not built) | Decided |
 | D12 | Python | Same version on laptop and VPS: 3.14. **Windows/cp314 verified** in Step 0 — all 11 approved deps installed from wheels on 3.14.2, no source builds. manylinux still to check (Step 1) | Default |
 | D13 | Secrets | `.env` on each machine only; `.env.example` committed | Default |
 | D14 | Backups | Nightly `pg_dump` of `tradebot` to Google Drive, in place **before the backfill**, not before live use: the backfill is weeks of scraping plus LLM spend and is the expensive thing to lose | Default (mechanism Open) |
@@ -633,7 +634,15 @@ All timestamps `timestamptz`; money `NUMERIC(20,2)`. **Ratios are not money** an
   from a row where `ok` is true, which is what makes a retried write idempotent: a run
   whose write reaches the Sheet but then fails before this row is recorded leaves the next
   run to redo that chunk, writing the same content to the same sheet rows rather than a
-  new position.
+  new position. **The `orders` tab (v1.5) has no equivalent table.** `order_extractions`
+  rows are upserted, not append-only, so there is no fixed position to resume into; the
+  tab is simply rewritten whole from the current table each cycle, skipped only when a
+  content hash (kept in memory, in `src/tradebot/sheets/__main__.py`) shows nothing
+  changed since the *last cycle of this process*. A fresh process - including a second
+  `python -m tradebot.sheets --once` right after the first - has no prior hash and always
+  rewrites once. This is deliberate, not a gap: the rewrite is idempotent and cheap at
+  order-filing volumes (about 10 rows a day), so paying for one extra write on every
+  restart was judged simpler than a table whose only job would be caching that write away.
 
 Migrations (Default): plain numbered SQL files in `migrations/` (`0001_init.sql`, …) applied by a small runner. No ORM magic, so every schema change is readable.
 

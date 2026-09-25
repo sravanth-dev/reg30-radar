@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 25 Sep 2026 (morning)*
+*Last updated: 25 Sep 2026 (later)*
 
 **The live collector is not running right now** (not on 24 Sep, not this morning as of the
 last update). `raw_announcements` is caught up through ~10:30 IST on 25 Sep via
@@ -57,10 +57,12 @@ the symbol query returns a company's whole 22-year history in one call — so th
 one request per company, not per company-day. Caveats in §5.1.
 
 **Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
-`raw_announcements` into a Google Sheet, view-only, so Sravanth can browse filings without
-writing SQL. Built and **verified live** 23 Sep 2026 night, pulling a narrow slice of D11
-forward from Phase 2. Not yet running continuously - `--once` has been run by hand twice;
-leaving it running (`python -m tradebot.sheets`, 5 min interval) is still to do.
+`raw_announcements` **and, since 25 Sep, `order_extractions`** into two tabs of one Google
+Sheet, view-only, so Sravanth can browse filings and the order pipeline's output without
+writing SQL. Both verified live: raw tab 23 Sep night, orders tab 25 Sep (later). Neither
+is running continuously right now - `--once` has been run by hand each time. Live viewing
+needs three processes running at once: the collector, `orders --follow`, and `sheets`
+(no flags). None of the three is running as of this update.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -1265,3 +1267,76 @@ order-related rows - the same underlying event counted twice. This is expected g
 event-merging (same-day repeat filings collapsed into one event) is not built yet
 (Slice 2); recorded here as a live example of exactly the gap that slice exists to close,
 not a bug in tonight's work.
+
+### 25 Sep 2026 (later) — decision: an `orders` tab in the Google Sheet, live
+
+Sravanth asked, in his own words, for the order-extraction pipeline's output - the
+classification into orders vs. general updates vs. out-of-scope, the T0/LLM extraction,
+the order value - to reach Google Sheets live, so he can view it online anytime, next to
+the existing raw-filings mirror.
+
+**Decided: a second tab, `orders`, in the same Sheet.** Order-related filings only (about
+10 a day; 22 so far today out of 290 processed) - the existing raw tab still shows
+everything. He starts the three live processes himself (collector, `orders --follow`,
+`sheets`); no launcher script. None of the three is running right now, so nothing will
+appear online until he starts them.
+
+Shape, so a cold session does not re-derive it: the orders tab is **rewritten each cycle**,
+not appended - unlike raw_announcements, `order_extractions` rows change after they're
+first written (a `pending_llm` row can become `verified`), so the raw tab's fixed-position,
+append-only design does not fit here. A content hash skips the write when nothing changed.
+Text cells stay `valueInputOption=RAW` as before (untrusted filing text); the one numeric
+Value (₹ cr) column is written separately with `USER_ENTERED` so it sorts as a number, and
+only after a new `write_numbers()` helper confirms every value is digits-and-a-decimal-
+point - never handed filing text. This is a second, narrow piece of D11 pulled forward,
+same as the raw mirror: view-only, no scoring (`value_to_ttm` etc. don't exist yet), and
+not D11's Phase 2 scored-orders/digest tab.
+
+### 25 Sep 2026 (later, cont.) — `orders` tab built, tested, run live
+
+What changed: `src/tradebot/sheets/orders.py` (`HEADER`, `ORDERS_SQL`, `to_orders_row`,
+`sync_orders`); `client.py` gained `ensure_tab()`, `write_numbers()`, `clear_from()` (and
+`clear_data()` is now `clear_from(2)`); `rows.py`'s `_text`/`_ist` became the public
+`text_cell`/`ist_cell` so `orders.py` could reuse them instead of duplicating the empty-
+cell rule and the 50,000-character cap; `__main__.py` now builds two `SheetsClient`s off
+one shared `authorized_session` and syncs both tabs each cycle, each in its own
+try/except. `config/sheets.yaml` gained `orders_tab_name: orders`. Why: recorded in the
+decision entry just above. 20 new unit tests, all in `tests/unit/test_sheets_orders.py`,
+no network and no database - 217 total pass.
+
+**Verified live, not just in tests.** `python -m tradebot.sheets --once`:
+- created the `orders` tab from nothing (`ensure_tab`'s first real exercise - no manual
+  rename needed this time, unlike the raw tab's first sync on 23 Sep);
+- wrote all **22** order-related rows, newest-filed-first;
+- read back with `valueRenderOption=UNFORMATTED_VALUE`: BDL's ₹810.79 crore order came
+  back as the **number** `810.79` in the Value column (not text) while every other column
+  came back as literal text, confirming the RAW/`USER_ENTERED` split actually produced two
+  different cell types, not just two different write calls;
+- the raw tab, untouched since 23 Sep, caught up from 719 to 1,701 rows in the same run
+  (`raw_announcements` had grown to 1,700 via this morning's catch-up backfill - see the
+  morning entry - none of it synced to the Sheet until now).
+
+**The orders tab is faithfully showing a bug that already exists upstream, not a new one.**
+VASCONEQ's row shows Value = 0 - that's the same known `units/money.py` scale-word bug
+recorded in the morning entry above (₹660.79 crore stored as ₹660.79 rupees), correctly
+carried through: `0.000066` crore rounds to `0.00`. Confirmed this is the pre-existing bug
+and not something introduced here before writing this up, so a future session doesn't
+waste time re-diagnosing it from the Sheet.
+
+**One thing the plan got wrong, caught only by running it twice.** The plan's verification
+section said "a second `--once`: the orders tab is reported unchanged." It isn't - each
+`--once` is a fresh process, `orders_fingerprint` starts `None` every time (nothing
+persists it), so every fresh run rewrites all 22 rows once, always. This is not a bug:
+it matches the plan's own Design section, which explicitly chose no watermark table for
+this tab ("nothing needs resuming, and after a restart the tab is simply written once") -
+one contradicted the other and I hadn't reconciled them before running it. Now recorded in
+ARCHITECTURE.md §7 as the intended behaviour: the in-memory hash only saves a write
+*within* one continuous `python -m tradebot.sheets` process (between its own cycles,
+covered by the unit tests), never across a restart. At ~10 rows/day this costs one harmless
+extra rewrite per restart, not a real problem - but the plan should not have promised a
+check that the design it also specified could never pass, and a live run is what caught it.
+
+**Not started, same as before this session**: none of the three live processes (collector,
+`orders --follow`, `sheets` with no flags) is running continuously. Commands are in
+CLAUDE.md's Commands section; Sravanth starts them himself, one terminal each, per his
+choice recorded above.

@@ -85,9 +85,9 @@ python -m tradebot.orders --date 2026-09-23                     # one already-sc
 python -m tradebot.orders --from 2026-09-20 --to 2026-09-24      # a date range
 python -m tradebot.orders --follow                               # live, next to the collector
 
-# browse raw_announcements as a Google Sheet, view-only mirror (D11, v1.2)
-python -m tradebot.sheets --once        # one sync, then exit
-python -m tradebot.sheets --rebuild     # clear the sheet and resync everything
+# browse raw_announcements + order_extractions as a Google Sheet, view-only (D11, v1.2/v1.5)
+python -m tradebot.sheets --once        # one sync of both tabs, then exit
+python -m tradebot.sheets --rebuild     # clear the raw tab and resync it; then as above
 python -m tradebot.sheets               # run continuously, every 5 min
 
 # VPS

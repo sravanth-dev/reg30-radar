@@ -9,9 +9,14 @@ account or any network access.
 
 from __future__ import annotations
 
+import re
 import string
 from dataclasses import dataclass, field
 from urllib.parse import quote
+
+# A plain signed/unsigned decimal, nothing else - what write_numbers() will accept before
+# it lets a value anywhere near USER_ENTERED (see that method).
+_PLAIN_NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 API_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
@@ -69,20 +74,41 @@ class SheetsClient:
         # Single-quoted so a tab name containing a space still parses as one token.
         return f"'{self.tab_name}'!{range_in_tab}"
 
-    def _properties(self, extra_fields: str = "") -> dict:
+    def _all_sheets(self, extra_fields: str = "") -> list[dict]:
         # Both extras must nest inside the same `sheets(...)` selector - "sheets.properties,
         # protectedRanges" parses as two top-level fields, and protectedRanges only exists
         # per-sheet, not at the spreadsheet's top level, so the API rejects it outright.
+        # This lists every tab, so - unlike _properties() below - it works even before
+        # this client's own tab exists, which is what ensure_tab() needs.
         inner = "properties" + (f",{extra_fields}" if extra_fields else "")
         fields = f"sheets({inner})"
         r = self.session.get(self._url(), params={"fields": fields})
         _raise_for_status(r)
-        for sheet in r.json().get("sheets", []):
+        return r.json().get("sheets", [])
+
+    def _properties(self, extra_fields: str = "") -> dict:
+        for sheet in self._all_sheets(extra_fields):
             if sheet["properties"]["title"] == self.tab_name:
                 return sheet
         raise SheetsError(
             f"no tab named {self.tab_name!r} in this spreadsheet; create it first"
         )
+
+    def ensure_tab(self) -> None:
+        """Create this client's tab if the spreadsheet doesn't have one by this name yet.
+
+        Must run before anything that references the tab in an A1 range (_read_row,
+        write, ...): a range like 'orders'!A1:B1 against a tab that doesn't exist is a 400
+        from the API, not an empty result - the same wall the raw tab hit on its first
+        live sync (WORKLOG, 23 Sep 2026 night), fixed there by hand in the Sheets UI.
+        ensure_header() calls this first so it never needs fixing by hand again.
+        """
+        if any(s["properties"]["title"] == self.tab_name for s in self._all_sheets()):
+            return
+        body = {"requests": [{"addSheet": {"properties": {"title": self.tab_name}}}]}
+        r = self.session.post(self._url(":batchUpdate"), json=body)
+        _raise_for_status(r)
+        self._sheet_id = int(r.json()["replies"][0]["addSheet"]["properties"]["sheetId"])
 
     def sheet_id(self) -> int:
         if self._sheet_id is None:
@@ -146,6 +172,7 @@ class SheetsClient:
         happens if the stored header differs, and the freeze/protection calls are no-ops
         on Google's side if already set.
         """
+        self.ensure_tab()
         if self._read_row(1, len(header)) != header:
             self.ensure_rows(1)
             self.write(1, [header])
@@ -183,8 +210,44 @@ class SheetsClient:
         r = self.session.post(self._url(":batchUpdate"), json=body)
         _raise_for_status(r)
 
-    def clear_data(self) -> None:
-        """Blank every data row (row 2 downward), for --rebuild. The header stays."""
-        a1 = self._a1("A2:Z")
+    def write_numbers(self, col: int, start_row: int, values: list[str]) -> None:
+        """Write one column of plain decimal numbers with USER_ENTERED, so Sheets stores
+        them as numbers - sortable, chartable - instead of the literal text `write()`
+        always produces under RAW.
+
+        Every value is checked against `_PLAIN_NUMBER` before any HTTP call, so filing
+        text can never reach USER_ENTERED and be evaluated as a formula (CLAUDE.md:
+        document text is untrusted, and the money rule - never float - is why callers
+        build these strings from Decimal, not from a raw filing field). An empty string is
+        the one exception: it means "leave this cell blank", not "not a number".
+        """
+        if not values:
+            return
+        for v in values:
+            if v != "" and not _PLAIN_NUMBER.match(v):
+                raise ValueError(f"write_numbers: not a plain number: {v!r}")
+        end_row = start_row + len(values) - 1
+        letter = _col_letter(col)
+        a1 = self._a1(f"{letter}{start_row}:{letter}{end_row}")
+        r = self.session.put(
+            self._url(f"/values/{quote(a1, safe='')}"),
+            params={"valueInputOption": "USER_ENTERED"},
+            json={"range": a1, "majorDimension": "ROWS", "values": [[v] for v in values]},
+        )
+        _raise_for_status(r)
+
+    def clear_from(self, row: int) -> None:
+        """Blank every cell in every column from `row` downward.
+
+        `clear_data()` below is `clear_from(2)`, for --rebuild. sheets/orders.py also
+        calls this directly after a rewrite, to blank any row past the new end - the
+        orders tab is rewritten whole each cycle (§ its own docstring), so a day that
+        shrinks (a filing reclassified, in the future) must not leave a stale row behind.
+        """
+        a1 = self._a1(f"A{row}:Z")
         r = self.session.post(self._url(f"/values/{quote(a1, safe='')}:clear"), json={})
         _raise_for_status(r)
+
+    def clear_data(self) -> None:
+        """Blank every data row (row 2 downward), for --rebuild. The header stays."""
+        self.clear_from(2)

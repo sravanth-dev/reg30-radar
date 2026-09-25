@@ -145,14 +145,19 @@ def run_follow() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Not an argparse mutually-exclusive group: exactly one of --date, --from/--to (a
+    # pair) or --follow is required, and argparse's own required-group mechanism cannot
+    # express "one of these three, where one is actually two flags together" - it can
+    # only require one specific argument, which is what silently broke --from/--to as a
+    # standalone mode the first time it was used for real (WORKLOG, 25 Sep 2026). The
+    # three-way check below is explicit instead.
     parser = argparse.ArgumentParser(prog="python -m tradebot.orders")
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--date", type=date.fromisoformat,
-                       help="process one day already in raw_announcements (YYYY-MM-DD)")
-    mode.add_argument("--follow", action="store_true",
-                       help="run continuously, processing new filings as the collector saves them")
+    parser.add_argument("--date", type=date.fromisoformat,
+                         help="process one day already in raw_announcements (YYYY-MM-DD)")
+    parser.add_argument("--follow", action="store_true",
+                         help="run continuously, processing new filings as the collector saves them")
     parser.add_argument("--from", dest="date_from", type=date.fromisoformat,
-                         help="range start (YYYY-MM-DD), with --to; replaces --date")
+                         help="range start (YYYY-MM-DD), with --to; an alternative to --date")
     parser.add_argument("--to", dest="date_to", type=date.fromisoformat,
                          help="range end, inclusive (YYYY-MM-DD)")
     parser.add_argument("--max-requests", type=int, default=200,
@@ -168,12 +173,17 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _handle_stop)
 
     if args.follow:
-        if args.date_from or args.date_to:
-            parser.error("--follow cannot be combined with --from/--to")
+        if args.date or args.date_from or args.date_to:
+            parser.error("--follow cannot be combined with --date/--from/--to")
         return run_follow()
 
     if bool(args.date_from) != bool(args.date_to):
         parser.error("--from and --to must be given together")
+    if args.date and (args.date_from or args.date_to):
+        parser.error("--date cannot be combined with --from/--to")
+    if not args.date and not args.date_from:
+        parser.error("one of --date, --from/--to, or --follow is required")
+
     since = args.date_from or args.date
     until = args.date_to or args.date
     return run_batch(since=since, until=until, max_requests=args.max_requests)

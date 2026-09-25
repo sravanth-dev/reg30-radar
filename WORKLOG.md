@@ -16,7 +16,13 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 25 Sep 2026 (past midnight, same working session as "24 Sep night")*
+*Last updated: 25 Sep 2026 (morning)*
+
+**The live collector is not running right now** (not on 24 Sep, not this morning as of the
+last update). `raw_announcements` is caught up through ~10:30 IST on 25 Sep via
+`python -m tradebot.collector --catchup --from ... --to ...` (new - see the morning entry),
+but nothing is polling live. Start it (`python -m tradebot.collector`) before relying on
+this for anything past that point.
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -1190,3 +1196,72 @@ one-off patch driven by a single filing. 189 tests passing.
 **Detailed per-filing report published:** `reports/orders_2026-09-23_detail.md` - every
 extracted field for all 10 order-related filings, in plain prose rather than a table, with
 both findings above called out inline next to the filings they affect (BDL, SUBEXLTD).
+
+### 25 Sep 2026 (morning) — catch-up for a live-collector gap, and a real CLI bug
+
+The live collector was not running on 24 Sep or this morning (25 Sep), so `raw_announcements`
+had a gap: 23 Sep's data existed, then nothing until whatever the collector next captures
+live. Sravanth asked for the order news across that gap, up to ~10:25 IST this morning, to
+watch stocks with it.
+
+**Built: `python -m tradebot.collector --catchup --from DATE --to DATE`**
+(`collector/nse.py`'s new `NseClient.fetch_range`, a date-range query using Spike A's
+verified `from_date`/`to_date` params on the same announcements endpoint; wired into
+`collector/__main__.py`). Reuses the exact same `records.to_raw`/`store.insert_announcements`
+path the live poller uses, so idempotency and revision handling are identical - the only
+difference is where the rows come from. `first_seen_at` is set to the real time of the
+catch-up run, not backfilled to look like it was captured live: D23's rule is about never
+*fabricating* a real-time observation, not about refusing to record a genuinely late one,
+and this is honestly what happened - the collector was down and these were caught up late.
+
+Run for real: `--catchup --from 2026-09-24 --to 2026-09-25` returned **975 filings, all
+new** - 944 for 24 Sep (a complete day) and 31 for 25 Sep (up to ~10:27 IST, matching what
+Sravanth reported). No unit test was added for `fetch_range` itself, consistent with this
+codebase's existing choice not to unit-test `NseClient`'s live-endpoint methods with a
+mocked session (nothing does, `poll_announcements` included) - it is exercised live instead,
+which this run now doubles as.
+
+**A real CLI bug, caught immediately when this was actually used for the first time.**
+`orders/__main__.py --from 2026-09-24 --to 2026-09-25` (no `--date`) failed outright:
+"error: one of the arguments --date --follow is required". `--date`/`--follow` were an
+argparse `required=True` mutually exclusive group, which can only require *one specific
+argument* - it has no way to express "or these two together satisfy the requirement", so
+`--from`+`--to` as a standalone mode (exactly what the plan called Branch A's "date range"
+form, and what last night's WORKLOG verification list even named as a command) had silently
+never actually worked. Not caught earlier because every test and every real run so far had
+used `--date` alone. Fixed: the three modes (`--date` / `--from`+`--to` / `--follow`) are
+now validated explicitly in `main()` instead of via argparse's group mechanism, and
+`tests/unit/test_orders_main.py` (8 tests, new) checks every valid and invalid combination
+directly against `main()`, including the exact case that broke. 197 tests passing.
+
+**Results.** `python -m tradebot.orders --from 2026-09-24 --to 2026-09-25`: 166 filings
+considered, 165 downloaded (1 `download_failed` - a connection reset, will retry
+automatically), 12 order-related, 5 verified, 3 needs-review, 4 correctly reclassified as
+not-an-order by the LLM after matching a keyword, real cost $0.0329. Gate audit clean: 0
+LLM calls and 0 OCR pages on a non-order-related filing. Detailed write-up:
+`reports/orders_2026-09-24_25_detail.md` (the auto-generated `orders_2026-09-25.md` groups
+both days under 25 Sep, because the catch-up gave every row the same `first_seen_at` - the
+hand-written detail file sorts by actual filing time instead, which is what a same-morning
+catch-up needs).
+
+**A real extraction-accuracy bug, found by reading the output, not by a test: VASCONEQ's
+order value passed provenance verification while being wrong by a factor of ten million.**
+The filing reads "Rs. 660.79/- (Rupees Six Hundred & Sixty Crore and Seventy-Nine Lakhs
+only)" - the numeral carries no scale word immediately after it (that's in the spelled-out
+parenthetical instead), so `units/money.py`'s scale-word detection fell through to "bare
+numeral = rupees" and stored ₹660.79 instead of ₹660.79 **crore**. Because the same wrong
+span, re-parsed, reproduces the same wrong number, `extractor/provenance.py`'s check -
+correctly, by its own definition - called this `verified`. Provenance proves a value is
+traceable to the document; it was never designed to prove the *parse* of that value is
+correct, and this is the first real case where that gap actually bit. Not patched under
+time pressure (Sravanth was waiting on the report itself); recorded here as a real,
+reproducible gap in `units/money.py` - it needs to recognise a scale word inside a nearby
+parenthetical spelled-out amount, not only one immediately following the numeral. Flagged
+prominently, with the corrected figure, in the detail report.
+
+**Also worth recording: GENESYS's ₹283 crore Ahmedabad contract was filed twice** (a Press
+Release, then the formal Reg 30 disclosure, ~7 hours apart) and both landed as separate
+order-related rows - the same underlying event counted twice. This is expected given §5.3's
+event-merging (same-day repeat filings collapsed into one event) is not built yet
+(Slice 2); recorded here as a live example of exactly the gap that slice exists to close,
+not a bug in tonight's work.

@@ -12,6 +12,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 import requests
 
@@ -61,6 +62,44 @@ class NseClient:
 
             if r.status_code in (401, 403):
                 # The session has gone stale. Refresh it once; the caller applies backoff.
+                self._warm = False
+                return PollResult(False, r.status_code, latency,
+                                  error="session rejected; will warm up again")
+            if r.status_code != 200:
+                return PollResult(False, r.status_code, latency,
+                                  error=f"HTTP {r.status_code}")
+
+            body = r.json()
+            rows = body if isinstance(body, list) else body.get("data", [])
+            return PollResult(True, 200, latency, rows=list(rows))
+        except Exception as exc:
+            latency = int((time.monotonic() - started) * 1000)
+            return PollResult(False, None, latency, error=f"{type(exc).__name__}: {exc}")
+
+    def fetch_range(self, from_date: date, to_date: date) -> PollResult:
+        """A date-range query against the same endpoint (Spike A, ARCHITECTURE.md §5.1) -
+        for catching up after a collector outage, never for the 12-month backfill (that
+        stays the symbol= query per the hybrid plan, §5.1's "Hybrid backfill plan").
+
+        Verified as a *partial* view of an arbitrary past day (Spike A2), but the gap Spike
+        A2 found was in coverage of the whole day's filings; the mainboard order-filing
+        subset this project actually acts on came back 8/8 on both days tested. Good
+        enough to close a short gap after the live collector was down; not a substitute
+        for the symbol-per-company backfill design.
+        """
+        if not self._warm:
+            self.warm_up()
+
+        url = self.cfg["announcements"]["url"]
+        params = dict(self.cfg["announcements"]["params"])
+        params["from_date"] = from_date.strftime("%d-%m-%Y")
+        params["to_date"] = to_date.strftime("%d-%m-%Y")
+        started = time.monotonic()
+        try:
+            r = self.session.get(url, params=params, timeout=45)
+            latency = int((time.monotonic() - started) * 1000)
+
+            if r.status_code in (401, 403):
                 self._warm = False
                 return PollResult(False, r.status_code, latency,
                                   error="session rejected; will warm up again")

@@ -1,0 +1,13 @@
+symbol,category_raw,bucket,relevance_reason,quality,path,consideration_raw,value_inr,provenance_ok,company_is_recipient,stage,review_status,llm_cost_usd
+AASTHA,General Updates,catch_all,"catch_all; body keyword 'secured one, long-term, non-cancellable orders'",ok,t0,"₹25,00,00,000/- (Rupees Twenty-Five",250000000.00,True,True,contract,verified,0.000000
+BLACKBUCK,General Updates,catch_all,catch_all; body keyword 'l 1',partial,llm,,,False,,unknown,not_order,0.001176
+GENESYS,Press Release,catch_all,catch_all; headline keyword 'contract',ok,llm,₹283 crore,2830000000.00,True,True,contract,verified,0.000349
+GENESYS,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,t0,or Rs. 283 crore (inclusive of taxes),2830000000.00,True,True,contract,verified,0.000000
+KPIL,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,"approx. ₹2,025 Crores",20250000000.00,True,True,unknown,needs_review,0.000360
+LASERPOWER,General Updates,catch_all,catch_all; body keyword 'LOI',ok,llm,,,False,,unknown,not_order,0.000260
+LCCPROJECT,Updates,catch_all,catch_all; headline keyword 'L-1',ok,t0,or size of the ₹653.34 crore (including GST),6533400000.00,True,,amendment,verified,0.000000
+SAURASHCEM,Updates,catch_all,catch_all; headline keyword 'order',partial,llm,,,False,,unknown,not_order,0.012052
+STEAMHOUSE,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),unreadable,none,,,,,,needs_review,0.002620
+VASCONEQ,Awarding of order(s)/contract(s),order_candidate,category is order_candidate ('Awarding of order(s)/contract(s)'),ok,t0,or size of the Rs. 660.79/- (Rupees Six Hundred &,660.79,True,True,LoI,verified,0.000000
+VPRPL,General Updates,catch_all,catch_all; body keyword 'work order',partial,llm,,,False,,unknown,not_order,0.015717
+WELCORP,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,"approx. USD 412.5 million (~₹4,000 crore)",,False,True,unknown,needs_review,0.000325

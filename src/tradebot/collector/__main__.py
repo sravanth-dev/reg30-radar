@@ -23,6 +23,7 @@ import logging
 import signal
 import sys
 import time
+from datetime import date
 
 from tradebot.collector import nse, store
 from tradebot.collector.records import SOURCE, to_raw
@@ -175,9 +176,46 @@ def _collect(client: nse.NseClient, calendar, pacing: dict, *, once: bool) -> in
             time.sleep(delay)
 
 
+def catchup(date_from: date, date_to: date) -> int:
+    """Close a gap after the live collector was down, with one date-range query
+    (Spike A's `from_date`/`to_date` params) instead of waiting for the next live poll.
+
+    `first_seen_at` is set to *now*, not to each filing's own timestamp. D23's rule is
+    that a forward-collected `first_seen_at` can never be fabricated to look like it was
+    observed in real time - it is never about refusing to record a late observation, only
+    about never pretending a late one was on time. Recording the true catch-up time is the
+    honest thing this function can do, and is exactly what a delayed live poll would also
+    have recorded.
+    """
+    client = nse.NseClient()
+    checked_at = cal.now_ist()
+    result = client.fetch_range(date_from, date_to)
+    if not result.ok:
+        log.error("catch-up query failed: %s", result.error)
+        return 1
+
+    with connect() as conn:
+        raws = [to_raw(r) for r in result.rows]
+        outcome = store.insert_announcements(conn, raws, first_seen_at=checked_at)
+        conn.commit()
+
+    log.info(
+        "catch-up %s to %s: %d returned, %d new (%d revisions, %d already stored)",
+        date_from, date_to, len(result.rows), outcome.inserted, outcome.revisions,
+        outcome.duplicates,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tradebot.collector")
     parser.add_argument("--once", action="store_true", help="one poll, then exit")
+    parser.add_argument("--catchup", action="store_true",
+                         help="one date-range query to close a gap after downtime, then exit")
+    parser.add_argument("--from", dest="date_from", type=date.fromisoformat,
+                         help="with --catchup: range start (YYYY-MM-DD)")
+    parser.add_argument("--to", dest="date_to", type=date.fromisoformat,
+                         help="with --catchup: range end, inclusive (YYYY-MM-DD)")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -187,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     signal.signal(signal.SIGINT, _handle_stop)
     signal.signal(signal.SIGTERM, _handle_stop)
+
+    if args.catchup:
+        if not (args.date_from and args.date_to):
+            parser.error("--catchup needs --from and --to")
+        return catchup(args.date_from, args.date_to)
+
     return run(once=args.once)
 
 

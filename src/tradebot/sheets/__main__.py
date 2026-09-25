@@ -24,6 +24,7 @@ import sys
 import time
 
 from tradebot.collector.nse import backoff_seconds, jittered
+from tradebot.common.logs import configure as configure_logging
 from tradebot.common.config import env
 from tradebot.common.config import sheets as sheets_config
 from tradebot.common.db import connect
@@ -116,10 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
-        level=args.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging(args.log_level)
     signal.signal(signal.SIGINT, _handle_stop)
     signal.signal(signal.SIGTERM, _handle_stop)
     return run(once=args.once, do_rebuild=args.rebuild)

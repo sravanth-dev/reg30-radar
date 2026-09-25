@@ -1340,3 +1340,30 @@ check that the design it also specified could never pass, and a live run is what
 `orders --follow`, `sheets` with no flags) is running continuously. Commands are in
 CLAUDE.md's Commands section; Sravanth starts them himself, one terminal each, per his
 choice recorded above.
+
+### 25 Sep 2026 (afternoon) — log timestamps were UTC on the laptop; now always IST
+
+Sravanth, running `python -m tradebot.sheets` at about 14:40 IST, saw log lines stamped
+09:01 and read it as a hardcoded time. It wasn't: every log line was in **UTC**. Root
+cause: `.env` sets `TZ=Asia/Kolkata`, python-dotenv copies it into the environment, and
+Windows' C runtime can't parse an IANA zone name. It silently treats it as offset zero, so
+`time.localtime()`, which `logging` uses for `%(asctime)s`, returns UTC. Reproduced
+exactly: the first local-time read after `load_dotenv` prints `09:39:25 a/K` while true
+IST is 15:09. It only shows if the first local-time read happens *after* `.env` is
+loaded, which is why a quick check that reads the time first looked fine.
+
+**Stored data was never affected.** A grep for `datetime.now()`, `time.localtime`,
+`time.strftime` and `date.today()` in `src/` finds nothing. Every timestamp the code writes
+uses `ZoneInfo`/UTC explicitly (D17), so `first_seen_at`, `processed_at` and the collector's
+pacing bands were all correct. Only the console log lines were wrong.
+
+Fix: `src/tradebot/common/logs.py`, a shared `configure()` whose formatter converts each
+record's time with `ZoneInfo("Asia/Kolkata")`, used by the collector, orders and sheets
+entry points in place of their three copies of `basicConfig`. Log time is now IST whatever
+the machine thinks, which also covers the VPS, where Docker defaults to UTC. One new test,
+218 pass. Checked live with `.env` loaded: log line 15:11:01, true IST 15:11:01.
+
+`TZ=Asia/Kolkata` is left in `.env` because it is harmless now that nothing reads local
+time. It remains a trap for any future code that does, so on Windows treat the process's
+local time as UTC and never rely on it (CLAUDE.md already forbids naive datetimes).
+**Running processes keep the old behaviour until restarted.**

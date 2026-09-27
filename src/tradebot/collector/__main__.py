@@ -10,10 +10,17 @@ recovered.
 
 The overflow problem it is built around: the live endpoint returns only the **20 most
 recent** filings. If more than 20 arrive between two polls, the ones in between roll off
-and are gone. So when a poll comes back full and entirely new, the collector does not
-wait - it polls again at the backfill pace until a poll overlaps what it already has,
-which is the proof that nothing fell through the gap. Every such event is recorded, so
-the risk is measured rather than assumed.
+the live page. So when a poll comes back full and entirely new, the collector closes the
+gap with one date-range query for yesterday and today (`close_gap`), which returns every
+filing in that range rather than only the newest 20. Every overflow is recorded in
+`source_health`, so the risk is measured rather than assumed.
+
+Re-polling the live endpoint cannot close the gap, and an earlier version of this module
+did exactly that: it re-polled until a page overlapped what was stored. The live page is
+always the newest 20, so the very next poll overlaps the 20 just stored and the loop
+stops after one extra poll, having recovered only what arrived in those few seconds.
+Filings that had already rolled off were never fetched (26 Sep 2026: all 8 recorded
+overflows ended after exactly one extra poll).
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ import logging
 import signal
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 
 from tradebot.collector import nse, store
 from tradebot.collector.records import SOURCE, to_raw
@@ -64,11 +71,7 @@ def poll_once(conn, client: nse.NseClient, seen: set[str]) -> tuple[bool, int, b
     # Whether we knew anything before this poll decides whether "all new" means anything.
     cold_start = not seen
 
-    raws = [to_raw(r) for r in result.rows]
-    fresh = [r for r in raws if r.payload_sha256 not in seen]
-    outcome = store.insert_announcements(conn, fresh, first_seen_at=checked_at)
-    for r in fresh:
-        seen.add(r.payload_sha256)
+    fresh, outcome = _store_new(conn, result.rows, seen, checked_at)
 
     # The page was full and nothing on it overlapped what we already had, so we cannot
     # prove filings did not roll off in between.
@@ -94,9 +97,60 @@ def poll_once(conn, client: nse.NseClient, seen: set[str]) -> tuple[bool, int, b
         log.info(
             "poll: %d returned, %d new (%d revisions, %d already stored)%s",
             len(result.rows), outcome.inserted, outcome.revisions, outcome.duplicates,
-            "  OVERFLOW - re-polling" if overflow else "",
+            "  OVERFLOW - closing the gap with a date-range query" if overflow else "",
         )
     return True, outcome.inserted, overflow
+
+
+def close_gap(conn, client: nse.NseClient, seen: set[str]) -> bool:
+    """After an overflow, fetch yesterday and today in one date-range query and store
+    whatever the live page let roll off. Returns whether the query succeeded.
+
+    Yesterday as well as today, because the gap can straddle midnight: a collector
+    restarted in the morning has last evening's post-close filings to recover, and those
+    carry yesterday's date. An outage longer than that is `--catchup`'s job.
+
+    One request, not a loop. If it fails, the caller tries again on its next ordinary
+    poll cycle, at the normal pace, rather than retrying here.
+    """
+    checked_at = cal.now_ist()
+    today = checked_at.date()
+    result = client.fetch_range(today - timedelta(days=1), today)
+
+    if not result.ok:
+        store.record_poll(
+            conn, source=SOURCE, checked_at=checked_at, ok=False, error=result.error,
+            http_status=result.http_status, latency_ms=result.latency_ms,
+        )
+        conn.commit()
+        log.warning("gap query failed, will retry next cycle: %s", result.error)
+        return False
+
+    _fresh, outcome = _store_new(conn, result.rows, seen, checked_at)
+    # Recorded as an ordinary poll row. records_returned well above 20 is what marks it
+    # as a gap query rather than a live poll.
+    store.record_poll(
+        conn, source=SOURCE, checked_at=checked_at, ok=True,
+        http_status=result.http_status, latency_ms=result.latency_ms,
+        records_returned=len(result.rows), new_records=outcome.inserted,
+    )
+    conn.commit()
+    log.info(
+        "gap closed: %s to %s returned %d, %d new (%d revisions, %d already stored)",
+        today - timedelta(days=1), today, len(result.rows), outcome.inserted,
+        outcome.revisions, outcome.duplicates,
+    )
+    return True
+
+
+def _store_new(conn, rows: list[dict], seen: set[str], checked_at):
+    """Insert the rows whose payload hash we have not seen, and remember them."""
+    raws = [to_raw(r) for r in rows]
+    fresh = [r for r in raws if r.payload_sha256 not in seen]
+    outcome = store.insert_announcements(conn, fresh, first_seen_at=checked_at)
+    for r in fresh:
+        seen.add(r.payload_sha256)
+    return fresh, outcome
 
 
 def run(once: bool = False) -> int:
@@ -133,6 +187,9 @@ def _collect(client: nse.NseClient, calendar, pacing: dict, *, once: bool) -> in
     jitter = pacing["jitter_seconds"]
     catch_up_gap = float(pacing["backfill_min_gap_seconds"])
     failures = 0
+    # Set by an overflow, cleared only once the gap query succeeds, so a failed gap
+    # query is retried on the next cycle instead of being forgotten.
+    gap_open = False
 
     with connect() as conn:
         seen = store.known_hashes(conn, SOURCE)
@@ -141,19 +198,16 @@ def _collect(client: nse.NseClient, calendar, pacing: dict, *, once: bool) -> in
         while True:
             ok, _new_rows, overflow = poll_once(conn, client, seen)
             failures = 0 if ok else failures + 1
+            gap_open = gap_open or overflow
 
             if once:
                 return 0 if ok else 1
 
-            # Catch-up loop: keep polling at the backfill pace until a page overlaps what
-            # we hold. Bounded, so a permanently-full page cannot spin forever.
-            catch_ups = 0
-            while overflow and not _stopping and catch_ups < 20:
+            if gap_open and ok and not _stopping:
                 time.sleep(nse.jittered(catch_up_gap, jitter))
-                _, _, overflow = poll_once(conn, client, seen)
-                catch_ups += 1
-            if catch_ups:
-                log.info("caught up after %d extra polls", catch_ups)
+                gap_open = not close_gap(conn, client, seen)
+                if gap_open:
+                    failures += 1
 
             if _stopping:
                 return 0

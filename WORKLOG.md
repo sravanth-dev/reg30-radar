@@ -16,13 +16,15 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 25 Sep 2026 (later)*
+*Last updated: 27 Sep 2026 (midday)*
 
-**The live collector is not running right now** (not on 24 Sep, not this morning as of the
-last update). `raw_announcements` is caught up through ~10:30 IST on 25 Sep via
-`python -m tradebot.collector --catchup --from ... --to ...` (new - see the morning entry),
-but nothing is polling live. Start it (`python -m tradebot.collector`) before relying on
-this for anything past that point.
+**All three live processes are running on the laptop** (collector, `orders --follow`,
+`sheets`), restarted 11:38-11:39 IST on 27 Sep, one of each. The collector runs the 26 Sep
+overflow fix, which **works but is still uncommitted**: its first live gap query (26 Sep
+20:10) returned 1,517 filings and recovered 71 that had rolled off the live page. The
+23-26 Sep catch-up that the previous entry asked for has been done. **Nothing is deployed
+to the VPS, and there is no Dockerfile or compose file yet.** The 27 Sep entry has the full
+audit against ARCHITECTURE §10 and the defects that block a production deployment.
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -62,7 +64,7 @@ Sheet, view-only, so Sravanth can browse filings and the order pipeline's output
 writing SQL. Both verified live: raw tab 23 Sep night, orders tab 25 Sep (later). Neither
 is running continuously right now - `--once` has been run by hand each time. Live viewing
 needs three processes running at once: the collector, `orders --follow`, and `sheets`
-(no flags). None of the three is running as of this update.
+(no flags). All three were running as of 26 Sep, ~17:00 IST.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain
@@ -1367,3 +1369,171 @@ the machine thinks, which also covers the VPS, where Docker defaults to UTC. One
 time. It remains a trap for any future code that does, so on Windows treat the process's
 local time as UTC and never rely on it (CLAUDE.md already forbids naive datetimes).
 **Running processes keep the old behaviour until restarted.**
+
+### 26 Sep 2026 (evening) — the overflow catch-up never caught anything up; fixed
+
+Sravanth spotted it from watching the collector: on an overflow it made exactly one extra
+poll and stopped, so a burst of more than ~20 filings between polls was not recovered.
+He was right, and it was a design error of mine in Slice 1, not a tuning problem.
+
+**Why it failed.** The live endpoint always returns the newest 20 filings. The catch-up
+loop re-polled that same endpoint "until a page overlaps what we hold", treating overlap
+as proof nothing was lost. But the next page overlaps the 20 the overflowing poll just
+stored, so the loop always ended after one extra poll. It recovered only what arrived in
+those ~5 seconds and never reached anything that had already rolled off. Evidence in
+`source_health`: all 8 overflows recorded so far (23 Sep once, 25 Sep four times, 26 Sep
+three times, including the 16:28 restart) are followed by a poll with 0 new and no
+overflow. **So every one of those 8 windows may have lost filings beyond the newest 20.**
+
+**Fix** (`src/tradebot/collector/__main__.py`): an overflow now triggers `close_gap`, one
+date-range query for yesterday and today (the same `fetch_range` `--catchup` uses), paced
+at the backfill gap. It is recorded as its own `source_health` row (`records_returned`
+well above 20 marks it). If it fails, a `gap_open` flag retries it on the next ordinary
+cycle, with the normal backoff, never in a loop. New `tests/unit/test_collector_gap.py`
+(4 tests) includes one that reproduces the old failure. 222 pass. ARCHITECTURE.md §7
+`source_health` updated.
+
+**To do by hand:** restart the collector (the running one has the old code), then close
+the historical gaps with `python -m tradebot.collector --catchup --from 2026-09-23 --to
+2026-09-26` — run while the live collector is stopped, so there's only one request to
+NSE at a time.
+
+**Unexplained, noted not chased:** `source_health` rows 557, 561 and 566 (26 Sep, 16:28 to
+16:50) are polls 8 to 16 s after the previous one, which one collector process can't
+produce on a Saturday's 600 s pacing. Row 566 even flags overflow with 20 hashes new to
+the process but 0 new to the database, which only a second process with an older
+in-memory `seen` set explains. Only one collector was running when checked at ~17:00. So
+most likely a second collector was briefly running alongside it. Two collectors break the
+one-request-at-a-time rule; check before starting one.
+
+### 27 Sep 2026 — audit: where Phase 1 stands, and what blocks a VPS deployment
+
+Sravanth asked for the whole repo to be evaluated against ARCHITECTURE §10 and for what
+stops V1 end to end, aiming to make it production-grade on the laptop today and then deploy
+with `git pull` on the VPS. This entry is the audit; no code changed in it.
+
+**Built and running (the live path).** Slice 1's live half; the order gate, document
+pipeline and T0 + T1 extraction (parts of Slices 3, 4 and 5); the two-tab Sheets mirror.
+222 tests pass. Since 23 Sep: 3,243 filings, 494 in-scope extractions (42 order-related,
+17 verified), 488 documents with every PDF deleted (D8 holds), and $0.081 of LLM spend
+this month against the two $1 caps. `orders --follow` is keeping up: no in-scope filing
+lacks an `order_extractions` row.
+
+**Not built (the event-study half of Phase 1).** Slice 1's backfill mode; Slice 2
+(instruments and ISIN map, `events`, dedup; `normalizer/` is empty, and GENESYS's double
+count on 25 Sep is the live symptom); Slice 3's full router and `unknown_categories`;
+Slice 5's T2, escalation triggers, §6 state machine and Batch mode; Spike C and Slice 6
+(`revenue/` is empty); Slice 7 (`market/` and `calculator/` are empty); Slice 8 (only
+`backfill/reconcile.py` exists). Spike E has not started, and D14's backups are not in place.
+
+**Deployment gap.** There is no Dockerfile and no `docker-compose.yml`, although CLAUDE.md's
+Commands and §9 both describe them. The Python 3.14 manylinux wheels are still unchecked;
+building the image is that check. Docker Desktop is installed on the laptop, but its daemon
+was not running.
+
+**Four production defects, found by reading the live data rather than the tests.**
+
+1. **About half the off-window polls fail on a stale keep-alive connection, not on NSE.**
+   On 26 Sep, a Saturday, every poll is on the 600 s band, and 34 of 61 failed. Each
+   failure came ~600 s after the previous poll with `ConnectionResetError(10054)`, and the
+   backoff retry ~30 s later succeeded. The `requests.Session` reuses a pooled TCP
+   connection that the far end has already closed for idleness. At the 60 s band the
+   connection never sits idle that long, which is why weekdays looked healthy. Each
+   occurrence costs an extra request and writes a `source_health` failure that is not an
+   outage. `PdfFetcher` has the same pattern after any idle gap. The 17:44-19:53 run of
+   `HTTPSConnectionPool` errors that day is a different thing: the hotspot really was down.
+2. **`orders --follow` reads the whole of `raw_announcements` every cycle.** Out-of-scope
+   filings never get a row, so they are re-classified every 2 minutes indefinitely. At
+   about 1,200 filings a day that is roughly 440,000 rows per cycle after a year, inside a
+   512 MB container.
+3. **`--follow` writes `reports/orders_<date>.md` and `.csv` into the tracked `reports/`
+   directory.** That is why `reports/orders_2026-09-25.*` show as modified. On the VPS the
+   same writes would make every `git pull` fail with "local changes would be overwritten",
+   which breaks D1's deploy path.
+4. **The overflow fix is live but uncommitted.** A `git pull` on the VPS today would deploy
+   the version that never closed a gap.
+
+**Data-quality defects still open**, recorded earlier and re-checked today: VASCONEQ's
+₹660.79 crore is still stored as ₹660.79 and marked verified (the numeral has no scale
+word, and the scale is only in the spelled-out words; `units/money.py` already sets a
+`no_scale_word` flag that nothing acts on), and `parse_stage` still returns "amendment"
+whenever the word appears anywhere in the document (BDL).
+
+**A gotcha for anyone counting processes.** On Windows each command shows as two
+`python.exe` processes: the venv's `.venv\Scripts\python.exe` is a launcher that spawns the
+base interpreter as its child. Two entries per command is therefore normal. Check
+`ParentProcessId` before concluding that something is running twice. This does not explain
+the 26 Sep polls 8-16 s apart recorded above, which are timing evidence from the database,
+not a process count.
+
+**What "V1 end to end" costs, stated now so it is not discovered later.** The Phase 1
+verdict needs Slices 2, 3, the rest of 5, Spike C with 6, 7 and 8. The backfill alone is
+many hours of paced traffic: about 250 PR bundles, 280 bhavcopies, 300-600 symbol
+queries, several thousand PDFs at ≥3 s each, and the results XBRL. On top of that comes a
+Batch-API LLM run that can take 24 h, and D14's backups have to be in place first. That
+is several days of work, not one. What can reach production grade today is the live
+pipeline on the VPS.
+
+**Sravanth's decisions, same conversation:**
+
+1. **Today: build every remaining slice and test it on the laptop. Deploy to the VPS
+   tomorrow.** He chose this over "deploy today, verdict slices later".
+2. **All three live processes go to the VPS**: collector, `orders --follow` and `sheets`.
+   This widens D19, which had put only the collector there, and ARCHITECTURE.md D19 now
+   says so. The reason: without the tunnel D19 rules out, the laptop cannot reach the VPS
+   database, so extraction left on the laptop would have no live data.
+3. **The laptop's live data moves to the VPS**: one `pg_dump` and restore at cutover, so
+   `first_seen_at` since 23 Sep, the extractions and the Sheet's watermark continue
+   unbroken.
+4. **Backups: rclone to Google Drive.** D14's mechanism is no longer Open. Sravanth
+   installs and configures rclone himself.
+
+**Two measurements that shape the backfill, taken from the live data.** About 135
+catch-all filings arrive per weekday, and a headline keyword matches only 2-3 of them. Yet
+7 of the 29 orders found live were visible only in the PDF body: DHRUV, AASTHA and
+POWERGRID (all verified), plus SILVERTUC, ASHOKA, DREDGECORP and HMT. The average PDF is
+about 1 MB (median 530 KB). So downloading every catch-all PDF for 12 months is roughly
+35,000 files, about 35 GB over the hotspot D19 prescribes, and 35-40 hours of paced
+downloads. Order categories plus headline hits is about 1,700 files and 2 GB, but misses
+roughly one order in four. Per §10's sequencing note, that choice is put to Sravanth only
+after the PR bundles are loaded, when the counts are measured rather than extrapolated
+from four live days.
+
+**Second round of decisions, same conversation** (written into §5.1, §6, CLAUDE.md and
+`config/llm.yaml`):
+
+5. **The backfill is company-wise over a filtered list**: one `symbol=` query per listed
+   company. I had recommended one date-range query per day with gap fill, and Sravanth
+   first accepted it, then reversed it before it was recorded here. His reasoning: the
+   study measures each company's price response to its own orders, and not every company
+   is the goal. On evaluation he is right once the list is predefined. A company's
+   `symbol=` history is complete across every category, which is exactly what per-ISIN
+   contamination and catch-all orders need. My objection to per-company applied only to
+   §5.1's original rule of picking companies by "filed an order category". Two conditions
+   were agreed. First, the list is built from **criteria applied to data as of 22 Sep
+   2025**, keeping delisted names and leaving out later IPOs, and frozen before any
+   return is computed (D22). Second, the listed companies' order count is measured from
+   the PR bundles before any PDF is downloaded, because D22 needs ≥30 clean events.
+   Sravanth will supply the criteria. For listed companies the PDF scope is order
+   categories plus every catch-all filing.
+6. **T2: Sravanth will name a model** for §6's independent recheck. He chose this over a
+   blind second read by gpt-6-luna and over manual review only. It needs the model id,
+   its standard and Batch prices, and gpt-6-luna's Batch price. Until they arrive a
+   recheck fails closed to `needs_review`.
+7. **Backfill cap: $3 for the complete backfill**, every purpose included. He asked for
+   the "half price if the answer isn't needed instantly" option, which is the Batch API
+   CLAUDE.md already requires. Batch cost will be computed from explicit Batch prices,
+   never from an assumed 50%.
+8. **Vision OCR stays on the standard API in the backfill**, a recorded exception to the
+   Batch rule. Batching OCR would mean page images waiting up to 24 h on disk against D8,
+   to save cents on about 3% of documents.
+9. **The backfill gets its own database, `tradebot_backfill`**, on the laptop, so a year of
+   history never reaches the live database that moves to the VPS, the Sheet or
+   `orders --follow`. The `tradebot` role has no CREATEDB, so Sravanth creates it as
+   superuser.
+
+Plan accepted: `C:\Users\srava\.claude\plans\recursive-chasing-wombat.md` (Step 0, Part A
+live-path hardening and Docker, Part B verdict slices). Sravanth also asked whether Sonnet
+at high effort is enough for the build. My answer: yes for the mechanical bulk, with Opus
+kept for (or reviewing) Spike C/TTM, the event study and verdict, and the Batch spend
+guards, because mistakes there produce plausible wrong numbers rather than failing tests.

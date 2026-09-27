@@ -30,9 +30,9 @@ caps:
   # (Sect.6): a filing that needs both OCR and extraction draws from both caps.
   live_usd_per_month: 1.0
   ocr_usd_per_month: 1.0
-  # Still unset: the Batch-API backfill (Slice 8) hasn't run. A null cap fails closed,
-  # never open (Sect.6) - the client refuses a paid call while its cap is null.
-  backfill_usd_per_run: null
+  # Set 27 Sep 2026 by Sravanth: $3 for the complete backfill, every purpose included
+  # (extraction, recheck, OCR), measured against llm_calls in the backfill database.
+  backfill_usd_per_run: 3.0
 
 bakeoff:
   # Spike D, still to run: four arms on the 10 labelled PDFs, reporting per-field

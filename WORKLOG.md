@@ -1584,3 +1584,30 @@ with the full phrase and is verified at ₹660.79 crore. `reports/orders_2026-09
 `orders_2026-09-25.*` were regenerated. The hand-written `_detail.md` reports are history
 and still describe the bugs as found. Labelled set unchanged at 8/18 (44%) T0, so no
 regression. 245 tests pass.
+
+### 27 Sep 2026 (afternoon, cont.) — deploy packaging: Dockerfile, compose, runbook
+
+Built, not yet run: `Dockerfile` (python:3.14-slim, uid 10001, `PYTHONPATH=/app/src` so
+`config.ROOT` is `/app`, and a build-time check that `Asia/Kolkata` resolves),
+`.dockerignore` (no secrets, tests or docs; `prompts/*.md` kept deliberately),
+`docker-compose.yml` (`collector` with a `common/health.py` healthcheck, `orders`,
+`sheets`; per-service memory and CPU limits overridable from `.env`; json-file logs
+10m×3; external network `${TRADEBOT_DB_NETWORK}`, which fails loudly if unset; an
+`ops`-profile `backup` job), `ops/preflight.sh` (Spike E, read-only, never prints container
+environment variables) and `ops/backup.sh` (`vps` through compose, `backfill` with the
+laptop's pg_dump; 7 kept locally, 30 days on the rclone remote). `DEPLOY.md` is tomorrow's
+runbook, including the cutover order. `.env.example` gains `BACKFILL_DATABASE_URL`,
+`TRADEBOT_DB_NETWORK`, `TRADEBOT_PG_MAJOR` and `RCLONE_REMOTE`. `.gitignore` gains
+`backups/`. `docker compose config --quiet` validates. A plain `config` was avoided
+because it prints `.env`'s resolved secrets.
+
+**A §9 gap closed while designing compose.** A worker killed at its memory limit left no
+trace of the attempt, because `order_extractions` was only written after the work, so
+`restart: unless-stopped` would have fed it the same PDF forever. `_process_one` now writes
+the attempt first, as a retryable `download_failed` row with `last_error`
+"interrupted: ...", which every normal outcome overwrites. A filing that crashes the worker
+therefore stops after three attempts, 15 minutes apart. Test:
+`test_a_worker_killed_mid_filing_leaves_a_counted_retryable_row`. 246 tests pass.
+
+**Not yet verified:** the image build and the Linux cp314 wheels (D12), which wait on
+Docker Desktop being started on the laptop.

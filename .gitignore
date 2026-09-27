@@ -31,6 +31,9 @@ dist/
 data/
 spikes/out/
 
+# Database dumps (ops/backup.sh). They hold every stored filing and extraction.
+backups/
+
 # Editor / OS
 .vscode/
 .idea/

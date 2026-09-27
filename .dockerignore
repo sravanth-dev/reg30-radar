@@ -1,0 +1,25 @@
+# Only src/, config/, prompts/, migrations/ and pyproject.toml go into the image.
+# Secrets never do: .env reaches containers through compose's env_file, and the Google key
+# through a read-only mount (docker-compose.yml).
+.git
+.gitignore
+.gitattributes
+.env
+.env.*
+secrets/
+*service-account*.json
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.claude/
+data/
+backups/
+spikes/
+tests/
+reports/
+# The root docs only - prompts/*.md must stay in the image.
+CLAUDE.md
+ARCHITECTURE.md
+WORKLOG.md
+DEPLOY.md

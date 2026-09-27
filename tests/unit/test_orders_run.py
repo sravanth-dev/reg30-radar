@@ -538,3 +538,29 @@ def test_max_requests_counts_only_in_scope_rows_not_every_pending_row():
                                max_requests=2)
     assert summary.stopped_early is None
     assert len(fpu.calls) == 2   # only the 2 in-scope filings were ever downloaded
+
+
+def test_a_worker_killed_mid_filing_leaves_a_counted_retryable_row():
+    """§9: a container killed at its memory limit must not restart-loop on one filing.
+    The attempt is recorded before the work, so each crash counts and the filing stops
+    being retried after MAX_ATTEMPTS."""
+    row = _raw_row(42, category_raw="Bagging/Receiving of orders/contracts")
+    conn = FakeOrdersConn()
+
+    def killed(url, **kw):
+        raise MemoryError("stand-in for the kernel OOM-killing the container")
+
+    for attempt in range(1, orders_store.MAX_ATTEMPTS + 1):
+        with pytest.raises(MemoryError):
+            process_pending(conn, [row], fetcher=None, client=CountingLlmClient(),
+                            work_dir=Path("."), process_url_fn=killed,
+                            get_text_fn=lambda c, d: "")
+        assert conn.rows[42]["attempts"] == attempt
+        assert conn.rows[42]["review_status"] == "download_failed"
+        assert conn.rows[42]["last_error"].startswith("interrupted")
+        conn.rows[42]["processed_at"] = datetime.now(timezone.utc) - timedelta(minutes=16)
+
+    summary = process_pending(conn, [row], fetcher=None, client=CountingLlmClient(),
+                              work_dir=Path("."), process_url_fn=killed,
+                              get_text_fn=lambda c, d: "")
+    assert summary.considered == 0   # no fourth attempt, so no restart loop

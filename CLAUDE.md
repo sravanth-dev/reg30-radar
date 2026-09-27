@@ -90,10 +90,14 @@ python -m tradebot.sheets --once        # one sync of both tabs, then exit
 python -m tradebot.sheets --rebuild     # clear the raw tab and resync it; then as above
 python -m tradebot.sheets               # run continuously, every 5 min
 
-# VPS
-git pull && docker compose up -d --build
+# health: exit 1 if the collector has had no successful poll in 30 minutes
+python -m tradebot.common.health
+
+# VPS (runbook: DEPLOY.md). Services: collector, orders, sheets. The backfill stays on the laptop (D19).
+git pull && docker compose build && docker compose run --rm collector python -m tradebot.common.migrate && docker compose up -d
 docker compose logs -f collector
-docker compose run --rm worker python -m tradebot.backfill --from 2025-09-22 --to 2026-09-18
+bash ops/preflight.sh                   # Spike E, read-only
+bash ops/backup.sh vps                  # pg_dump -> rclone (D14); nightly from cron
 ```
 
 ## Definition of done (every slice)

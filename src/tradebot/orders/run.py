@@ -187,6 +187,19 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
     prior_attempts = orders_store.attempts_so_far(conn, row["id"])
     url = row["attachment_url"]
 
+    # Count the attempt before doing any work. A worker killed mid-filing (a PDF too large
+    # for the container's memory limit, §9) would otherwise leave no trace, and Docker's
+    # restart policy would hand it the same filing again, forever. With the attempt already
+    # recorded, a crash leaves a retryable row that stops after MAX_ATTEMPTS, 15 minutes
+    # apart. Every normal outcome below overwrites this row.
+    orders_store.upsert(conn, orders_store.ExtractionRow(
+        raw_announcement_id=row["id"], bucket=relevance.bucket,
+        order_related=relevance.order_related, relevance_reason=relevance.reason,
+        review_status="download_failed",
+        last_error="interrupted: processing started but did not finish",
+        attempts=prior_attempts + 1, processed_at=now,
+    ))
+
     if not url:
         orders_store.upsert(conn, orders_store.ExtractionRow(
             raw_announcement_id=row["id"], bucket=relevance.bucket,

@@ -1984,3 +1984,31 @@ both NseClient and ArchiveFetcher. 321 tests pass.
 
 **Announcements fetch running cleanly**: 69/1,583 companies at 0 failures as of 18:20 IST,
 on pace for the ~2.5h estimate.
+
+### 27 Sep 2026 (evening, cont.) — review pass on backfill/__main__.py: two real bugs fixed
+
+Used the announcements fetch's runtime to re-read the day's stage wiring end to end rather
+than wait idle. Two real issues found and fixed, no new tests skipped:
+
+1. **`study()`'s window filter had an operator-precedence bug.** `if r.day0 and since <=
+   r.day0 <= until or r.day0 is None` parses as `(r.day0 and in-range) or (day0 is None)` -
+   so an event whose day0 genuinely fell outside the window (correctly resolved, just
+   before/after it - the announcement fetch's ±45-day margin exists exactly to catch these)
+   was dropped as intended, but an event whose day0 could **not** be resolved was kept
+   regardless of whether its underlying filing was ever inside the window at all. Not
+   fatal - `primary()`'s own checks mean such an event could never enter the primary cell -
+   but it would have inflated the reported event count and confused the exclusion tally.
+   Replaced with `events_in_window()`, which filters on the **filing's own timestamp**
+   before `measure()` ever runs, so a margin-only filing is dropped outright and an
+   in-window filing that fails to resolve a day0 still shows up as a counted exclusion.
+2. **The `documents` stage never checked `gate_violations`.** §5.4's hard invariant -
+   nothing reaches OCR or the LLM without `llm_allowed` saying so first - is checked and
+   enforced (exit 2) on the live path (`orders/__main__.py`) but was silently ignored in
+   the backfill's own `documents` stage, even though both call the identical
+   `process_pending` and the same `Summary.gate_violations` field. Fixed to log and exit 2,
+   with the rest of the summary still printed first so the failure is diagnosable, not just
+   flagged.
+
+4 new offline tests (`tests/unit/test_backfill_main.py`). 325 pass.
+
+Announcements fetch still clean: 123/1,583, 0 failures, 18:24 IST.

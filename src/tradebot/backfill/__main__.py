@@ -32,6 +32,7 @@ from tradebot.backfill import (
     announcements, batch, documents, event_study, events, recheck, report, study_data,
     universe,
 )
+from tradebot.common.calendar import IST
 from tradebot.common.config import load_yaml
 from tradebot.common.db import backfill_url, connect
 from tradebot.common.logs import configure as configure_logging
@@ -78,13 +79,22 @@ def calculate(conn, cfg) -> dict:
     return counts
 
 
+def events_in_window(evs, since: date, until: date):
+    """`load_events` pulls every verified event regardless of date, because filings just
+    outside [since, until] are fetched anyway for the announcement margin (contamination,
+    follow-up detection). Keep only events whose own filing is in the real study window -
+    by the filing's own timestamp, not by whether day0 could later be resolved, so a filing
+    inside the window with no resolvable day0 still shows up as an excluded event in the
+    report, while a filing genuinely outside the window (margin only) is dropped entirely
+    rather than diluting the funnel with something never meant to be studied."""
+    return [ev for ev in evs if since <= ev.event_ts.astimezone(IST).date() <= until]
+
+
 def study(conn, cfg) -> dict:
     evs = study_data.load_events(conn, states=("verified",))
     market = _market_for(conn, cfg, evs)
-    results = [event_study.measure(ev, market) for ev in evs]
     since, until = _window(cfg)
-    results = [r for r in results if r.day0 and since <= r.day0 <= until
-               or r.day0 is None]
+    results = [event_study.measure(ev, market) for ev in events_in_window(evs, since, until)]
     split = date.fromordinal(since.toordinal() + (until.toordinal() - since.toordinal()) // 2)
     band = tuple(cfg["analysis"]["primary_mcap_crore"])
     v = event_study.verdict(event_study.primary(results, band), split)
@@ -143,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_yaml("backfill.yaml")
     since, until = _window(cfg)
 
+    exit_code = 0
     with connect(backfill_url()) as conn:
         client = lambda: LlmClient(conn=conn, budget="backfill")   # noqa: E731
         if args.stage == "universe":
@@ -162,6 +173,16 @@ def main(argv: list[str] | None = None) -> int:
                    "verified_by_T0": s.verified, "waiting_on_batch": s.pending_llm,
                    "not_order": s.not_order, "ocr_pages": s.ocr_pages,
                    "stopped_early": s.stopped_early}
+            if s.gate_violations:
+                # §5.4's hard invariant, checked here exactly as orders/__main__.py checks
+                # it on the live path: nothing may reach OCR or the LLM without llm_allowed
+                # having said so first. A non-empty list is a bug, never a filing to shrug at.
+                # Still printed below with everything else, so the failure is diagnosable,
+                # not just flagged.
+                log.error("GATE VIOLATION: LLM/OCR reached a non-order-related filing: %s",
+                         s.gate_violations)
+                out["gate_violations"] = s.gate_violations
+                exit_code = 2
         elif args.stage == "batch-submit":
             out = batch.submit(conn, client())
         elif args.stage == "batch-collect":
@@ -183,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             out = status(conn)
     for k, v in out.items():
         print(f"{k}: {v}")
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

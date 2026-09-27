@@ -1938,3 +1938,19 @@ updated. 314 tests pass.
 **not yet built** - Spike C answered the parsing question; wiring it to the per-company
 fetch, writing `financials` rows and handling the still-unknown Integrated Filing endpoint
 is the remaining work.
+
+### 27 Sep 2026 (evening, cont.) — price-band/ASM spike: bands solvable, ASM/GSM not
+
+8/8 requests. `sec_list.csv` gives every symbol's current price band; more usefully,
+`eq_band_changes_{ddmmyyyy}.csv` is a **daily change log** ("From","To"), confirmed live
+for three dates a year apart (19 Sep 2025, 22 Sep 2025, 1 Sep 2026), all real rows.
+Reconstructing history means walking it backward from a known snapshot, one request per
+calendar day - not built tonight, since it doesn't block D22's verdict (`locked` already
+comes from the `bh` band-*hit* file) and the budget went to confirming the mechanism
+generalises rather than guessing further. `reportASM`/`reportGSM` return real current-stage
+JSON but no historical file was found; falls back to Sravanth's own default, null + flag
+per event. ARCHITECTURE §11 updated with both findings.
+
+**Collector confirmed stopped** before the next step: no tradebot process is running.
+Starting the company-wise announcements fetch now (~1,583 symbol= queries, one per company
+in the frozen universe, at the backfill pace - a couple of hours).

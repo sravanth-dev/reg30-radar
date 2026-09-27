@@ -1810,3 +1810,15 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   mean both beating the 0.75% hurdle, and the same sign in both halves. A half with no
   events fails that last check, so it is NO-GO, not GO.
 - 20 new tests on a hand-built 200-day market with known answers. 293 pass.
+- **Events and the §6 recheck** (migration 0011: `backfill_events`, `event_results`,
+  `unknown_categories`). `backfill/events.py` merges verified extractions into events on
+  §5.3's exact keys only (the same attachment SHA-256, or the same ISIN and value), never on
+  headline similarity. Filings with no value are never merged on value. The event time is
+  the earliest filing. Recipient comes from the extraction, or from the category for
+  "Bagging/Receiving of orders"; otherwise it is unknown and kept out of the primary cell.
+  `next_state()` implements §6 trigger 4: value ≥ 15% of market cap, or market cap or TTM
+  unknown, goes to `recheck_pending`. `backfill/recheck.py` runs a blind tier-2 re-read
+  through Batch: agree becomes verified, disagree becomes needs_review, and it runs at most
+  once plus one retry. The extraction collector now only reads its own batches (purpose
+  filter), so the two Batch users never cross. 301 tests pass, including both recheck round
+  trips on real SQL.

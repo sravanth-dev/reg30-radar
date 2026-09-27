@@ -79,8 +79,10 @@ def submit(conn, client: LlmClient) -> dict:
 
 
 def collect(conn, client: LlmClient) -> dict:
+    # Only this module's batches: the §6 recheck (backfill/recheck.py) runs its own.
     open_batches = conn.execute(
-        "select batch_id, model from llm_batches where collected_at is null").fetchall()
+        "select batch_id, model from llm_batches where collected_at is null and purpose = %s",
+        (PURPOSE,)).fetchall()
     summary = {"still_running": 0, "collected": 0, "results": 0, "cost_usd": Decimal("0")}
     for batch_id, model in open_batches:
         batch = client.retrieve_batch(batch_id)

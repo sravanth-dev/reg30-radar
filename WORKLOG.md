@@ -1842,3 +1842,24 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   filed after the event is ignored. `study` writes the report (INSUFFICIENT DATA, n = 1,
   +10.00%). **My first version of this test was wrong and the code was right**: I had
   seeded two quarters filed after the event, and TTM correctly came back unknown.
+- **D27 verified on real data: the Muhurat session needs no special case.** 21 Oct 2025
+  loads as a trading day with about a fifth of a normal day's traded value (₹19,407 cr
+  against about ₹1 lakh cr), which fits a one-hour session. 22 Oct (Balipratipada) is
+  correctly closed. `analysis.muhurat_days: [2025-10-21]` is confirmed.
+- **Offline findings before Spike C** (no requests):
+  - Spike A's saved BEL history shows that results announcements ("Financial Result
+    Updates", "Integrated Filing- Financial") attach signed **PDFs**, not XBRL, so the XBRL
+    must come from NSE's results API. Their announcement timestamps are the exact
+    `filed_at` that point-in-time TTM needs, and the company-wise fetch stores them anyway.
+  - The saved PR bundles hold 14 members. Besides the four in use, `bc<date>.csv` is a
+    corporate-actions file (SERIES, SYMBOL, RECORD_DT, EX_DT, PURPOSE, with bonus and split
+    ratios in the text). That is a better capital-action detector than CORP_IND alone and
+    answers §11's open "full CORP_IND code list" item. It is **not used yet**: the Phase 1
+    rule stays exclude-not-adjust. Nothing in the bundles carries price bands or ASM/GSM,
+    so that spike needs requests.
+- `revenue/xbrl.py`: the revenue parser §5.8 asked for. Every revenue fact is read with its
+  context's start and end dates and the period length is computed from the day count;
+  context names are never trusted (a test uses a deliberately misleading one). The most
+  specific revenue element wins and elements are never mixed. A non-INR unit is refused.
+  To be checked against real files in Spike C. `spikes/spike_c_results_xbrl.py`: budget 14,
+  one persisted counter, warm-ups counted.

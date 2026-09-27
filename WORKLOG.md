@@ -1863,3 +1863,11 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   specific revenue element wins and elements are never mixed. A non-INR unit is refused.
   To be checked against real files in Spike C. `spikes/spike_c_results_xbrl.py`: budget 14,
   one persisted counter, warm-ups counted.
+- **Keep-alive fix verified live.** The collector restarted at about 14:30 with the fix.
+  Every 10-minute poll since then has succeeded: six in a row, 14:39-15:29, 0
+  `ConnectionResetError`, against 34 of 61 failures on 26 Sep. `orders --follow` was
+  **not** among the restarted processes (collector and sheets only), and Sravanth was asked
+  to start it.
+- ARCHITECTURE §10 now marks Slices 1 (backfill half), 2, 3, 5 (Batch and §6), 7 and 8 as
+  built, and 6 as partly built (TTM and parser; the fetcher waits on Spike C).
+  `spikes/spike_band_asm.py` (budget 8) is ready for the price-band and ASM/GSM question.

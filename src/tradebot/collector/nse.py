@@ -72,9 +72,16 @@ class NseClient:
         (Spike A), so the caller filters to its window."""
         return self._get_json({"symbol": symbol})
 
-    def _get_json(self, extra_params: dict) -> PollResult:
-        """One GET against the announcements endpoint with the configured parameters plus
-        `extra_params`.
+    def fetch_results_listing(self, symbol: str) -> PollResult:
+        """One company's quarterly results history (Spike C, 27 Sep 2026): a different
+        endpoint (`config/sources.yaml`'s `nse.results`), same session and politeness. Only
+        the pre-April-2025 "Financial Results" era - see `revenue/load.py`'s module
+        docstring for what that does and does not cover."""
+        return self._get_json({"symbol": symbol}, endpoint="results")
+
+    def _get_json(self, extra_params: dict, *, endpoint: str = "announcements") -> PollResult:
+        """One GET against `config/sources.yaml`'s `nse.<endpoint>` with its configured
+        parameters plus `extra_params`.
 
         Returns a PollResult rather than raising, because every outcome - including the
         failures - is a row in source_health, and an exception escaping here would lose
@@ -85,8 +92,8 @@ class NseClient:
         # A connection idle this long has usually been closed at NSE's end already.
         close_if_idle(self.session, self._last_request, self.idle_after)
 
-        url = self.cfg["announcements"]["url"]
-        params = {**self.cfg["announcements"]["params"], **extra_params}
+        url = self.cfg[endpoint]["url"]
+        params = {**self.cfg[endpoint]["params"], **extra_params}
         started = time.monotonic()
         try:
             r = self.session.get(url, params=params, timeout=45)

@@ -1954,3 +1954,33 @@ per event. ARCHITECTURE §11 updated with both findings.
 **Collector confirmed stopped** before the next step: no tradebot process is running.
 Starting the company-wise announcements fetch now (~1,583 symbol= queries, one per company
 in the frozen universe, at the backfill pace - a couple of hours).
+
+### 27 Sep 2026 (evening, cont.) — revenue/load.py built; three real bugs caught before running
+
+Built the fetcher `backfill/__main__.py`'s `revenue` stage needs: `revenue/load.py`, one
+`corporates-financial-results` listing call per company (the endpoint Spike C confirmed),
+one XBRL download per filing with a real link. `NseClient` gains `fetch_results_listing`
+and `_get_json` now takes an `endpoint` name instead of always hitting the announcements
+URL (`config/sources.yaml` gains `nse.results`).
+
+**Three real bugs caught by re-reading the draft against the actual APIs it calls, before
+any request was sent:**
+1. `_get_json` was hardcoded to the announcements URL. Calling it with `period=Quarterly`
+   would have silently queried the *announcements* endpoint with a stray extra parameter,
+   never the results endpoint at all.
+2. The draft called `fetcher.fetch(xbrl_url, work_dir=None)` - a `PdfFetcher`-shaped call
+   (writes to disk, checks for a `%PDF` magic header) on an `ArchiveFetcher`, which has no
+   such method and returns bytes in memory, not a path. An XML file would have failed the
+   magic-byte check outright had this been PdfFetcher, or crashed on the wrong method name
+   as written.
+3. `NseClient` has no minimum-gap pacing of its own (only idle-reconnect) - the caller
+   supplies it, as `backfill/announcements.py` already does. The draft's `run()` looped
+   over companies with no delay between listing calls at all, which would have hit the
+   results endpoint far faster than the backfill pace allows.
+
+All three fixed before the first real request; 7 new offline tests
+(`tests/unit/test_revenue_load.py`) exercise the fetch/skip/checkpoint logic with fakes for
+both NseClient and ArchiveFetcher. 321 tests pass.
+
+**Announcements fetch running cleanly**: 69/1,583 companies at 0 failures as of 18:20 IST,
+on pace for the ~2.5h estimate.

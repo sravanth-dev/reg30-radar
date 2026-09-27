@@ -107,3 +107,30 @@ def test_refine_with_body_never_applies_to_red_flag_or_order_win_buckets():
     refined = refine_with_body(r, "we received a letter of award worth Rs 10 crore")
     assert refined.order_related is False
     assert refined.bucket == "red_flag"
+
+
+# --- The full category map (approved 27 Sep 2026) ---
+
+from tradebot.router.orders import bucket_of  # noqa: E402
+
+
+def test_category_matching_ignores_case():
+    # NSE writes both spellings; the live feed has "General updates" 8 times.
+    assert classify("General updates", "").bucket == "catch_all"
+    assert bucket_of("GENERAL UPDATES") == "catch_all"
+
+
+def test_every_bucket_in_the_approved_map():
+    assert bucket_of("Shareholders meeting") == "noise"
+    assert bucket_of("Financial Result Updates") == "results"
+    assert bucket_of("Acquisition") == "other_material"
+    assert bucket_of("Resignation of Director/KMP/SMP") == "leadership"
+    assert bucket_of("Corporate Insolvency Resolution Process") == "red_flag"
+    assert bucket_of("Press Release (Revised)") == "catch_all"
+    assert bucket_of("Bagging/Receiving of orders/contracts (Sub-para 4-Para B)") == "order_win"
+
+
+def test_an_unlisted_category_is_unknown_not_noise():
+    assert bucket_of("A Category NSE Invents Tomorrow") == "unknown"
+    # ...and never reaches the order pipeline.
+    assert classify("A Category NSE Invents Tomorrow", "order").bucket == "out_of_scope"

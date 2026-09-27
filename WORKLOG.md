@@ -1772,3 +1772,14 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   which §5.12 already lists as Phase 2.
 - Market load running without errors; holidays (10 Apr 2025, Mahavir Jayanti) recognised
   correctly.
+- **Category map approved and in force** (Slice 3's map). Sravanth said "Okay" to the
+  draft; his rule 4 moves Director/KMP changes into a new `leadership` bucket, a separate
+  confounder class reported with and without, instead of other_material. Auditor changes
+  stay other_material, since they are not Director/KMP. `config/category_map.yaml` now
+  holds 146 categories: order_win 1, order_candidate 1, red_flag 7, catch_all 4, results
+  8, other_material 56, noise 52, leadership 17. The draft file is deleted. Matching is now
+  case-insensitive, because the live feed has "General updates" 8 times, which the old
+  map missed. `bucket_of()` gives any filing's bucket, or "unknown" for an unlisted
+  category, which counts as other news for contamination and is never downloaded. **Live
+  effect** once processes restart: "General updates" and "Press Release (Revised)"
+  filings now reach the order pipeline.

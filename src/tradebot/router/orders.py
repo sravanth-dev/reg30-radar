@@ -39,13 +39,22 @@ def normalize_category(raw: str | None) -> str:
 
 @cache
 def _bucket_lookup() -> dict[str, str]:
-    """category string -> bucket, built once from config/category_map.yaml."""
+    """casefolded category string -> bucket, built once from config/category_map.yaml.
+    Case-insensitive because NSE writes the same category both ways ("General Updates"
+    and "General updates" both appear in the live feed)."""
     cfg = category_map_config()
     out: dict[str, str] = {}
     for bucket, categories in cfg.items():
         for category in categories:
-            out[category] = bucket
+            out[category.casefold()] = bucket
     return out
+
+
+def bucket_of(category_raw: str | None) -> str:
+    """The category map's bucket for any filing (§5.4), or "unknown" for a category the
+    map does not list. The event study treats unknown as other news near an order, the
+    cautious direction, and logs it to `unknown_categories` for review."""
+    return _bucket_lookup().get(normalize_category(category_raw).casefold(), "unknown")
 
 
 # §5.4's keyword prefilter. On the headline, both lists apply; on extracted body text,
@@ -80,7 +89,7 @@ def classify(category_raw: str | None, headline: str | None) -> Relevance:
     (§5.5: OCR has to be decided before download, so the PDF still exists to render).
     """
     category = normalize_category(category_raw)
-    bucket = _bucket_lookup().get(category, "out_of_scope")
+    bucket = _bucket_lookup().get(category.casefold(), "out_of_scope")
 
     if bucket in ("order_win", "order_candidate"):
         return Relevance(bucket, True, f"category is {bucket} ({category!r})")

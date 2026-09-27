@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from tradebot.extractor.provenance import verify as verify_provenance
 from tradebot.llm.client import LlmClient, LlmRefused, LlmResult
-from tradebot.units.money import parse_money
+from tradebot.units.money import is_suspect, parse_money
 
 PROMPT_VERSION = "order_extract_v1"
 SCHEMA_NAME = "order_fields"
@@ -128,7 +128,8 @@ def extract_order_fields(document_text: str, *, client: LlmClient) -> ExtractRes
 
         money = parse_money(fields.consideration_raw)
         provenance_ok = verify_provenance(document_text, fields.value_span, money.value_inr)
-        status = "verified" if provenance_ok else "needs_review"
+        # A suspect scale (units/money.py) is never verified, whatever provenance says.
+        status = "verified" if provenance_ok and not is_suspect(money) else "needs_review"
         # §6 trigger 3: a judgment field coming back unknown is itself an escalation
         # trigger. There is no tier 2 configured (single-tier, Sravanth's choice this
         # session), so it lands in review rather than a second model - which is the

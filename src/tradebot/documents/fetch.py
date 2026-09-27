@@ -21,6 +21,7 @@ from pathlib import Path
 import requests
 
 from tradebot.common.config import nse as nse_config
+from tradebot.common.http import close_if_idle
 
 
 @dataclass
@@ -50,6 +51,7 @@ class PdfFetcher:
         pacing = self.cfg["pacing"]
         self.min_gap = float(pacing["backfill_min_gap_seconds"])
         self.jitter = tuple(float(x) for x in pacing["jitter_seconds"])
+        self.idle_after = float(pacing["idle_reconnect_seconds"])
         self.session = requests.Session()
         self.session.headers.update({k: str(v) for k, v in self.cfg["headers"].items()})
         self._warm = False
@@ -79,6 +81,10 @@ class PdfFetcher:
         if not self._warm:
             self.warm_up()
         dest_dir.mkdir(parents=True, exist_ok=True)
+        # Between --follow cycles this session sits idle for minutes, long enough for
+        # NSE to close the pooled connection (common/http.py). Checked before _pace()
+        # moves the clock forward.
+        close_if_idle(self.session, self._last or None, self.idle_after)
         self._pace()
 
         digest = hashlib.sha256()

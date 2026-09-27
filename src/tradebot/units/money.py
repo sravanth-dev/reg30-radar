@@ -167,7 +167,9 @@ def _scale_after(text: str, end: int) -> tuple[Decimal, str] | None:
     """Find the scale word immediately following a numeral, if any."""
     tail = text[end:end + 24].lower()
     for word, mult in SCALES:
-        if re.match(rf"\s*{re.escape(word)}\b", tail):
+        # "/-" may sit between the numeral and its scale word: LCCPROJECT printed
+        # "₹58.53/- Crore", read as ₹58.53 until 27 Sep 2026.
+        if re.match(rf"\s*(?:/-)?\s*{re.escape(word)}\b", tail):
             return mult, word
     return None
 
@@ -240,17 +242,102 @@ def parse_money(raw: str | None) -> Money:
         out.flags.add("no_number_found")
         return out
 
+    value = best[0]
     if best[1] is None:
         # A bare numeral with no scale word is taken as rupees, which is what filings mean
         # when they print "INR 65,02,160.50/-".
         out.flags.add("no_scale_word")
+        value = _check_against_words(text, value, out.flags)
 
     if out.currency != "INR":
         out.flags.add("foreign_currency_not_converted")
         return out
 
-    out.value_inr = best[0]
+    out.value_inr = value
     return out
+
+
+# The spelled-out amount a filing often prints beside the numeral. Only runs containing one
+# of these count, so a stray "one" or "two" in the text is never read as an amount.
+_AMOUNT_SCALE_WORDS = {"thousand", "lakh", "lakhs", "crore", "crores"}
+_WORD_TOKEN = re.compile(r"[A-Za-z]+")
+# What may sit between two words of one spelled-out amount: "Six Hundred & Sixty",
+# "Seventy-Nine", "Crore, Fifty".
+_WORD_GAP = re.compile(r"[\s&,\-]*")
+# Below this, a bare numeral is too small to be an order value in rupees (§5.10 treats a
+# value under ₹1 lakh as a suspect parse).
+_ONE_LAKH = Decimal(10) ** 5
+
+
+def _spelled_amounts(text: str) -> list[Decimal]:
+    """Every spelled-out amount in `text`: "Rupees Six Hundred & Sixty Crore and
+    Seventy-Nine Lakhs only" -> [6607900000]."""
+    amounts = []
+    run: list[str] = []
+    prev_end = None
+    for m in _WORD_TOKEN.finditer(text):
+        word = m.group(0).lower()
+        numberish = (word in UNITS_WORDS or word in WORD_SCALES
+                     or word in ("and", "rupees", "rupee", "only"))
+        adjacent = prev_end is None or _WORD_GAP.fullmatch(text[prev_end:m.start()])
+        if run and not (numberish and adjacent):
+            amounts.append(run)
+            run = []
+        if numberish:
+            run.append(word)
+        prev_end = m.end()
+    if run:
+        amounts.append(run)
+
+    out = []
+    for words in amounts:
+        # Needs a number word and an amount-sized scale word: the "crore" in "₹653.34
+        # crore" alone is a unit, not a spelled-out amount.
+        if not _AMOUNT_SCALE_WORDS.intersection(words):
+            continue
+        if not any(w in UNITS_WORDS for w in words):
+            continue
+        value = _words_to_decimal(" ".join(words))
+        if value is not None and value > 0:
+            out.append(value)
+    return out
+
+
+def _check_against_words(text: str, value: Decimal, flags: set[str]) -> Decimal:
+    """Cross-check a bare numeral against a spelled-out amount in the same text.
+
+    VASCONEQ printed "Rs. 660.79/- (Rupees Six Hundred & Sixty Crore and Seventy-Nine
+    Lakhs only)": the scale is only in the words, so the numeral alone read as ₹660.79,
+    ten million times too small, and provenance could not catch it because the span
+    re-parses to the same wrong number (WORKLOG, 25 Sep 2026). When the words equal the
+    numeral times a crore or a lakh exactly, they settle the scale; nothing is guessed.
+
+    A value still unconfirmed and below ₹1 lakh, or one the words contradict, is flagged
+    `suspect_scale`: it is kept for review but never counted as verified. That also
+    catches a physical quantity read as money ("Supply of 2 GW" read as ₹2, WAAREEENER).
+    """
+    words = _spelled_amounts(text)
+    for scale, name in ((Decimal(10) ** 7, "crore"), (Decimal(10) ** 5, "lakh")):
+        if value * scale in words:
+            flags.add("scale_from_words")
+            flags.add(f"scale_{name}")
+            return value * scale
+    if value in words:
+        flags.add("words_confirm")
+        return value
+    if words:
+        flags.add("words_mismatch")
+        flags.add("suspect_scale")
+    elif value < _ONE_LAKH:
+        flags.add("suspect_scale")
+    return value
+
+
+def is_suspect(money: Money) -> bool:
+    """Whether a parsed value must not be marked verified however well its span checks
+    out: provenance proves the value came from the document, not that the scale was read
+    right (see `_check_against_words`)."""
+    return "suspect_scale" in money.flags
 
 
 MONTH_PATTERNS = [

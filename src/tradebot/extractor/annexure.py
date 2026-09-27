@@ -187,8 +187,17 @@ def parse_domestic(raw: str | None) -> str | None:
     return None
 
 
+# Amendment and termination count only next to an order word. Almost every filing cites
+# "Regulation 30 of SEBI (LODR) Regulations, 2015 (as amended)", and a bare \bamend made
+# that boilerplate win over everything else - BDL's new ₹810.79 crore order read
+# "amendment" (WORKLOG, 24 Sep 2026 night). The boilerplate is also stripped first.
+_ORDER_WORD = r"(?:orders?|contracts?|LoA|LoI|LOA|LOI|agreements?|work\s+orders?|purchase\s+orders?)"
+_CHANGE_WORD = r"(?:amend\w*|revis(?:ed|ion)|terminat\w*)"
+_AS_AMENDED = re.compile(r"\(?\s*as\s+amended(?:\s+from\s+time\s+to\s+time)?\s*\)?", re.I)
+
 STAGE_PATTERNS = [
-    ("amendment", r"\bamend|\brevis(?:ed|ion)|\bterminat"),
+    ("amendment", rf"\b{_CHANGE_WORD}\b[^.\n]{{0,60}}\b{_ORDER_WORD}\b"
+                  rf"|\b{_ORDER_WORD}\b[^.\n]{{0,40}}\b{_CHANGE_WORD}\b"),
     ("LoA", r"letter\s+of\s+award|\bLoA\b|\bLOA\b"),
     ("LoI", r"letter\s+of\s+inten|\bLoI\b|\bLOI\b"),
     ("L1", r"\bL-?1\b|lowest\s+bidder|lowest\s+evaluated"),
@@ -201,6 +210,7 @@ def parse_stage(text: str) -> str:
     """Order stage from the whole document. `unknown` when nothing matches (§5.6)."""
     if not text:
         return "unknown"
+    text = _AS_AMENDED.sub(" ", text)
     for stage, pattern in STAGE_PATTERNS:
         if re.search(pattern, text, re.I):
             return stage

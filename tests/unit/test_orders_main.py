@@ -69,3 +69,33 @@ def test_max_requests_is_passed_through(monkeypatch):
                          lambda **kw: calls.append(kw) or 0)
     orders_main.main(["--date", "2026-09-23", "--max-requests", "5"])
     assert calls[0]["max_requests"] == 5
+
+
+def test_follow_cycle_reads_only_the_lookback_window_and_reports_outside_git(monkeypatch):
+    """--follow used to read the whole raw table every cycle and write its reports into
+    the tracked reports/ folder, which blocks `git pull` on the VPS (WORKLOG, 27 Sep)."""
+    from datetime import datetime, timedelta
+
+    from tradebot.common.calendar import IST
+    from tradebot.orders import report, run as run_mod
+
+    now = datetime(2026, 9, 27, 12, 0, tzinfo=IST)
+    selected, written = [], []
+    monkeypatch.setattr(run_mod, "select_latest_revisions",
+                         lambda conn, **kw: selected.append(kw) or [])
+
+    def fake_process(conn, raw_rows, **kw):
+        summary = run_mod.Summary()
+        summary.dates_touched.add(date(2026, 9, 27))
+        return summary
+
+    monkeypatch.setattr(run_mod, "process_pending", fake_process)
+    monkeypatch.setattr(report, "write",
+                         lambda conn, day, reports_dir: written.append((day, reports_dir)))
+
+    orders_main.follow_cycle(object(), fetcher=None, client=None, work_dir=None,
+                             lookback_days=3, now=now)
+
+    assert selected == [{"since": now - timedelta(days=3)}]
+    assert written == [(date(2026, 9, 27), report.LIVE_REPORTS_DIR)]
+    assert report.LIVE_REPORTS_DIR != report.REPORTS_DIR

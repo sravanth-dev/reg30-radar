@@ -1,13 +1,20 @@
 symbol,category_raw,bucket,relevance_reason,quality,path,consideration_raw,value_inr,provenance_ok,company_is_recipient,stage,review_status,llm_cost_usd
 AASTHA,General Updates,catch_all,"catch_all; body keyword 'secured one, long-term, non-cancellable orders'",ok,t0,"₹25,00,00,000/- (Rupees Twenty-Five",250000000.00,True,True,contract,verified,0.000000
 BLACKBUCK,General Updates,catch_all,catch_all; body keyword 'l 1',partial,llm,,,False,,unknown,not_order,0.001176
-GENESYS,Press Release,catch_all,catch_all; headline keyword 'contract',ok,llm,₹283 crore,2830000000.00,True,True,contract,verified,0.000349
+DREDGECORP,Press Release,catch_all,catch_all; body keyword 'secured a five-year maintenance dredging contract',ok,llm,,,False,True,contract,needs_review,0.000593
 GENESYS,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,t0,or Rs. 283 crore (inclusive of taxes),2830000000.00,True,True,contract,verified,0.000000
+GENESYS,Press Release,catch_all,catch_all; headline keyword 'contract',ok,llm,₹283 crore,2830000000.00,True,True,contract,verified,0.000349
+GOCLCORP,General Updates,catch_all,catch_all; body keyword 'received the Order',ok,llm,,,False,,unknown,not_order,0.000290
+HMT,General Updates,catch_all,catch_all; body keyword 'secured the order',partial,llm,,,False,,,needs_review,0.029581
+JSWENERGY,General Updates,catch_all,catch_all; headline keyword 'Order',ok,llm,,,False,False,contract,not_order,0.000428
 KPIL,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,"approx. ₹2,025 Crores",20250000000.00,True,True,unknown,needs_review,0.000360
 LASERPOWER,General Updates,catch_all,catch_all; body keyword 'LOI',ok,llm,,,False,,unknown,not_order,0.000260
-LCCPROJECT,Updates,catch_all,catch_all; headline keyword 'L-1',ok,t0,or size of the ₹653.34 crore (including GST),6533400000.00,True,,amendment,verified,0.000000
+LCCPROJECT,Updates,catch_all,catch_all; headline keyword 'L-1',ok,t0,or size of the ₹653.34 crore (including GST),6533400000.00,True,,L1,verified,0.000000
+MTNL,General Updates,catch_all,catch_all; body keyword 'received order',ok,llm,,,False,,unknown,not_order,0.000337
+RHETAN,General Updates,catch_all,catch_all; body keyword 'purchase order',ok,llm,,,False,,unknown,not_order,0.001413
 SAURASHCEM,Updates,catch_all,catch_all; headline keyword 'order',partial,llm,,,False,,unknown,not_order,0.012052
+SBILIFE,General Updates,catch_all,catch_all; body keyword 'received an order',ok,llm,,,False,,unknown,not_order,0.000273
 STEAMHOUSE,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),unreadable,none,,,,,,needs_review,0.002620
-VASCONEQ,Awarding of order(s)/contract(s),order_candidate,category is order_candidate ('Awarding of order(s)/contract(s)'),ok,t0,or size of the Rs. 660.79/- (Rupees Six Hundred &,660.79,True,True,LoI,verified,0.000000
+VASCONEQ,Awarding of order(s)/contract(s),order_candidate,category is order_candidate ('Awarding of order(s)/contract(s)'),ok,llm,Rs. 660.79/- (Rupees Six Hundred & Sixty Crore and Seventy-Nine Lakhs only) (Including Taxes),6607900000.00,True,True,LoI,verified,0.000328
 VPRPL,General Updates,catch_all,catch_all; body keyword 'work order',partial,llm,,,False,,unknown,not_order,0.015717
 WELCORP,Bagging/Receiving of orders/contracts,order_win,category is order_win ('Bagging/Receiving of orders/contracts'),ok,llm,"approx. USD 412.5 million (~₹4,000 crore)",,False,True,unknown,needs_review,0.000325

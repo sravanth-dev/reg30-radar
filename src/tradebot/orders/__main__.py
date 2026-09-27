@@ -100,11 +100,36 @@ def run_batch(*, since: date, until: date, max_requests: int) -> int:
     return 0
 
 
+def follow_cycle(conn, *, fetcher, client, work_dir, lookback_days: float,
+                 now: datetime | None = None) -> run_mod.Summary:
+    """One `--follow` pass: process whatever the collector saved recently, then refresh the
+    live report for each day touched.
+
+    Only filings first seen in the last `lookback_days` are read. Reading the whole table
+    every cycle meant re-reading and re-classifying every out-of-scope filing ever stored,
+    because those never get an `order_extractions` row: about 1,200 more rows a day,
+    every two minutes, inside a 512 MB container (WORKLOG, 27 Sep). A few days is still
+    far longer than any retry takes (three attempts, 15 minutes apart), and a
+    `--catchup` after an outage stamps what it recovers with the catch-up time, so it
+    lands inside the window too.
+    """
+    now = now or datetime.now(IST)
+    since = now - timedelta(days=lookback_days)
+    raw_rows = run_mod.select_latest_revisions(conn, since=since)
+    summary = run_mod.process_pending(
+        conn, raw_rows, fetcher=fetcher, client=client, work_dir=work_dir,
+    )
+    for touched in sorted(summary.dates_touched):
+        report.write(conn, touched, reports_dir=report.LIVE_REPORTS_DIR)
+    return summary
+
+
 def run_follow() -> int:
     """`--follow`: a long-running worker, one cycle per interval, until stopped."""
     cfg = documents_config()["orders"]
     interval = float(cfg["follow_interval_seconds"])
     jitter = tuple(float(x) for x in cfg["follow_jitter_seconds"])
+    lookback_days = float(cfg["follow_lookback_days"])
     work_dir = _work_dir()
 
     while not _stopping:
@@ -113,10 +138,8 @@ def run_follow() -> int:
                 client = LlmClient(conn=conn)
                 fetcher = PdfFetcher()
                 while not _stopping:
-                    raw_rows = run_mod.select_latest_revisions(conn)
-                    summary = run_mod.process_pending(
-                        conn, raw_rows, fetcher=fetcher, client=client, work_dir=work_dir,
-                    )
+                    summary = follow_cycle(conn, fetcher=fetcher, client=client,
+                                           work_dir=work_dir, lookback_days=lookback_days)
                     if summary.considered:
                         log.info(
                             "cycle: considered=%d downloaded=%d order_related=%d "
@@ -132,8 +155,6 @@ def run_follow() -> int:
                                 "GATE VIOLATION: LLM/OCR reached a non-order-related "
                                 "filing: %s", summary.gate_violations,
                             )
-                    for touched in sorted(summary.dates_touched):
-                        report.write(conn, touched)
                     if _stopping:
                         return 0
                     time.sleep(jittered(interval, jitter))

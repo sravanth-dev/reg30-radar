@@ -20,3 +20,5 @@ orders:
                                   # saved since the last pass
   follow_jitter_seconds: [5, 20] # never exactly periodic (§5.1's reasoning applies here
                                   # too, even though this polls our own database, not NSE)
+  follow_lookback_days: 3        # --follow reads only filings first seen this recently, so
+                                  # a cycle's cost stays flat as the table grows

@@ -1537,3 +1537,50 @@ live-path hardening and Docker, Part B verdict slices). Sravanth also asked whet
 at high effort is enough for the build. My answer: yes for the mechanical bulk, with Opus
 kept for (or reviewing) Spike C/TTM, the event study and verdict, and the Batch spend
 guards, because mistakes there produce plausible wrong numbers rather than failing tests.
+
+### 27 Sep 2026 (afternoon) — Part A: live-path fixes, and three stored values corrected
+
+Step 0 committed and pushed (`50af31d`): the 26 Sep overflow fix, the audit and both rounds
+of decisions. Then the live-path defects from the audit:
+
+- **Stale keep-alive fixed.** `common/http.py`'s `close_if_idle` closes a session's pooled
+  connections before any request that follows `pacing.idle_reconnect_seconds` (90 s) of
+  idleness. Cookies survive; this was checked against a local server before relying on it
+  (a closed `requests.Session` reopens on a new socket, cookies intact). `NseClient` now
+  routes its three query types, live, date range and the new `fetch_symbol` for the
+  backfill, through one `_get_json`. `PdfFetcher` does the same check before each download.
+- **`--follow` bounded.** `follow_cycle` reads only filings first seen in the last
+  `orders.follow_lookback_days` (3), instead of the whole table every two minutes.
+- **Live reports out of git.** `--follow` writes `data/reports/` (gitignored). Batch runs
+  keep writing `reports/`. The untracked 26/27 Sep auto-reports moved there.
+- **Health check**: `python -m tradebot.common.health`, exit 1 when no poll has succeeded
+  for 30 minutes, for the collector's Docker healthcheck. **Its first real run caught a
+  real outage**: all three live processes had stopped at about 12:55 IST, around the time
+  the morning's session was interrupted. The laptop had not rebooted. Sunday volume is
+  tiny, and the collector's first poll after a restart recovers the gap.
+
+**Two scale bugs, one of them new.** The VASCONEQ fix (`units/money.py`) cross-checks a
+bare numeral against a spelled-out amount in the same string. If the words equal the
+numeral times a crore or a lakh exactly, they settle the scale. Anything still
+unconfirmed and under ₹1 lakh, or contradicted by the words, is flagged `suspect_scale`
+and is never verified by T0 or the LLM, whatever provenance says, because provenance
+proves origin, not scale. Measuring the fix on the 42 stored order rows before committing
+found a **second, unrecorded instance**: LCCPROJECT's "₹58.53/- Crore" was stored as
+₹58.53 and marked verified, because the "/-" between numeral and scale word hid the word.
+`_scale_after` now reads past "/-". The same measurement caught a bug in my own first
+draft, where a lone "crore" was read as a spelled amount of 1 crore; it now needs a number
+word as well.
+
+**`parse_stage` fixed.** BDL read "amendment" because almost every filing cites "SEBI
+(LODR) Regulations, 2015, (as amended)". That boilerplate is stripped, and amend, revise
+and terminate count only within a few words of an order word. "cancel" was deliberately
+left out, since AASTHA's "non-cancellable order" would have matched.
+
+**Stored rows corrected** by re-running the fixed T0 path over every T0 order row (script
+in the session scratchpad, only changed rows written, OCR cost kept): BDL stage →
+contract; LCCPROJECT (23 Sep) stage → L1; LCCPROJECT (25 Sep) ₹58.53 → ₹58.53 crore,
+stage → contract; VASCONEQ escalated to T1 exactly as the live path now would, came back
+with the full phrase and is verified at ₹660.79 crore. `reports/orders_2026-09-23.*` and
+`orders_2026-09-25.*` were regenerated. The hand-written `_detail.md` reports are history
+and still describe the bugs as found. Labelled set unchanged at 8/18 (44%) T0, so no
+regression. 245 tests pass.

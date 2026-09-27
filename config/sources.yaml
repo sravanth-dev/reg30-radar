@@ -74,4 +74,10 @@ nse:
     # Used by the overflow catch-up re-poll as well as the backfill: the fastest rate this
     # project ever asks of NSE.
     backfill_min_gap_seconds: 3.0
+
+    # Pooled connections idle longer than this are closed before the next request.
+    # NSE drops idle connections after a few minutes, and reusing a dead one fails
+    # with ConnectionResetError: on 26 Sep 2026, 34 of 61 ten-minute polls failed that
+    # way (WORKLOG, 27 Sep). Kept above the 60 s band, where reuse always worked.
+    idle_reconnect_seconds: 90
     jitter_seconds: [0.4, 1.6]

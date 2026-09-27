@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import csv
 from datetime import date
+from pathlib import Path
 
 from tradebot.common.config import ROOT
 
 REPORTS_DIR = ROOT / "reports"
+# Gitignored (`data/`), and a Docker volume on the VPS.
+LIVE_REPORTS_DIR = ROOT / "data" / "reports"
 
 ROWS_QUERY = """
 select ra.symbol, ra.category_raw, oe.bucket, oe.relevance_reason, d.quality, oe.path,
@@ -66,13 +69,19 @@ def fetch(conn, day: date) -> tuple[list[dict], dict]:
     return rows, totals
 
 
-def write(conn, day: date) -> tuple[str, str]:
-    """Write both files for one date. Returns (md_path, csv_path) as strings."""
-    rows, totals = fetch(conn, day)
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+def write(conn, day: date, reports_dir: Path = REPORTS_DIR) -> tuple[str, str]:
+    """Write both files for one date. Returns (md_path, csv_path) as strings.
 
-    md_path = REPORTS_DIR / f"orders_{day.isoformat()}.md"
-    csv_path = REPORTS_DIR / f"orders_{day.isoformat()}.csv"
+    `reports_dir` is `reports/` (committed, §8) for a deliberate `--date`/`--from` run, and
+    `LIVE_REPORTS_DIR` for `--follow`. The live worker rewrites the current day's files every
+    cycle; inside the tracked `reports/` folder that left the VPS checkout permanently
+    modified, and `git pull` refuses to update a file with local changes (WORKLOG, 27 Sep).
+    """
+    rows, totals = fetch(conn, day)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    md_path = reports_dir / f"orders_{day.isoformat()}.md"
+    csv_path = reports_dir / f"orders_{day.isoformat()}.csv"
 
     md_path.write_text(_render_md(day, rows, totals), encoding="utf-8")
     with csv_path.open("w", newline="", encoding="utf-8") as fh:

@@ -27,7 +27,7 @@ from tradebot.extractor.provenance import verify as verify_provenance
 from tradebot.llm.client import LlmClient
 from tradebot.orders import store as orders_store
 from tradebot.router.orders import Relevance, classify, in_scope, llm_allowed, refine_with_body
-from tradebot.units.money import parse_money
+from tradebot.units.money import is_suspect, parse_money
 
 log = logging.getLogger("orders")
 
@@ -120,7 +120,11 @@ def _t0_row(row, relevance: Relevance, *, document_id: int, doc_text: str,
     consideration = ann.raw("consideration_raw")
     money = parse_money(consideration)
     span = ann.span("consideration_raw")
-    ok = verify_provenance(doc_text, span, money.value_inr)
+    provenance_ok = verify_provenance(doc_text, span, money.value_inr)
+    # Provenance proves the number came from the document, not that its scale was read
+    # right: VASCONEQ's ₹660.79 crore passed as ₹660.79 (units/money.py). A suspect scale
+    # is not verified here, so the filing escalates to T1 like any other T0 miss.
+    ok = provenance_ok and not is_suspect(money)
     # company_is_recipient and stage read the whole document, not just the labelled
     # consideration row - already built in extractor/annexure.py (the same functions
     # eval/__main__.py's predict() uses) and simply not wired in here until now. Without
@@ -131,7 +135,7 @@ def _t0_row(row, relevance: Relevance, *, document_id: int, doc_text: str,
         raw_announcement_id=row["id"], document_id=document_id, bucket=relevance.bucket,
         order_related=True, relevance_reason=relevance.reason,
         path="t0", consideration_raw=consideration, value_span=span,
-        value_inr=money.value_inr, provenance_ok=ok, currency=money.currency,
+        value_inr=money.value_inr, provenance_ok=provenance_ok, currency=money.currency,
         gst_inclusive=_gst_flag(money),
         execution_period_raw=ann.raw("execution_period_raw"),
         awarding_entity=ann.raw("awarding_entity"),

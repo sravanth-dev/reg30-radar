@@ -90,3 +90,60 @@ def test_execution_months(raw, months):
 def test_absolute_date_is_not_guessed():
     # §5.7 puts absolute dates on the caller, which has the filing date as reference.
     assert parse_execution_months("Delivery Completion is November, 2026") is None
+
+
+# --- Scale cross-checked against the spelled-out amount (WORKLOG, 25 and 27 Sep 2026) ---
+
+from tradebot.units.money import is_suspect  # noqa: E402
+
+
+def test_scale_is_taken_from_the_words_when_they_match_exactly():
+    # VASCONEQ, 25 Sep 2026: stored as ₹660.79 and marked verified.
+    got = parse_money("Rs. 660.79/- (Rupees Six Hundred & Sixty Crore and "
+                      "Seventy-Nine Lakhs only)")
+    assert got.value_inr == Decimal("6607900000")
+    assert "scale_from_words" in got.flags
+    assert not is_suspect(got)
+
+
+def test_a_cut_off_span_with_no_confirmable_scale_is_suspect():
+    # The span T0 actually stored for VASCONEQ: the words run onto the next line.
+    got = parse_money("or size of the Rs. 660.79/- (Rupees Six Hundred &")
+    assert got.value_inr == Decimal("660.79")
+    assert is_suspect(got)
+
+
+def test_a_physical_quantity_is_never_a_trustworthy_rupee_value():
+    # WAAREEENER in the labelled set: "2 GW" read as ₹2.
+    assert is_suspect(parse_money("Supply of 2 GW Solar modules"))
+
+
+def test_large_bare_rupee_amounts_stay_trusted():
+    for raw in ("INR 72226994.2/- incl. of GST", "INR 65,02,160.50/-"):
+        assert not is_suspect(parse_money(raw)), raw
+
+
+def test_words_that_agree_with_a_rupee_numeral_confirm_it():
+    got = parse_money("Rs. 5,00,00,000/- (Rupees Five Crore only)")
+    assert got.value_inr == Decimal("50000000")
+    assert "words_confirm" in got.flags
+    assert not is_suspect(got)
+
+
+def test_words_that_contradict_the_numeral_make_it_suspect():
+    got = parse_money("Rs. 12,00,000/- (Rupees Five Crore only)")
+    assert "words_mismatch" in got.flags
+    assert is_suspect(got)
+
+
+def test_scale_word_after_slash_dash_is_read():
+    # LCCPROJECT, 25 Sep 2026: stored as ₹58.53 and marked verified.
+    got = parse_money("basic order value ₹58.53/- Crore")
+    assert got.value_inr == Decimal("585300000")
+    assert not is_suspect(got)
+
+
+def test_a_bare_unit_word_is_not_a_spelled_out_amount():
+    got = parse_money("or size of the ₹653.34 crore (including GST)")
+    assert got.value_inr == Decimal("6533400000")
+    assert "words_mismatch" not in got.flags

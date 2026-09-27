@@ -61,9 +61,12 @@ go-ahead. DEPLOY.md has the runbook.
 4. **The post-April-2025 "Integrated Filing" results API is still unknown.** The
    pre-2025 "Financial Results" endpoint is confirmed working and its parser is fixed and
    tested (see the Spike C entry), but the study window sits almost entirely after that
-   cutover, so most events will get `TTM = None` until this is found. Needs two minutes of
-   someone with a browser on NSE's live Integrated Filing page - two analogous URL guesses
-   already 404'd and a third was not spent.
+   cutover, so **every** event gets `TTM = None` until this is found (corrected 27 Sep
+   night from "most": the earliest event, 22 Sep 2025, already needs Q4 FY25 and Q1 FY26,
+   both filed after the cutover). Needs a browser capture from NSE's **Integrated Filing**
+   page, not the "Financial Results" page - the capture received twice so far came from
+   the latter and is a pre-cutover quarter. Two analogous URL guesses already 404'd and a
+   third was not spent.
 5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
    ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
    name a stronger model later). Both usable as they stand.
@@ -2129,3 +2132,28 @@ files under two ISINs of its own (0 of 294 did), so they are not re-fetched.
 `data/announcements_resume.log` and `data/bands_resume.log`), on the `POCO X7` hotspot
 (D19). The first re-queued companies now keep what they should: ASTRAL 91 filings,
 JSWSTEEL 170, ASIANPAINT 121, where each had 0.
+
+### 27 Sep 2026 (night, cont.) — the results capture again: valid, but pre-cutover
+
+Sravanth sent a cURL capture of `corporates-financial-results-data`. It is the same
+request as the evening's: Reliance, `params=01-Oct-202431-Dec-2024Q3UNNNNERELIANCE`,
+`seq_id=1189823`, the Oct-Dec 2024 quarter, with the referer
+`/companies-listing/corporate-filings-financial-results` (the old "Financial Results"
+page). The request shape is correct and matches `nse.results_detail` in
+`config/sources.yaml`, but it cannot reach past the cutover, checked offline with no
+requests:
+- Spike C's saved BEL listing (`spikes/out/spike_c/listing_BEL.json`, 107 rows) **ends at
+  Oct-Dec 2024, filed 30 Jan 2025**. The detail endpoint only takes `params`/`seqNumber`
+  that a listing row supplies, and every such row already carries an `xbrl` link, so it
+  adds nothing the parser doesn't already get.
+- **Every event, not most, needs post-cutover quarters**: TTM on 22 Sep 2025 (the window's
+  first day) needs Q4 FY25 (via FY − 9M, filed Apr-May 2025) and Q1 FY26 (filed Jul-Aug
+  2025). Without the Integrated Filing endpoint, TTM is null for all events. §6 trigger 4
+  then sends every event to recheck, and the primary cell (`value_to_ttm` ≥ 15%) is
+  empty, so the verdict would be INSUFFICIENT DATA regardless of returns.
+- The 61 "Integrated Filing- Financial" announcements stored so far all say `hasXbrl:
+  True` but attach PDFs. The XBRL is reachable only from the Integrated Filing page.
+
+The capture's session cookies were not written anywhere. Asked for a capture from the
+Integrated Filing page itself, for a quarter from Apr-Jun 2025 onward. Not tested live
+either way: the host is busy with the announcements fetch (one stream at a time).

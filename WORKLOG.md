@@ -41,13 +41,14 @@ and `sheets` are still stopped** and can be restarted now: NSE's announcements h
 free again.
 
 **Blocking a real verdict, in order:**
-1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** Next is the `reconcile`
-   stage (database only, no requests), then `documents` onward, in the order
+1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** `reconcile` has run with
+   the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
+   23:45 entry). **Next is `documents`** (PDF downloads from nsearchives; one request
+   stream, so not while another NSE job runs), then the stages after it in the order
    `backfill/__main__.py` lists.
-1a. **38 universe companies got a new ISIN during the window** (BEML, KOTAKBANK, MCX and
-   35 more), and the study loads prices by the universe's ISIN, so their events after the
-   reissue would find no price. Must be handled before the `study` stage; the fix needs
-   Sravanth's decision (see the 22:15 entry).
+1a. ~~**38 universe companies got a new ISIN during the window.**~~ **Fixed 27 Sep night**
+   (Sravanth approved): the study joins prices across a company's reissued ISINs and
+   treats the switch day as a capital action.
 2. **`config/backfill.yaml`'s universe is frozen** (`frozen_on: 2026-09-27`, ≥₹500 cr
    collected with no ceiling, primary band ₹500–20,000 cr per the revised D22) — done,
    1,583 companies, but re-freezing after any return is computed would make the result
@@ -2276,3 +2277,39 @@ checkpoint, and a revised filing counts from the later of `broadcast_Date` and
 `revised_Date`. **Decision taken, to be confirmed by Sravanth**: only companies with a
 backfill event are fetched, since TTM feeds nothing but event ratios; the stage therefore
 runs after `events`, as `backfill/__main__.py` already orders it.
+
+### 27 Sep 2026 (night, 23:45) — ISIN reissues handled; reconcile corrected to 96.6%
+
+**ISIN reissues (Sravanth: "okay let's do what you have said").** `study_data.load_market`
+reads a company's prices and market caps under every ISIN sharing its first nine
+characters and files them under the universe ISIN. Checked on the data first: **no company
+ever trades under two ISINs on the same day** (0 overlaps), so no tie-break rule is
+needed. **NSE flags most switch days itself**: 43 of the 57 switches in the loaded prices
+carry `XO` (splits: BEML ₹4,399.80 → ₹2,187.00, KOTAKBANK ₹2,133 → ₹421, MCX, SABTNL) or
+`XB` (NAZARA's bonus), both already capital actions. **14 carry no flag** (13 of them
+between Mar and Jul 2025, now joined as price history, and INE0Y8W01017 on 23 Apr 2026),
+which is why the approved marker matters: the first day under a new ISIN gets `NEW_ISIN`,
+added to `event_study.CAPITAL_ACTIONS`. On real data BEML and KOTAKBANK now have all 388
+trading days instead of stopping at the switch. Rights entitlements (security type 20)
+have a different prefix and are never mixed in. 2 new tests.
+
+**Reconcile corrected** (`reconcile.py`, `announcements.reconcile_window`, migration
+0014): the window runs from the previous report date to the report date (a filing dated
+after the report is never a match); companies are matched through the universe ISIN via
+`company_map` (symbol -> ISIN over every symbol a listed company traded under, ambiguous
+symbols left out); and order filers the API holds only under a catch-all category are
+listed per day in `catch_all_only_symbols`, not counted as matches. The 95% gate is
+unchanged. **Result: 96.6%** (1,301 of 1,347 order-filer company-days), 35 days below
+95%, offsets spread over −4..0 as the model predicts. Of the 46 unmatched: 35 have a
+catch-all filing from the same company in the window; 8 are "(Sub-para 4-Para B)"
+lines repeating an order the API already holds from a few days earlier (MARINE on 23 Jun
+and 4 Sep, then Para B lines in the 25 Jun and 8 Sep reports); **3 are unexplained**
+(ASIANENE 1 Jul, HBLENGINE 15 Jul, WAAREERTL 7 Aug 2026). 4 new tests from these real
+cases. ARCHITECTURE §5.11 records the change and the run, §5.9 the reissue rule, §5.1
+the answered symbol-history Verify item.
+
+Migration 0014 was applied to both databases. **The live database also received 0013**
+(band history tables) for the first time; they are empty there, which is expected, since
+band history is loaded only into the backfill database.
+
+351 tests pass.

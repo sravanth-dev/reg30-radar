@@ -148,42 +148,65 @@ def run(conn, window: dict, *, max_requests: int, client=None, sleep=time.sleep)
             "remaining": len(todo) - done}
 
 
+def company_map(conn) -> dict[str, str]:
+    """Symbol -> universe ISIN, over every symbol a listed company traded under, including
+    after an ISIN reissue (matched on the ISIN's first nine characters). A symbol that
+    maps to two listed companies is left out, so it is matched as itself."""
+    pairs = conn.execute("""
+        select distinct s.symbol, u.isin from backfill_universe u
+        join instrument_symbols s on left(s.isin, 9) = left(u.isin, 9)
+        where u.excluded_reason is null""").fetchall()
+    owners: dict[str, set[str]] = {}
+    for symbol, isin in pairs:
+        owners.setdefault(symbol, set()).add(isin)
+    return {s: next(iter(isins)) for s, isins in owners.items() if len(isins) == 1}
+
+
 def reconcile_window(conn, since: date, until: date, floor: float = 0.95) -> dict:
-    """Reconcile every report date in the window (§5.11) and store the result per day."""
-    universe_symbols = {r[0] for r in conn.execute("""
-        select distinct s.symbol from backfill_universe u
-        join instrument_symbols s on s.isin = u.isin where u.excluded_reason is null""")}
+    """Reconcile every report date in the window (§5.11) and store the result per day.
+    Each report is matched against API filings from the previous report date to its own."""
+    company_of = company_map(conn)
+    # Two weeks before `since` finds the report preceding the window's first, across any
+    # holiday run NSE has.
+    dates = [r[0] for r in conn.execute(
+        "select distinct report_date from bundle_announcements where report_date between %s"
+        " and %s order by 1", (since - timedelta(days=14), until))]
+    previous = dict(zip(dates[1:], dates))
+    report_dates = [d for d in dates if d >= since and d in previous]
     api = [ApiRecord(sym, filed, desc or "") for sym, filed, desc in conn.execute("""
         select symbol, (exchange_ts at time zone 'Asia/Kolkata')::date, category_raw
         from raw_announcements
         where source = %s and exchange_ts is not null
           and (exchange_ts at time zone 'Asia/Kolkata')::date between %s and %s""",
-        (SOURCE, since - timedelta(days=3), until + timedelta(days=3)))]
-    report_dates = [r[0] for r in conn.execute(
-        "select distinct report_date from bundle_announcements where report_date between %s"
-        " and %s order by 1", (since, until))]
+        (SOURCE, dates[0] if dates else since, until))]
 
-    below = 0
+    below = catch_all_only = 0
     now = datetime.now(timezone.utc)
     for day in report_dates:
         bundle = [BundleEntry(sym, body) for sym, body in conn.execute(
             "select symbol, body from bundle_announcements where report_date = %s", (day,))]
-        cov = reconcile(day, bundle, api, window_days=1, universe=universe_symbols)
+        cov = reconcile(day, bundle, api, window_from=previous[day],
+                        universe=set(company_of), company_of=company_of)
         ok = coverage_is_acceptable(cov, floor)
         below += 0 if ok else 1
+        catch_all_only += len(cov.catch_all_only_symbols)
         conn.execute(
-            "insert into reconcile_days (report_date, bundle_orders, bundle_order_symbols,"
-            " matched_symbols, coverage, unmatched_symbols, offsets, acceptable, checked_at)"
-            " values (%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (report_date) do update set"
-            " bundle_orders = excluded.bundle_orders,"
+            "insert into reconcile_days (report_date, window_from, bundle_orders,"
+            " bundle_order_symbols, matched_symbols, coverage, unmatched_symbols,"
+            " catch_all_only_symbols, offsets, acceptable, checked_at)"
+            " values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (report_date) do update set"
+            " window_from = excluded.window_from, bundle_orders = excluded.bundle_orders,"
             " bundle_order_symbols = excluded.bundle_order_symbols,"
             " matched_symbols = excluded.matched_symbols, coverage = excluded.coverage,"
-            " unmatched_symbols = excluded.unmatched_symbols, offsets = excluded.offsets,"
-            " acceptable = excluded.acceptable, checked_at = excluded.checked_at",
-            (day, cov.bundle_orders, len(cov.bundle_order_symbols),
+            " unmatched_symbols = excluded.unmatched_symbols,"
+            " catch_all_only_symbols = excluded.catch_all_only_symbols,"
+            " offsets = excluded.offsets, acceptable = excluded.acceptable,"
+            " checked_at = excluded.checked_at",
+            (day, cov.window_from, cov.bundle_orders, len(cov.bundle_order_symbols),
              len(cov.matched_order_symbols), cov.order_symbol_coverage,
-             sorted(cov.unmatched_order_symbols),
+             sorted(cov.unmatched_order_symbols), sorted(cov.catch_all_only_symbols),
              json.dumps({str(k): v for k, v in cov.offset_histogram.items()}), ok, now),
         )
     conn.commit()
-    return {"report_dates": len(report_dates), "below_floor": below}
+    return {"report_dates": len(report_dates), "below_floor": below,
+            "unmatched_but_catch_all_in_window": catch_all_only}

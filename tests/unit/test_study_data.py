@@ -82,3 +82,39 @@ def test_a_filing_under_the_companys_original_isin_counts_as_contamination(scrat
     evs = study_data.load_events(scratch_conn, states=("verified",))
     assert evs[0].other_filings == [(EVENT_TS.replace(day=17).astimezone(timezone.utc),
                                      "catch_all")]
+
+
+def test_prices_follow_a_reissued_isin_and_the_switch_is_a_capital_action(scratch_conn):
+    # BEML, 3 Nov 2025: a 1:2 split reissued INE258A01016 as INE258A01024 (NSE flagged XO).
+    # A second switch with no NSE flag must be marked too: 14 of 57 real switches had none.
+    # The rights entitlement (security type 20) must never be mixed in.
+    from datetime import date
+    from decimal import Decimal
+    from tradebot.backfill.event_study import NEW_ISIN
+
+    c = scratch_conn
+    rows = [("2025-10-30", "INE258A01016", "4400.00", None),
+            ("2025-10-31", "INE258A01016", "4399.80", None),
+            ("2025-11-03", "INE258A01024", "2187.00", "XO"),
+            ("2025-11-04", "INE258A01024", "2150.40", None),
+            ("2025-11-05", "INE258A01032", "2140.00", None),
+            ("2025-11-05", "INE258A20016", "12.00", None)]           # BEML-RE, not the stock
+    for d, isin, close, corp in rows:
+        c.execute("insert into prices (trade_date, isin, symbol, series, close, corp_ind)"
+                  " values (%s, %s, 'BEML', 'EQ', %s, %s)", (d, isin, close, corp))
+        c.execute("insert into market_caps (trade_date, isin, mcap_inr) values (%s, %s, 1)",
+                  (d, isin))
+    for d in ("2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05"):
+        c.execute("insert into archive_days (day, trading_day, loaded_at) values (%s, true, now())",
+                  (d,))
+    c.commit()
+
+    m = study_data.load_market(c, ["INE258A01016"], date(2025, 10, 1), date(2025, 11, 30), set())
+    bars = m.bars["INE258A01016"]
+    assert [bars[d].close for d in sorted(bars)] == [
+        Decimal("4400.00"), Decimal("4399.80"), Decimal("2187.00"), Decimal("2150.40"),
+        Decimal("2140.00")]
+    assert bars[date(2025, 11, 3)].corp_ind == f"XO {NEW_ISIN}"
+    assert bars[date(2025, 11, 4)].corp_ind is None
+    assert bars[date(2025, 11, 5)].corp_ind == NEW_ISIN
+    assert len(m.mcap["INE258A01016"]) == 5

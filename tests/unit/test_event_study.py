@@ -117,6 +117,12 @@ def test_a_capital_action_in_the_window_excludes_but_a_dividend_does_not():
     assert r.ex_dividend and r.usable
 
 
+def test_a_reissued_isin_in_the_window_is_a_capital_action():
+    # study_data marks the first day under a new ISIN; NSE leaves some switches unflagged.
+    r = measure(event(at(D0, 11)), market(stock={DAYS[153]: bar(corp_ind="NEW_ISIN")}))
+    assert r.capital_action == f"NEW_ISIN on {DAYS[153]}" and not r.usable
+
+
 def test_a_recent_event_without_its_full_window_is_flagged_not_measured():
     r = measure(event(at(DAYS[197], 11)), market())
     assert "event window not complete in the loaded data" in r.exclusions

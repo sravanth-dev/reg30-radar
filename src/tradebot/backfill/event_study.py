@@ -32,7 +32,12 @@ CLOSE_TIME = time(15, 30)
 HORIZONS = (1, 3, 5, 10)
 PRE = (5, 20)
 PRIMARY_HORIZON = 5
-CAPITAL_ACTIONS = ("XB", "XS", "XR", "XO")          # §5.9: excluded; XD is tagged, kept
+# Not an NSE code: study_data marks with it the first day a company trades under a reissued
+# ISIN. A reissue follows a split, bonus or consolidation and prices are unadjusted across
+# it, so the switch is a capital action. NSE flags most switches itself (XO or XB), but
+# left 14 of the 57 in the loaded prices unflagged (27 Sep 2026), hence this marker.
+NEW_ISIN = "NEW_ISIN"
+CAPITAL_ACTIONS = ("XB", "XS", "XR", "XO", NEW_ISIN)   # §5.9: excluded; XD is tagged, kept
 MAINBOARD = ("EQ", "BE", "BZ")
 MIN_HISTORY = 120                                    # rule 5
 CONTAMINATION_DAYS = 3                               # §5.11

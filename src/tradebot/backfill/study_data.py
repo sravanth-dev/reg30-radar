@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from tradebot.backfill.event_study import Bar, EventIn, Market
+from tradebot.backfill.event_study import NEW_ISIN, Bar, EventIn, Market
 from tradebot.calculator.materiality import execution_months
 from tradebot.common.calendar import IST
 from tradebot.revenue.ttm import Period, ttm_as_of
@@ -21,6 +21,20 @@ NIFTY = "Nifty 50"
 
 def load_market(conn, isins: list[str], since: date, until: date,
                 muhurat: set[date]) -> Market:
+    """Prices and market caps per company, filed under the universe ISIN the events carry.
+
+    A company's rows are read under every ISIN sharing its first nine characters (issuer
+    code + security type 01, equity shares), because NSDL reissues the ISIN after a split
+    and 38 universe companies changed ISIN during the window (BEML on 3 Nov 2025, KOTAKBANK,
+    MCX, ...); read by the universe ISIN alone, their prices stop at the switch. The two
+    ISINs never trade on the same day (0 overlaps in the loaded prices). The first day
+    under a new ISIN is marked NEW_ISIN, which event_study counts as a capital action,
+    because prices are unadjusted across the switch. Rights entitlements (security type
+    20) have a different ninth-character prefix and are never mixed in."""
+    company_of = {isin[:9]: isin for isin in isins}
+    if len(company_of) != len(set(isins)):
+        raise ValueError("two companies share an ISIN prefix; prices would be mixed")
+    prefixes = list(company_of)
     days = [r[0] for r in conn.execute(
         "select day from archive_days where trading_day and day between %s and %s order by day",
         (since, until))]
@@ -28,16 +42,21 @@ def load_market(conn, isins: list[str], since: date, until: date,
         "select trade_date, close from index_prices where index_name = %s"
         " and trade_date between %s and %s", (NIFTY, since, until)).fetchall())
     bars: dict[str, dict[date, Bar]] = defaultdict(dict)
+    last_isin: dict[str, str] = {}
     for (isin, d, o, h, lo, c, vol, tv, series, corp, band) in conn.execute(
             "select isin, trade_date, open, high, low, close, volume, traded_value, series,"
-            " corp_ind, band_hit from prices where isin = any(%s)"
-            " and trade_date between %s and %s", (isins, since, until)):
-        bars[isin][d] = Bar(o, h, lo, c, vol, tv, series, corp, band)
+            " corp_ind, band_hit from prices where left(isin, 9) = any(%s)"
+            " and trade_date between %s and %s order by trade_date", (prefixes, since, until)):
+        company = company_of[isin[:9]]
+        if last_isin.get(company, isin) != isin:
+            corp = f"{corp} {NEW_ISIN}" if corp else NEW_ISIN
+        last_isin[company] = isin
+        bars[company][d] = Bar(o, h, lo, c, vol, tv, series, corp, band)
     mcap: dict[str, dict[date, object]] = defaultdict(dict)
     for isin, d, v in conn.execute(
-            "select isin, trade_date, mcap_inr from market_caps where isin = any(%s)"
-            " and trade_date between %s and %s", (isins, since, until)):
-        mcap[isin][d] = v
+            "select isin, trade_date, mcap_inr from market_caps where left(isin, 9) = any(%s)"
+            " and trade_date between %s and %s", (prefixes, since, until)):
+        mcap[company_of[isin[:9]]][d] = v
     return Market(days=days, nifty=nifty, bars=dict(bars), mcap=dict(mcap), muhurat=muhurat)
 
 

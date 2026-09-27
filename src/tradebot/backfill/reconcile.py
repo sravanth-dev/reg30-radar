@@ -2,8 +2,10 @@
 
 Spike A2 established mainboard order coverage of 8/8 on a single day, and that the
 `an<date>.txt` bundle is a *report* covering filings disseminated since the previous
-report — so a bundle entry dated D usually corresponds to an API record timestamped D or
-D-1. Both of those are observations from one day. Neither is a rate.
+report. So an entry in the report for D corresponds to an API record dated anywhere from
+the previous report date to D - which after a weekend or holiday reaches back three or
+four days, not one (found 27 Sep 2026: RVNL's order disseminated Saturday 20 Jun 2026 sits
+in Monday 22 Jun's report; a ±1-day window matched 0 of that day's 13 order filers).
 
 This module turns that check into a permanent part of the backfill rather than a spike
 finding, so coverage and the report-window offset are measured on every day processed. If
@@ -18,6 +20,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+
+from tradebot.router.orders import bucket_of
 
 # §5.4: these two categories are the study's subject. They are distinctive prefixes, which
 # is why they survive the bundle's missing category/description delimiter.
@@ -47,18 +51,28 @@ class ApiRecord:
     def is_order(self) -> bool:
         return self.desc.startswith(ORDER_WIN) or self.desc.startswith(ORDER_CANDIDATE)
 
+    @property
+    def is_catch_all(self) -> bool:
+        return bucket_of(self.desc) == "catch_all"
+
 
 @dataclass
 class Coverage:
     """What one report-date's reconciliation found."""
 
     report_date: date
-    window_days: int
+    window_from: date
     bundle_total: int = 0
     bundle_orders: int = 0
     bundle_order_symbols: set[str] = field(default_factory=set)
     matched_order_symbols: set[str] = field(default_factory=set)
     unmatched_order_symbols: set[str] = field(default_factory=set)
+    # Unmatched order filers that do have a catch-all filing (General Updates, Updates,
+    # Press Release) in the window: NSE's two sources can label one filing differently
+    # (the bundle's "Bagging/Receiving ... (Sub-para 4-Para B)" is the API's "Updates"),
+    # and D7 downloads catch-all filings, so these are likely reachable - but a category
+    # match is not proof, so they stay out of the coverage figure.
+    catch_all_only_symbols: set[str] = field(default_factory=set)
     offset_histogram: dict[int, int] = field(default_factory=dict)
 
     @property
@@ -86,40 +100,48 @@ def reconcile(
     report_date: date,
     bundle: list[BundleEntry],
     api: list[ApiRecord],
-    window_days: int = 1,
+    window_from: date | None = None,
     universe: set[str] | None = None,
+    company_of: dict[str, str] | None = None,
 ) -> Coverage:
-    """Match a report-date bundle against API records over a +/- window.
+    """Match a report-date bundle against API records dated [window_from, report_date].
 
-    `window_days=1` is the default because a filing disseminated after the close on D-1
-    appears in the bundle reported on D. `universe` restricts to NSE mainboard (D9) when
-    supplied; SME and debt are outside the study and would otherwise depress the number
-    for no reason.
+    `window_from` is the previous report date: the report covers everything disseminated
+    since that report, and nothing after its own date. It defaults to the day before,
+    which is right only when the previous day was a trading day. `universe` restricts to
+    NSE mainboard (D9) when supplied; SME and debt are outside the study and would
+    otherwise depress the number for no reason. `company_of` maps a symbol to its company
+    (the universe ISIN), because the API files a company's whole history under its current
+    symbol (LTIMindtree's under LTM) while older reports carry the old one (LTIM).
     """
     if universe is not None:
         bundle = [b for b in bundle if b.symbol in universe]
         api = [a for a in api if a.symbol in universe]
+    company = (lambda s: company_of.get(s, s)) if company_of else (lambda s: s)
+    lo = window_from or report_date - timedelta(days=1)
+    in_window = [a for a in api if lo <= a.filed_on <= report_date]
 
-    lo = report_date - timedelta(days=window_days)
-    hi = report_date + timedelta(days=window_days)
-    in_window = [a for a in api if lo <= a.filed_on <= hi]
-
-    cov = Coverage(report_date=report_date, window_days=window_days)
+    cov = Coverage(report_date=report_date, window_from=lo)
     cov.bundle_total = len(bundle)
 
     order_entries = [b for b in bundle if b.is_order]
     cov.bundle_orders = len(order_entries)
     cov.bundle_order_symbols = {b.symbol for b in order_entries}
 
-    api_order_symbols = {a.symbol for a in in_window if a.is_order}
-    cov.matched_order_symbols = cov.bundle_order_symbols & api_order_symbols
-    cov.unmatched_order_symbols = cov.bundle_order_symbols - api_order_symbols
+    api_order_companies = {company(a.symbol) for a in in_window if a.is_order}
+    api_catch_all_companies = {company(a.symbol) for a in in_window if a.is_catch_all}
+    cov.matched_order_symbols = {s for s in cov.bundle_order_symbols
+                                 if company(s) in api_order_companies}
+    cov.unmatched_order_symbols = cov.bundle_order_symbols - cov.matched_order_symbols
+    cov.catch_all_only_symbols = {s for s in cov.unmatched_order_symbols
+                                  if company(s) in api_catch_all_companies}
 
-    # How far ahead of the report date the matched filings actually sit. A histogram
-    # concentrated on 0 and -1 confirms the report-window model; anything else means the
-    # window is wrong and the backfill should widen it rather than silently lose filings.
+    # Where in the window the matched filings sit, relative to the report date. It counts
+    # every order filing of a matched company in the window, so a company that filed on
+    # two days shows twice; read it as a shape, not a count of matches.
+    matched = {company(s) for s in cov.matched_order_symbols}
     for a in in_window:
-        if a.is_order and a.symbol in cov.matched_order_symbols:
+        if a.is_order and company(a.symbol) in matched:
             offset = (a.filed_on - report_date).days
             cov.offset_histogram[offset] = cov.offset_histogram.get(offset, 0) + 1
 

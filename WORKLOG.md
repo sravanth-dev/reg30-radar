@@ -1871,3 +1871,16 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
 - ARCHITECTURE §10 now marks Slices 1 (backfill half), 2, 3, 5 (Batch and §6), 7 and 8 as
   built, and 6 as partly built (TTM and parser; the fetcher waits on Spike C).
   `spikes/spike_band_asm.py` (budget 8) is ready for the price-band and ASM/GSM question.
+- **Cutover rehearsed on the laptop with the real image** (DEPLOY.md §3, nothing sent to
+  NSE or Google). A throwaway Postgres 16 container on its own network got the same
+  one-time setup. `pg_dump` of the live laptop database was 2.6 MB. The restore **through
+  compose's `backup` service**, exactly as the runbook says, gave 3,256 filings, 494
+  extractions, 488 documents and 129 sheets_sync rows. Then migrate in a `collector`
+  container, and the health check inside the container ("healthy", last poll 15:39 IST).
+  The **append-only trigger survived the restore** and refused a delete. Everything was
+  removed afterwards. Two things learned: (1) migrate applied up to 0010 only, because the
+  image predated 0011/0012, so **build before migrating**, which DEPLOY.md already
+  orders; (2) my rehearsal script echoed commands, which printed the throwaway passwords
+  of the deleted rehearsal container (no real credential; `DATABASE_URL` was never
+  printed). `docker-compose.yml`'s `env_file` is now `${TRADEBOT_ENV_FILE:-.env}` so a
+  rehearsal can use a throwaway file; production is unchanged.

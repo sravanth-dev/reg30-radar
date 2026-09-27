@@ -18,7 +18,8 @@ name: tradebot
 x-app: &app
   build: .
   image: tradebot:latest
-  env_file: .env
+  # .env on the VPS; TRADEBOT_ENV_FILE lets a rehearsal point at a throwaway file.
+  env_file: ${TRADEBOT_ENV_FILE:-.env}
   restart: unless-stopped
   networks: [db]
   volumes:
@@ -66,7 +67,7 @@ services:
   backup:
     image: postgres:${TRADEBOT_PG_MAJOR:-16}
     profiles: ["ops"]
-    env_file: .env
+    env_file: ${TRADEBOT_ENV_FILE:-.env}
     networks: [db]
     restart: "no"
     volumes:

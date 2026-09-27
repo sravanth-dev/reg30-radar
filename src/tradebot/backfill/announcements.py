@@ -22,6 +22,7 @@ from tradebot.backfill.reconcile import ApiRecord, BundleEntry, coverage_is_acce
 from tradebot.collector import nse
 from tradebot.collector import store as raw_store
 from tradebot.collector.records import SOURCE, parse_ts, to_raw
+from tradebot.common.isin import same_issuer
 
 log = logging.getLogger("backfill")
 
@@ -31,10 +32,12 @@ JOB = "announcements"
 def select_records(rows: list[dict], isin: str, keep_from: date, keep_to: date) -> list[dict]:
     """The records to store from one symbol's history.
 
-    Kept: filed inside [keep_from, keep_to], and carrying this company's ISIN. A record
-    under the same symbol but another ISIN is a different company that once used the
-    symbol, and is dropped. A record with no ISIN at all is kept, because symbol and date
-    are then the only identity it has.
+    Kept: filed inside [keep_from, keep_to], and carrying an ISIN of this company's issuer.
+    The ISIN is compared by issuer code, not in full, because the API tags filings with the
+    company's original ISIN while `isin` is the bhavcopy's current one (common/isin.py). A
+    record under the same symbol but another issuer is a different company that once used
+    the symbol, and is dropped. A record with no ISIN at all is kept, because symbol and
+    date are then the only identity it has.
     """
     out = []
     for r in rows:
@@ -42,7 +45,7 @@ def select_records(rows: list[dict], isin: str, keep_from: date, keep_to: date) 
         if filed is None or not (keep_from <= filed.date() <= keep_to):
             continue
         record_isin = (r.get("sm_isin") or "").strip()
-        if record_isin and record_isin != isin:
+        if record_isin and not same_issuer(record_isin, isin):
             continue
         out.append(r)
     return out
@@ -52,7 +55,7 @@ def latest_industry(rows: list[dict], isin: str) -> str | None:
     """The most recent non-empty smIndustry the company's own records carry (§5.8)."""
     best = None
     for r in rows:
-        if (r.get("sm_isin") or isin) != isin or not r.get("smIndustry"):
+        if not same_issuer(r.get("sm_isin") or isin, isin) or not r.get("smIndustry"):
             continue
         filed = parse_ts(r.get("an_dt"))
         if filed and (best is None or filed > best[0]):
@@ -86,7 +89,13 @@ def fetch_company(conn, client, isin: str, symbols: list[str], keep_from: date,
         if not result.ok:
             return False, f"{symbol}: {result.error}"
         records = select_records(result.rows, isin, keep_from, keep_to)
-        per_symbol[symbol] = {"returned": len(result.rows), "kept": len(records)}
+        # other_issuer is recorded so a filter that drops a whole company shows up in the
+        # checkpoint, rather than having to be inferred from a run of zero-kept companies.
+        other_issuer = sum(1 for r in result.rows
+                           if (r.get("sm_isin") or "").strip()
+                           and not same_issuer(r["sm_isin"], isin))
+        per_symbol[symbol] = {"returned": len(result.rows), "kept": len(records),
+                              "other_issuer": other_issuer}
         kept.extend(records)
         industry = industry or latest_industry(result.rows, isin)
 

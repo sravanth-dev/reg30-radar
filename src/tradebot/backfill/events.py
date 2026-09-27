@@ -93,14 +93,18 @@ def to_event(members: list[Filing]) -> dict:
 
 
 FILINGS_SQL = """
-select ra.id, coalesce(ra.isin, u.isin), ra.symbol, ra.exchange_ts, oe.bucket, d.sha256,
-       oe.value_inr, oe.currency, oe.company_is_recipient, oe.stage, oe.awarding_entity,
-       oe.execution_period_raw
+select ra.id, coalesce(by_issuer.isin, by_symbol.isin), ra.symbol, ra.exchange_ts, oe.bucket,
+       d.sha256, oe.value_inr, oe.currency, oe.company_is_recipient, oe.stage,
+       oe.awarding_entity, oe.execution_period_raw
 from order_extractions oe
 join raw_announcements ra on ra.id = oe.raw_announcement_id
 left join documents d on d.id = oe.document_id
-left join instrument_symbols s on s.symbol = ra.symbol
-left join backfill_universe u on u.isin = s.isin
+-- The event carries the universe's ISIN, which is what prices and market caps are keyed by.
+-- A filing's own ISIN is the company's original one, so it is matched by issuer code
+-- (common/isin.py); symbol is used only when the filing carries no ISIN at all.
+left join backfill_universe by_issuer on left(by_issuer.isin, 7) = left(ra.isin, 7)
+left join instrument_symbols s on ra.isin is null and s.symbol = ra.symbol
+left join backfill_universe by_symbol on by_symbol.isin = s.isin
 where oe.order_related and oe.review_status = 'verified' and ra.exchange_ts is not null
 order by ra.exchange_ts
 """

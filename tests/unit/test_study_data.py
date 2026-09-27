@@ -66,3 +66,19 @@ def test_an_unknown_category_is_logged_and_still_counted_as_contaminating(scratc
         "select count from unknown_categories where category_raw = 'A Category Nobody Mapped'"
     ).fetchone()
     assert logged == (1,)
+
+
+def test_a_filing_under_the_companys_original_isin_counts_as_contamination(scratch_conn):
+    # The event carries the universe's current ISIN; NSE tags the company's filings with its
+    # original one (common/isin.py). Same issuer code, so it must still be found.
+    _seed_event(scratch_conn)
+    _seed_raw(scratch_conn, 1, EVENT_TS, isin="INE000T01002", symbol="TEST",
+              category="Bagging/Receiving of orders/contracts")
+    _seed_raw(scratch_conn, 2, EVENT_TS.replace(day=17), isin="INE000T01002", symbol="TEST",
+              category="General Updates")
+    _seed_raw(scratch_conn, 3, EVENT_TS.replace(day=17), isin="INE000U01010", symbol="TEST",
+              category="General Updates")          # another issuer that once used the symbol
+
+    evs = study_data.load_events(scratch_conn, states=("verified",))
+    assert evs[0].other_filings == [(EVENT_TS.replace(day=17).astimezone(timezone.utc),
+                                     "catch_all")]

@@ -1,6 +1,7 @@
 """backfill/announcements.py: which records a company keeps, and when it counts as done.
 No network, no database."""
 
+import json
 from datetime import date
 
 from tradebot.backfill import announcements as ann
@@ -26,6 +27,25 @@ def test_keeps_only_this_company_inside_the_window():
     assert [r["seq_id"] for r in kept] == [1, 4]
 
 
+def test_keeps_records_under_the_companys_original_isin():
+    # NSE's announcements carry the ISIN from before a face-value split, the bhavcopy the
+    # current one (JSWSTEEL: INE019A01020 vs INE019A01038). Found 27 Sep 2026, after 85 of
+    # the first 495 companies kept nothing. Same issuer code means same company, and that
+    # includes the issuer's bond ISIN (HUDCO's INE031A07873).
+    rows = [
+        rec("18-Sep-2026 10:00:00", seq=1, isin="INE263A01016"),     # original equity ISIN
+        rec("18-Sep-2026 11:00:00", seq=2, isin="INE263A07123"),     # the issuer's bond
+        rec("18-Sep-2026 12:00:00", seq=3, isin="INE264A01014"),     # another issuer
+    ]
+    kept = ann.select_records(rows, ISIN, date(2025, 8, 1), date(2026, 11, 1))
+    assert [r["seq_id"] for r in kept] == [1, 2]
+
+
+def test_industry_is_read_from_records_under_the_original_isin():
+    rows = [rec("18-Sep-2026 10:00:00", isin="INE263A01016", industry="Aerospace & Defense")]
+    assert ann.latest_industry(rows, ISIN) == "Aerospace & Defense"
+
+
 def test_industry_comes_from_the_most_recent_own_record():
     rows = [rec("01-Jan-2026 10:00:00", industry="Old Name"),
             rec("18-Sep-2026 10:00:00", industry="Aerospace & Defense"),
@@ -36,10 +56,12 @@ def test_industry_comes_from_the_most_recent_own_record():
 class FakeConn:
     def __init__(self):
         self.sql: list[str] = []
+        self.params: list = []
         self.commits = 0
 
     def execute(self, sql, params=None):
         self.sql.append(sql)
+        self.params.append(params)
 
     def commit(self):
         self.commits += 1
@@ -75,3 +97,18 @@ def test_a_company_is_checkpointed_only_when_every_symbol_succeeded(monkeypatch)
                               date(2026, 11, 1), pause=lambda: None)
     assert ok is True
     assert any("backfill_checkpoints" in s for s in conn.sql)
+
+
+def test_the_checkpoint_counts_rows_dropped_as_another_issuer(monkeypatch):
+    monkeypatch.setattr(ann.raw_store, "insert_announcements",
+                        lambda conn, raws, first_seen_at: ann.raw_store.InsertOutcome(len(raws), 0, 0))
+    conn = FakeConn()
+    rows = [rec("18-Sep-2026 10:00:00", seq=1, isin="INE263A01016"),
+            rec("18-Sep-2026 11:00:00", seq=2, isin="INE264A01014")]
+    client = FakeClient({"BEL": nse.PollResult(True, 200, 5, rows=rows)})
+
+    ok, _ = ann.fetch_company(conn, client, ISIN, ["BEL"], date(2025, 8, 1),
+                              date(2026, 11, 1), pause=lambda: None)
+    assert ok is True
+    detail = next(p[3] for s, p in zip(conn.sql, conn.params) if "backfill_checkpoints" in s)
+    assert json.loads(detail)["symbols"]["BEL"] == {"returned": 2, "kept": 1, "other_issuer": 1}

@@ -115,3 +115,25 @@ def test_recheck_disagreement_sends_the_event_to_review(scratch_conn):
     recheck.submit(scratch_conn, client)
     assert recheck.collect(scratch_conn, client)["needs_review"] == 1
     assert scratch_conn.execute("select state from backfill_events").fetchone()[0] == "needs_review"
+
+
+def test_an_event_carries_the_universes_isin_not_the_filings_original_one(scratch_conn):
+    # Prices and market caps are keyed by the bhavcopy's current ISIN; the filing carries
+    # the company's original one (common/isin.py). Before 27 Sep 2026 the event took the
+    # filing's, so every order from a company with a past split found no price.
+    from tradebot.backfill import events
+    current, original = "INE019A01038", "INE019A01020"
+    scratch_conn.execute("insert into backfill_universe (isin, symbol, series, as_of_date)"
+                         " values (%s, 'JSWSTEEL', 'EQ', '2025-09-22')", (current,))
+    scratch_conn.execute("insert into raw_announcements (id, source, source_id, payload_sha256,"
+                         " exchange_ts, first_seen_at, isin, symbol, payload) overriding system"
+                         " value values (1, 'nse', 's', 'h', %s, now(), %s, 'JSWSTEEL', '{}')",
+                         (T, original))
+    scratch_conn.execute("insert into order_extractions (raw_announcement_id, bucket, order_related,"
+                         " relevance_reason, review_status, value_inr, currency, processed_at)"
+                         " values (1, 'order_win', true, 'x', 'verified', %s, 'INR', now())",
+                         (Decimal(500) * CR,))
+    scratch_conn.commit()
+
+    events.build(scratch_conn)
+    assert scratch_conn.execute("select isin from backfill_events").fetchall() == [(current,)]

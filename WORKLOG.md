@@ -2072,3 +2072,46 @@ actively polling right now, and running a second request stream there at the sam
 would break the one-request-at-a-time rule the whole night has held to. Verification waits
 until either he sends another capture or the announcements fetch finishes and frees the
 host.
+
+### 27 Sep 2026 (night) — the fetch stopped with the session; 17% of companies were silently empty
+
+**Both background jobs died when the previous session ended**, with no error logged: the
+company-wise announcements fetch at 18:59:59 (495 of 1,583 companies checkpointed) and the
+price-band fetch right after it started. Both are resumable from their checkpoints.
+
+**Found before resuming: 85 of the 495 fetched companies (17%) had kept zero filings**,
+including HDFCBANK, SBIN, ICICIBANK, SUNPHARMA, HAL and TATASTEEL. The API had returned
+data for every one of them (ASTRAL 1,214 rows, JSWSTEEL 2,080); `select_records` threw all
+of it away. Cause: **NSE's announcements API tags every filing with the company's
+original ISIN, while the bhavcopy (and so the universe) carries the current one**, which
+NSDL reissues after a face-value split. JSWSTEEL is `INE019A01020` in announcements and
+`INE019A01038` in the bhavcopy. The filter's premise, "another ISIN under the same symbol
+is another company", is false for exactly these companies. Measured with no requests,
+against the live database: 65 of 65 zero-kept companies that also appear in the live feed
+show this mismatch; 294 of 294 working companies match exactly; 0 companies that kept rows
+also file under a second ISIN of the same issuer. Of 253 mismatches in the whole live feed,
+250 share the first 9 characters (issuer code + `01`, equity shares) and 3 (HUDCO, IREDA,
+IRFC) share only the first 7, being the same issuer's bond ISINs. No two universe ISINs
+share an issuer code.
+
+**The same mismatch would have broken three later stages, silently**: `events.py` stamped
+events with the filing's own ISIN, so prices and market caps (keyed by the current ISIN)
+would never be found and every order from these companies would have been excluded as
+"no price on day 0"; `study_data.py`'s contamination lookup would have found none of their
+other filings; `latest_industry` never set their industry. This reverses ARCHITECTURE
+§5.3's "attach ISIN from the announcement's own `sm_isin`" for any join against market
+data.
+
+**Fixed, one rule everywhere**: `src/tradebot/common/isin.py` defines "same company" as the
+same issuer code, the ISIN's first seven characters (`left(isin, 7)` in SQL). Applied in
+`announcements.py` (`select_records`, `latest_industry`), `events.py` (the event takes the
+universe's ISIN, by issuer code, or by symbol only when the filing has no ISIN),
+`study_data.py` (contamination) and `documents.py` (the industry-exclusion check).
+`raw_announcements.isin` is untouched and still stores what NSE sent. The checkpoint's
+per-symbol detail now also records `other_issuer`, the rows dropped as another company, so
+a filter that empties a company is visible directly next time. 5 new tests, each confirmed
+to fail on the old code; 338 pass. ARCHITECTURE §5.3 records the reversal.
+
+**Residual risk, stated**: the live-feed check covers 294 of the 410 companies that kept
+rows. The other 116 can't be checked without re-fetching them. Nothing suggests a company
+files under two ISINs of its own (0 of 294 did), so they are not re-fetched.

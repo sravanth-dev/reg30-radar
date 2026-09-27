@@ -49,9 +49,10 @@ select distinct on (r.source_id)
 from raw_announcements r
 where r.source = 'nse'
   and r.exchange_ts >= %(since)s and r.exchange_ts < %(until)s
-  -- a company dropped by an industry rule after its history was fetched
+  -- a company dropped by an industry rule after its history was fetched; matched by issuer
+  -- code, since a filing carries the company's original ISIN (common/isin.py)
   and not exists (select 1 from backfill_universe u
-                  where u.isin = r.isin and u.excluded_reason is not null)
+                  where left(u.isin, 7) = left(r.isin, 7) and u.excluded_reason is not null)
 order by r.source_id, r.revision desc
 """
 

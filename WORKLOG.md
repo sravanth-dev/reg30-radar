@@ -1638,3 +1638,35 @@ bhavcopy carrying another date is rejected. The SQL has a rollback-only test aga
 **One thing to verify before the full run:** what nsearchives returns for a holiday. The
 calendar logic assumes a clean 404. If it answers 403 or a 200 HTML page instead, every
 holiday would be retried as an error. One request against a known holiday settles it.
+
+### 27 Sep 2026 (afternoon, cont.) — B2/B3: company universe and company-wise fetch; category-map draft
+
+- `config/backfill.yaml`: window (D10), universe criteria and download scope. **The
+  universe is refused while `universe.frozen_on` is null**, which makes D22's "fixed
+  before any return" a checked condition rather than a promise. Every build writes the
+  criteria and frozen date to `backfill_universe_meta` (migration 0008, with
+  `backfill_universe` and `reconcile_days`).
+- `backfill/universe.py`: companies from the last trading day on or before
+  `universe.as_of` (series, `INE` ISINs only, market-cap bounds in crore), industry
+  exclusions applied after the history is fetched, and `expected_counts()`. That last one
+  counts the listed companies' order and catch-all filings from the PR bundles alone,
+  before any download (§10's sequencing note).
+- `backfill/announcements.py`: one `symbol=` query per symbol an ISIN traded under. A
+  record under the same symbol with another ISIN is dropped, since that is another
+  company that once used the symbol. A company is checkpointed only when all its queries
+  succeeded. `reconcile_window()` runs `reconcile.py` per report date on the list and
+  stores coverage in `reconcile_days`.
+- **Checked on the real NSE archives the spikes left in `spikes/out/`** (six UDiFF zips,
+  three PR bundles), not only the fixtures. All parse, including the 2025 bundle with its
+  mixed-case, mixed-date-width member names. Corporate-action counts match §5.9 (XD 16 / 3
+  / 70). Every NSE UDiFF row is `FinInstrmTp=STK`, so ETFs are excluded by the `INE`
+  prefix, not the type. The mainboard company count is 2,134 (Aug 2025) to 2,572
+  (Sep 2026).
+- **`config/category_map.draft.yaml`**: a full router map drafted from 186 real categories
+  (73 live plus the spike dumps), for Sravanth's sign-off under CLAUDE.md rule 5. Not used
+  by any code yet. When unsure it picks other_material, not noise, which makes the clean
+  sample smaller but never lets a results move be credited to an order. Judgment calls
+  are marked `<- CALL`. The main ones: leadership changes kept material; unknown categories
+  treated as material but not downloaded, which deviates from §5.4's "unknown ->
+  catch_all" because D7's widening would otherwise download them; four additions to
+  red_flag.

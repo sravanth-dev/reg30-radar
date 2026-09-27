@@ -1,0 +1,43 @@
+# The 12-month backfill and event study (ARCHITECTURE.md §5.1, §5.11, D10, D22).
+
+window:
+  # Announcements studied (D10: 12 months).
+  announcements_from: 2025-09-22
+  announcements_to: 2026-09-18
+  # Prices, market caps and band hitters start 30+ trading days earlier (D10), so the
+  # -20 day pre-event window and the 20-day average volume have room.
+  prices_from: 2025-08-01
+  # Results reach back 24 months, so four quarters precede the earliest event (D10).
+  results_from: 2024-09-01
+  # Filings kept around the window from each company's symbol= history: enough before
+  # the start for follow-up detection and ±3-day contamination at the edges.
+  announcement_margin_days: 45
+
+# The company list (§5.1, 27 Sep 2026): built by code from Sravanth's criteria, applied to
+# the data of the last trading day on or before `as_of`, so it cannot see the study year.
+# Companies delisted during the year stay in; companies listed after `as_of` are out.
+#
+# FROZEN RULE (D22): fill in the criteria, then set `frozen_on` to the date they were
+# fixed. The universe is not built while `frozen_on` is null, and the criteria must not
+# change once any return has been computed - a change after that makes the result
+# exploratory. The criteria and the frozen date are copied into the backfill database with
+# the list, so the report can show exactly what was used.
+universe:
+  as_of: 2025-09-22
+  frozen_on: null            # set by Sravanth when the criteria below are final
+  series: [EQ, BE, BZ]       # NSE mainboard equity series (D9); SM/ST are SME
+  isin_prefix: INE           # companies only; INF (funds/ETFs) and others are out
+  mcap_min_crore: null       # null = no lower bound
+  mcap_max_crore: null       # null = no upper bound
+  # Applied from the announcements API's smIndustry once each company's history is
+  # fetched (§5.8). Exact industry strings, e.g. "Banks".
+  exclude_industries: []
+  # Optional extra rules Sravanth may add, written out in words and implemented only
+  # after he has stated them.
+  notes: ""
+
+# Download scope for listed companies (27 Sep 2026): the order categories plus every
+# catch-all filing (D7 as widened). The expected count and size are reported before any
+# download starts.
+documents:
+  max_requests_per_run: 3000

@@ -31,13 +31,15 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now**: the backfill's `documents` stage is running **detached** (PID 29820, log
-`data/documents_tier1_resume.log`, restarted 00:40 IST 28 Sep, ETA ~02:30) on the last
-1,221 of tonight's tier - Sravanth's "option B", the 2,138 order-category and headline-hit
-filings. The first run (23:14) was killed at 00:36 when the laptop was switched off; 916
-were done and nothing was lost (see the 28 Sep entry). A detached waiter (PID 6836) then
-runs `documents --max-requests 1` for RAILTEL, the one filing in flight at the shutdown,
-log `data/documents_tier1_railtel.log`. The remaining
+**Right now: nothing is running.** Sravanth stopped the backfill at 00:43 IST on 28 Sep to
+resume it in the morning session. The `documents` stage is part-way through tonight's
+tier of his "option B" (the 2,138 order-category and headline-hit filings): 941 done,
+**1,197 left** (442 order categories, 753 headline hits, and APTECHT and RAILTEL, both
+flagged "interrupted" and retried automatically). **To resume**: check the laptop is on
+the POCO X7 hotspot, run `python -m tradebot.backfill expected`, then
+`python -m tradebot.backfill documents --max-requests <order categories + headline hits>`
+(1,197 if nothing has changed), detached so it survives the session, with the laptop on
+mains power and sleep off. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
 `python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
 filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
@@ -2397,3 +2399,21 @@ the only tier-one filing left.
 **Lesson**: a detached process survives a Claude session ending but not the laptop shutting
 down or sleeping. Keep the laptop on mains power with sleep disabled while a backfill stage
 runs; every stage resumes from its checkpoints, so an interruption costs time, not data.
+
+### 28 Sep 2026 (00:43) — stopped for the night on Sravanth's word
+
+Sravanth asked to stop everything and resume in the morning session. Killed the RAILTEL
+follow-up waiter first (PID 6836, so it could not start a run when the main one exited;
+it never did, no log file exists), then the documents run (PID 29820) with its process
+tree. State at the stop: 940 documents, 941 filings processed (403 verified by T0, 538
+waiting on Batch), 0 orphaned documents, 80 OCR calls ($0.080 in all).
+
+This kill landed right after a download, so unlike the accidental shutdown it left one PDF
+in `data/backfill_work/` (APTECHT's, not yet extracted). Confirmed no document row carries
+its SHA-256, then deleted it (D8); APTECHT carries the pre-work "interrupted" marker, like
+RAILTEL, and is downloaded again on the next run. The work directory is empty.
+
+**Worth knowing for the next stop**: a PDF can survive a kill between download and
+extraction. The pipeline does not sweep `data/backfill_work/` on start, so check it is
+empty after any interrupted run, and delete what is there only after confirming no
+`documents` row has its hash.

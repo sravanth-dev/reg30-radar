@@ -1884,3 +1884,9 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   of the deleted rehearsal container (no real credential; `DATABASE_URL` was never
   printed). `docker-compose.yml`'s `env_file` is now `${TRADEBOT_ENV_FILE:-.env}` so a
   rehearsal can use a throwaway file; production is unchanged.
+- **Decision: the laptop collector pauses during the company-wise fetch** (about 1,600
+  `symbol=` requests, roughly 2 h), so only one stream at a time hits the announcements API.
+  Sravanth stops it and restarts it afterwards; its gap query recovers the evening's filings
+  (a Sunday, so few), with the catch-up time as `first_seen_at`. Order of NSE work tonight:
+  finish the market load, then Spike C, then the band/ASM spike, then the company-wise
+  fetch, one after another.

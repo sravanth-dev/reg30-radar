@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 27 Sep 2026 (evening)*
+*Last updated: 27 Sep 2026 (night)*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
@@ -29,20 +29,29 @@ measure-and-verdict half in one session: market data, the frozen company univers
 company-wise announcement fetch, the full category map, the document/Batch-extraction
 pipeline reused for the backfill, event merging, the §6 state machine and recheck,
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
-study, and the report writer with D22's verdict. 328 tests pass.
+study, and the report writer with D22's verdict. 338 tests pass.
 
-**Right now, live**: `python -m tradebot.backfill announcements` is running in the
-background (started 18:13:56 IST), fetching one `symbol=` history per listed company
-(1,615 requests total, ~2.5h). **The laptop's live collector, `orders --follow` and
-`sheets` are all stopped** for the duration, per Sravanth's decision that only one request
-stream may hit NSE's announcements host at a time — restart them once this finishes.
+**Right now, live**: two fetches run as **detached** Windows processes (so they outlive a
+Claude session, which the first attempt did not: both died at ~19:00 when the session
+ended). `python -m tradebot.backfill announcements` (PID 7568, log
+`data/announcements_resume.log`, started 19:21 IST, 1,173 companies left, ETA ~21:10) and
+`python -m tradebot.market.bands --from 2025-03-01 --to 2026-09-26` (PID 30868, log
+`data/bands_resume.log`, 420 of 575 days left; it logs only when it finishes). Both
+resume from checkpoints if killed. **Before resuming, a real bug was fixed: 85 of the first
+495 companies had silently kept zero filings** because NSE's announcements carry a
+company's original ISIN and the universe its current one (see the 27 Sep night entry).
+Those 85 were re-queued. **The laptop's live collector, `orders --follow` and `sheets`
+are all stopped** for the duration, per Sravanth's decision that only one request stream
+may hit NSE's announcements host at a time; restart them once the announcements fetch
+finishes.
 Nothing has been deployed to the VPS; `Dockerfile`/`docker-compose.yml` exist and were
 rehearsed successfully in a throwaway local container (cutover, migrate, health check,
 append-only trigger all verified), but production cutover is still pending Sravanth's
 go-ahead. DEPLOY.md has the runbook.
 
 **Blocking a real verdict, in order:**
-1. **The announcements fetch finishing** (background, no action needed).
+1. **The announcements fetch finishing** (background, no action needed). Then the
+   `reconcile` stage, then `documents` onward, in the order `backfill/__main__.py` lists.
 2. **`config/backfill.yaml`'s universe is frozen** (`frozen_on: 2026-09-27`, ≥₹500 cr
    collected with no ceiling, primary band ₹500–20,000 cr per the revised D22) — done,
    1,583 companies, but re-freezing after any return is computed would make the result
@@ -2115,3 +2124,8 @@ to fail on the old code; 338 pass. ARCHITECTURE §5.3 records the reversal.
 **Residual risk, stated**: the live-feed check covers 294 of the 410 companies that kept
 rows. The other 116 can't be checked without re-fetching them. Nothing suggests a company
 files under two ISINs of its own (0 of 294 did), so they are not re-fetched.
+
+**Resumed 19:21 IST** as detached processes (PIDs 7568 and 30868; logs
+`data/announcements_resume.log` and `data/bands_resume.log`), on the `POCO X7` hotspot
+(D19). The first re-queued companies now keep what they should: ASTRAL 91 filings,
+JSWSTEEL 170, ASIANPAINT 121, where each had 0.

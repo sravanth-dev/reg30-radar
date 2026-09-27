@@ -4,37 +4,82 @@ window:
   # Announcements studied (D10: 12 months).
   announcements_from: 2025-09-22
   announcements_to: 2026-09-18
-  # Prices, market caps and band hitters start 30+ trading days earlier (D10), so the
-  # -20 day pre-event window and the 20-day average volume have room.
-  prices_from: 2025-08-01
+  # Prices, market caps and band hitters start earlier than the window. D10 asked for 30
+  # trading days; Sravanth's hard exclusion "fewer than 120 trading days of price
+  # history before the event" (notes rule 5) and the 60-day median traded value (rule 3)
+  # need about 120, so this starts ~140 trading days before the window.
+  prices_from: 2025-03-01
   # Results reach back 24 months, so four quarters precede the earliest event (D10).
   results_from: 2024-09-01
   # Filings kept around the window from each company's symbol= history: enough before
   # the start for follow-up detection and ±3-day contamination at the edges.
   announcement_margin_days: 45
 
-# The company list (§5.1, 27 Sep 2026): built by code from Sravanth's criteria, applied to
-# the data of the last trading day on or before `as_of`, so it cannot see the study year.
-# Companies delisted during the year stay in; companies listed after `as_of` are out.
+# The company list (§5.1): built by code from Sravanth's criteria, applied to the data of
+# the last trading day on or before `as_of`, so it cannot see the study year.
+# Companies delisted or suspended during the year stay in; companies listed after
+# `as_of` are out.
 #
-# FROZEN RULE (D22): fill in the criteria, then set `frozen_on` to the date they were
-# fixed. The universe is not built while `frozen_on` is null, and the criteria must not
-# change once any return has been computed - a change after that makes the result
-# exploratory. The criteria and the frozen date are copied into the backfill database with
-# the list, so the report can show exactly what was used.
+# FROZEN RULE (D22): the universe is not built while `frozen_on` is null, and the
+# criteria must not change once any return has been computed - a change after that makes
+# the result exploratory. The criteria and the frozen date are copied into the backfill
+# database with the list, so the report can show exactly what was used.
 universe:
   as_of: 2025-09-22
-  frozen_on: null            # set by Sravanth when the criteria below are final
+  frozen_on: 2026-09-27      # frozen by Sravanth, 27 Sep 2026, before any return existed
   series: [EQ, BE, BZ]       # NSE mainboard equity series (D9); SM/ST are SME
   isin_prefix: INE           # companies only; INF (funds/ETFs) and others are out
-  mcap_min_crore: null       # null = no lower bound
-  mcap_max_crore: null       # null = no upper bound
-  # Applied from the announcements API's smIndustry once each company's history is
-  # fetched (§5.8). Exact industry strings, e.g. "Banks".
+  # COLLECTION bounds (market cap as of `as_of`). Decided 27 Sep 2026: collect every
+  # company from Rs 500 cr up, with no ceiling, because a company left out here cannot be
+  # added back without re-running the backfill. The analysis bands below narrow it.
+  mcap_min_crore: 500
+  mcap_max_crore: null
+
+# ANALYSIS bands, applied per event at its own valuation date (notes rule 1), never at
+# collection. Decided 27 Sep 2026.
+analysis:
+  universe_mcap_crore: [500, 50000]   # the study's universe
+  primary_mcap_crore: [500, 20000]    # D22's primary band (revised 27 Sep 2026)
+  # Collected companies above Rs 50,000 cr are reported separately as a low-reaction
+  # control, never mixed into the study universe.
+  # Left empty on purpose: the category filter already limits the study to order
+  # filings, so excluding industries would remove almost nothing.
   exclude_industries: []
-  # Optional extra rules Sravanth may add, written out in words and implemented only
-  # after he has stated them.
-  notes: ""
+  notes: |
+    Rules stated by Sravanth, to be implemented as written:
+
+    1. Per-event valuation (as-of = the filing timestamp, never today):
+       - Market cap = close of the last trading day BEFORE the filing x shares
+         outstanding as known at that time. Never the event day's own close: a filing
+         during market hours means that close already contains the reaction.
+       - TTM revenue = the last four quarters whose results were FILED before the
+         announcement timestamp, not the last four quarters that ENDED before it.
+       - order_value_to_market_cap and order_value_to_ttm_revenue use these values.
+
+    2. Analysis band (applied at analysis, never at collection):
+       - Primary result: market cap 500-20,000 crore on the event's valuation date.
+       - Study universe: 500-50,000 crore; above 50,000 crore reported as a control.
+       - Also report the full collected universe, so the band's effect is visible.
+
+    3. Recorded per event, never used to drop a row at collection:
+       - series on the event date (EQ / BE / BZ)
+       - ASM/GSM stage on the event date
+       - median daily traded value over the previous 60 trading days
+       - price band, and whether the stock was locked at upper or lower circuit on the
+         event day and each of the next 3 trading days (locked = unfillable)
+       - order value, original currency, and INR value
+       - trading days since the same company's previous order win
+
+    4. Confounding news:
+       - Director and KMP changes are tagged as a separate confounder class, not
+         counted as "other news near the order". Report results with and without
+         events carrying that tag.
+
+    5. Hard exclusions (event unusable, not merely unattractive):
+       - not listed on the NSE mainboard on the event date
+       - suspended on the event date
+       - no price data for the event window
+       - fewer than 120 trading days of price history before the event
 
 # Download scope for listed companies (27 Sep 2026): the order categories plus every
 # catch-all filing (D7 as widened). The expected count and size are reported before any

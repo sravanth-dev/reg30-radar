@@ -27,6 +27,7 @@ def test_udiff_rows_carry_isin_and_decimal_prices():
     assert (abb.isin, abb.symbol, abb.trade_date) == ("INE117A01022", "ABB", date(2026, 9, 18))
     assert abb.close == Decimal("7235.20") and abb.prev_close == Decimal("7129.00")
     assert abb.volume == 18369
+    assert abb.traded_value == Decimal("132648938.00")
 
 
 def test_udiff_reads_the_nse_column_subset_too():

@@ -7,8 +7,11 @@
 # confirm or revise it once ~50 labelled PDFs exist (Sect.6).
 
 tier1_model: gpt-6-luna
-tier2_model: PLACEHOLDER   # unset - single tier for now (Sect.6: "if one model is enough,
-                           # use a single tier"). May change once the bake-off runs.
+# Set 27 Sep 2026 by Sravanth: gpt-6-luna as T2 as well, "for now"; he will name a
+# stronger model later. Until then §6's independent recheck is a second, blind read by
+# the same model: it sees the document only, never tier 1's answer, so it still
+# catches a misread that does not repeat, but not one the model makes every time.
+tier2_model: gpt-6-luna
 
 # §5.5 Part B, pulled forward from Slice 5: the vision model that transcribes a page no
 # other method could read. A separate slot from tier1/tier2 because it does a different
@@ -26,10 +29,10 @@ prices:
 # Batch API prices (USD per million tokens), used for every backfill request (§6). Copied
 # from the pricing page by Sravanth like the table above - never derived by assuming the
 # Batch discount. A model missing here cannot be batched: the client refuses.
-batch_prices: {}
-  # gpt-6-luna:
-  #   input: <from the pricing page>
-  #   output: <from the pricing page>
+batch_prices:
+  gpt-6-luna:          # given by Sravanth 27 Sep 2026
+    input: 0.05
+    output: 0.25
 
 caps:
   # Set 24 Sep 2026 (night, continued) by Sravanth directly, so the first day's ~124-filing

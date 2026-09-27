@@ -1703,3 +1703,72 @@ holiday would be retried as an error. One request against a known holiday settle
 (`test_backfill_batch_db.py`) and the market store test skip until `tradebot_backfill`
 exists. 265 pass, 4 skipped. The live processes have been down since about 12:55 IST,
 waiting on Sravanth to restart them.
+
+### 27 Sep 2026 (evening) — criteria frozen, D22 band revised, market load running
+
+Sravanth did the setup: the three live processes restarted, `tradebot_backfill` created,
+Docker Desktop started, the laptop on the phone hotspot. **The `BACKFILL_DATABASE_URL` line
+never reached `.env`** (mtime still 24 Sep, the same way the password once failed to save
+on 22 Sep). I added it by script, derived from `DATABASE_URL` with only the database name
+changed, and never printed it. Migrations 0001-0010 were applied to the backfill
+database, and all 269 tests pass, **including the 4 database tests that had been
+skipping** (the market store, and the Batch round trip on real SQL in a scratch schema).
+
+**Decisions, same conversation:**
+- `tier2_model: gpt-6-luna` "for now"; he will name a stronger model later. So §6's recheck
+  is a second, blind read by the same model. `batch_prices` for gpt-6-luna: $0.05 / $0.25
+  per million input/output tokens.
+- **Universe criteria** (his edit of `config/backfill.yaml`): market cap ≥ ₹200 cr on 22
+  Sep 2025, no ceiling (large caps as a low-reaction control), EQ/BE/BZ, INE ISINs, no
+  industry exclusions. Plus written rules in `universe.notes`: valuation at the last close
+  before the filing, TTM by filing date, per-event liquidity, band and lock fields, Director
+  and KMP changes as a separate confounder class, and hard exclusions. **Frozen by him:
+  `frozen_on: 2026-09-27`.**
+- **D22 revised before any return exists:** the primary band is ₹500–20,000 cr on the
+  event's valuation date, replacing "below ₹10,000 cr". ARCHITECTURE D22 and §5.11 say so,
+  dated. The full universe is also reported.
+- **Locked at a circuit** = in that day's band-hitter file AND close equals the day's high
+  (upper) or low (lower).
+- **ASM/GSM stage and price band: spike a source today.** NSE's lists are current-only; to
+  be run after the market load, keeping one request stream against NSE at a time.
+
+**Consequences implemented:** `prices_from` moved to 2025-03-01, because the 120-trading-day
+history exclusion and the 60-day median traded value need about 120 trading days before
+the window, where D10 had 30. The bhavcopy's `TtlTrfVal` is now stored as
+`prices.traded_value` (migration 0010), rather than approximated as close × volume.
+
+**Probes and loads** (all over the hotspot): the holiday probe (2 Oct 2025) returned a clean
+404, 2 requests with the warm-up, which confirms the calendar logic. The trial load of
+19-22 Sep 2025 took 7 requests and gave 2 trading days and 2 weekend 404s. Only 458 bundle
+lines were parsed for 19 Sep 2025 against 1,229 on 18 Sep 2026, so the bundle was
+re-fetched (2 requests): the raw file really has 461 lines, 458 parsed plus the header and
+2 wrapped continuation lines. The parser is right and that report is just shorter. **Full
+load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
+`data/market_load.log`.
+
+**Later the same evening:**
+- **The list criteria moved twice, both before any return existed.** Sravanth first saved
+  ₹500-50,000 cr over his ₹200 cr / no-ceiling values; the build used that and gave 1,391
+  companies. Asked which was frozen, he chose: **collect ≥ ₹500 cr with no ceiling;
+  analyse ₹500-50,000 cr, primary ₹500-20,000 cr (D22), and report the companies above
+  ₹50,000 cr separately as a control.** `config/backfill.yaml` now has separate
+  `universe` (collection) and `analysis` sections to say so. The rebuilt list has **1,583
+  companies**: 1,229 at ₹500-20,000 cr, 162 at ₹20,000-50,000 cr, and 192 above ₹50,000 cr
+  (Reliance down).
+- **His IDE save overwrote an edit of mine**: `prices_from: 2025-03-01` went back to
+  2025-08-01 while he had the file open. It is restored. The running load was unaffected,
+  because it takes its range from the command line. Lesson: when Sravanth has a config file
+  open, tell him to reload before saving.
+- **D12 closed: Linux cp314 wheels verified.** `docker build` succeeded (image 385 MB,
+  Python 3.14.7, uid 10001, `ROOT=/app`, IST resolves, both prompts present). Unit suite
+  inside the container: 259 passed, 8 skipped (no database there), 2 failed only because
+  the layout test looks for `reports/` and `.env.example`, which `.dockerignore` excludes
+  on purpose.
+- **Angel One SmartAPI** (Sravanth asked whether it could supply past prices): not for
+  this study. The bhavcopy is the exchange's own record and carries market cap,
+  CORP_IND, band hits and traded value, which SmartAPI candles do not. Mixing sources
+  risks two different "closes" for one day, and §1 keeps broker code out of Phase 1. Its
+  real value is one-minute candles for measuring the reaction from the actual filing time,
+  which §5.12 already lists as Phase 2.
+- Market load running without errors; holidays (10 Apr 2025, Mahavir Jayanti) recognised
+  correctly.

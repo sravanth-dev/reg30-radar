@@ -68,6 +68,7 @@ class PriceRow:
     close: Decimal | None
     prev_close: Decimal | None
     volume: int | None
+    traded_value: Decimal | None = None   # TtlTrfVal, rupees
 
 
 def parse_udiff(csv_text: str) -> list[PriceRow]:
@@ -93,6 +94,7 @@ def parse_udiff(csv_text: str) -> list[PriceRow]:
             # file, never used to chain returns.
             prev_close=_dec(r.get("PrvsClsgPric")),
             volume=_int(r.get("TtlTradgVol")),
+            traded_value=_dec(r.get("TtlTrfVal")),
         ))
     return out
 

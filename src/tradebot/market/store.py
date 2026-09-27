@@ -60,10 +60,10 @@ def save_day(
         with conn.cursor() as cur:
             cur.executemany(
                 "insert into prices (trade_date, isin, symbol, series, open, high, low, close,"
-                " prev_close, volume, corp_ind, band_hit)"
-                " values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                " prev_close, volume, traded_value, corp_ind, band_hit)"
+                " values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 [(day, p.isin, p.symbol, p.series, p.open, p.high, p.low, p.close,
-                  p.prev_close, p.volume, corp.get((p.symbol, p.series)),
+                  p.prev_close, p.volume, p.traded_value, corp.get((p.symbol, p.series)),
                   band.get((p.symbol, p.series))) for p in chosen.values()],
             )
             counts.prices = len(chosen)

@@ -42,6 +42,10 @@ analysis:
   primary_mcap_crore: [500, 20000]    # D22's primary band (revised 27 Sep 2026)
   # Collected companies above Rs 50,000 cr are reported separately as a low-reaction
   # control, never mixed into the study universe.
+  # Muhurat sessions in the window (D27, §5.11): day numbering counts them, the 20-day
+  # volume baseline does not, and an event whose day 0 lands on one is reported apart.
+  # Checked against the loaded archive calendar before the study runs.
+  muhurat_days: [2025-10-21]
   # Left empty on purpose: the category filter already limits the study to order
   # filings, so excluding industries would remove almost nothing.
   exclude_industries: []

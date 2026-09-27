@@ -1822,3 +1822,23 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   once plus one retry. The extraction collector now only reads its own batches (purpose
   filter), so the two Batch users never cross. 301 tests pass, including both recheck round
   trips on real SQL.
+- **TTM, loader, report and the backfill command.** `revenue/ttm.py` (pure) implements
+  §5.8 and rule 1: only results filed before the moment count, one basis only, Q4 = FY −
+  9M, four consecutive quarters or None, and a restatement applies only from its filing
+  date. `backfill/study_data.py` loads the market and events: point-in-time TTM per
+  event; the company's own other filings within ±10 calendar days, with unknown
+  categories logged to `unknown_categories`; the previous order's time.
+  `backfill/report.py` writes `reports/backfill_<date>.md` with the verdict and D22's four
+  checks first, then the power note, sensitivity cells (without leadership, tradeable
+  only, the ₹500-50,000 universe, the >₹50,000 control, contaminated), the exploratory
+  value × market-cap grid at +1/+3/+5/+10, and every exclusion counted. It also writes
+  a per-event CSV. `backfill/__main__.py` runs the stages one pass at a time, from
+  `universe` through `study`, plus `status`. The event study's primary cell now also
+  requires the company to have **won** the order: I caught that it was missing while
+  wiring the loader. Migration 0012: `financials`. `config/backfill.yaml` gains
+  `analysis.muhurat_days: [2025-10-21]`, to be checked against the loaded calendar.
+- **End-to-end check on real SQL** (scratch schema, one synthetic company): an order worth
+  20% of market cap is `calculate`d to `recheck_pending` with TTM ₹1,000 cr, and a quarter
+  filed after the event is ignored. `study` writes the report (INSUFFICIENT DATA, n = 1,
+  +10.00%). **My first version of this test was wrong and the code was right**: I had
+  seeded two quarters filed after the event, and TTM correctly came back unknown.

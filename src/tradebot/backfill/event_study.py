@@ -106,6 +106,7 @@ class EventIn:
     execution_months: Decimal | None
     other_filings: list[tuple[datetime, str]] = field(default_factory=list)  # (ts, bucket)
     previous_order_ts: datetime | None = None
+    company_is_recipient: bool | None = True
 
 
 @dataclass
@@ -134,6 +135,7 @@ class EventResult:
     leadership: bool = False
     muhurat_day0: bool = False
     days_since_previous_order: int | None = None
+    company_is_recipient: bool | None = None
 
     @property
     def usable(self) -> bool:
@@ -162,6 +164,7 @@ def _excess(stock: Decimal | None, index: Decimal | None) -> Decimal | None:
 def measure(ev: EventIn, market: Market) -> EventResult:
     """Everything the study records about one event."""
     r = EventResult(ev.event_id, ev.isin, ev.symbol, ev.event_ts)
+    r.company_is_recipient = ev.company_is_recipient
     bars = market.bars.get(ev.isin, {})
     local = ev.event_ts.astimezone(IST)
     r.after_hours = not (market.pos(local.date()) is not None and local.time() < CLOSE_TIME)
@@ -286,11 +289,12 @@ def in_band(r: EventResult, band_crore: tuple[float, float]) -> bool:
 
 
 def primary(results: list[EventResult], band_crore: tuple[float, float]) -> list[EventResult]:
-    """D22's primary cell: clean events, value_to_ttm >= 15%, market cap in the band on the
-    valuation date. Leadership-tagged events are in: rule 4 makes them a separate tag, not
+    """D22's primary cell: clean order WINS (the company received the order; one it placed
+    never counts), value_to_ttm >= 15%, market cap in the band on the valuation date. Leadership-tagged events are in: rule 4 makes them a separate tag, not
     contamination, and the report shows the cell without them as well."""
     return [r for r in results
-            if r.clean and r.materiality and r.materiality.value_to_ttm is not None
+            if r.clean and r.company_is_recipient is True
+            and r.materiality and r.materiality.value_to_ttm is not None
             and r.materiality.value_to_ttm >= Decimal("0.15") and in_band(r, band_crore)
             and r.excess.get(PRIMARY_HORIZON) is not None]
 

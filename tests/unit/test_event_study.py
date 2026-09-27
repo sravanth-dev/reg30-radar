@@ -164,6 +164,9 @@ def test_primary_cell_uses_the_value_to_ttm_and_band_rules():
     big = measure(event(at(D0, 11), value_cr="200", ttm_cr="1000"), market())     # 20%
     assert primary([small, big], (500, 20000)) == [big]
     assert primary([big], (2000, 20000)) == []   # mcap Rs 1,000 cr is outside
+    placed = measure(event(at(D0, 11)), market())
+    placed.company_is_recipient = False          # the company GAVE the order
+    assert primary([placed], (500, 20000)) == []
 
 
 def _both_halves(n, excess5):

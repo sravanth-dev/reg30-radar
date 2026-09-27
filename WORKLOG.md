@@ -16,55 +16,67 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 27 Sep 2026 (midday)*
-
-**All three live processes are running on the laptop** (collector, `orders --follow`,
-`sheets`), restarted 11:38-11:39 IST on 27 Sep, one of each. The collector runs the 26 Sep
-overflow fix, which **works but is still uncommitted**: its first live gap query (26 Sep
-20:10) returned 1,517 filings and recovered 71 that had rolled off the live page. The
-23-26 Sep catch-up that the previous entry asked for has been done. **Nothing is deployed
-to the VPS, and there is no Dockerfile or compose file yet.** The 27 Sep entry has the full
-audit against ARCHITECTURE §10 and the defects that block a production deployment.
+*Last updated: 27 Sep 2026 (evening)*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are.** Slice 0 (spikes), the live half of Slice 1, and now a first working slice
-of Slice 3+4+5 together: a minimal order-relevance gate, the document pipeline, and LLM
-extraction, run for real against a full day of live-collected filings. Spikes C and E are
-still not started; Spike D (the model bake-off) was superseded for now by Sravanth's direct
-model choice (see the night/continued entries below).
+**Where we are: every slice in ARCHITECTURE §10 has code, most of it run for real; the
+12-month backfill has not completed a full pass yet.** Today (27 Sep) built the entire
+measure-and-verdict half in one session: market data, the frozen company universe, the
+company-wise announcement fetch, the full category map, the document/Batch-extraction
+pipeline reused for the backfill, event merging, the §6 state machine and recheck,
+point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
+study, and the report writer with D22's verdict. 328 tests pass.
 
-| Spike | Status |
-|---|---|
-| **B** — NSE bulk archives | Done. See 21 Sep entry. |
-| **A** — announcements API | Done, but left a blocker. See 22 Sep entry. |
-| **A2** — API completeness | Done. **Backfill is viable.** Reconciliation now runs per-day in the backfill. |
-| Live-feed reconciliation | **Running** since 22 Sep 14:02 IST; reconcile against the 23 Sep bundle. |
-| **C** — results XBRL | Not started |
-| **D** — extraction bake-off | **Superseded for now** (24 Sep night, continued): Sravanth chose `tier1_model`/`ocr_model = gpt-6-luna` directly rather than waiting for the bake-off. Arm 1 (parser alone) still stands at **44%** on 18 labelled docs; the full T0+LLM chain reaches **67%** on the same set (a development number, not a bake-off-gated one). The bake-off itself is not cancelled - still the right way to confirm or revise the model choice once ~50 labelled PDFs exist. |
-| Order-relevance gate + extraction (§5.4-§5.6) | **Built and run for real** (24-25 Sep, night): `router/orders.py`, `extractor/{provenance,llm_extract}.py`, `orders/` (`run.py`/`store.py`/`report.py`/`__main__.py` - both `--date`/`--from`/`--to` and `--follow` branches share one core). Run live against 23 Sep's 725 filings: 124 downloaded (widened D7 - see below), 10 order-related (3 of them found only via the catch_all keyword prefilter, not by category), 5 verified, real cost $0.008236 (corrected - see below). Reports: `reports/orders_2026-09-23.md`/`.csv` (one row per filing) and `orders_2026-09-23_detail.md` (every extracted field, in prose). `--follow` (the continuous live branch) is built and tested but has not yet been started running. |
-| Slice 4 (document pipeline) | **Built and unit-tested** (24 Sep, later): download -> SHA-256 -> extract -> store -> delete-the-PDF, in `src/tradebot/documents/`. Extended (24 Sep, night) with a per-page quality ladder (`quality.py`) and dormant vision OCR (`ocr.py`, `llm/client.py`); **the LLM client is no longer dormant** (24 Sep night, continued) - `config/llm.yaml` carries a real model, prices and $1/month caps. **Now wired to a caller** (`orders/run.py`), gated by `router/orders.py` - the first real download-and-extract traffic in the repo beyond tests. |
-| **E** — VPS preflight | Not started. Needs VPS numbers from Sravanth. |
-| Python 3.14 wheels | Windows half verified; manylinux not checked. |
+**Right now, live**: `python -m tradebot.backfill announcements` is running in the
+background (started 18:13:56 IST), fetching one `symbol=` history per listed company
+(1,615 requests total, ~2.5h). **The laptop's live collector, `orders --follow` and
+`sheets` are all stopped** for the duration, per Sravanth's decision that only one request
+stream may hit NSE's announcements host at a time — restart them once this finishes.
+Nothing has been deployed to the VPS; `Dockerfile`/`docker-compose.yml` exist and were
+rehearsed successfully in a throwaway local container (cutover, migrate, health check,
+append-only trigger all verified), but production cutover is still pending Sravanth's
+go-ahead. DEPLOY.md has the runbook.
 
-**No longer blocked.** Spike A2 resolved the API-completeness scare: it was two measurement
-errors of mine, not a property of the API. The `an<date>.txt` bundle is a *report* covering
-filings disseminated since the previous report, so comparing bundle(D) to API(D) was a
-category error; and "the symbol query stops at Oct 2025" came from string-sorting
-`DD-Mon-YYYY`. Re-measured over a two-day window, **mainboard order coverage is 8 of 8**, and
-the symbol query returns a company's whole 22-year history in one call — so the backfill is
-one request per company, not per company-day. Caveats in §5.1.
+**Blocking a real verdict, in order:**
+1. **The announcements fetch finishing** (background, no action needed).
+2. **`config/backfill.yaml`'s universe is frozen** (`frozen_on: 2026-09-27`, ≥₹500 cr
+   collected with no ceiling, primary band ₹500–20,000 cr per the revised D22) — done,
+   1,583 companies, but re-freezing after any return is computed would make the result
+   exploratory, so don't edit it further without asking.
+3. **`config/category_map.yaml` is approved and in force** (146 categories, 8 buckets
+   including a new `leadership` confounder class) — done.
+4. **The post-April-2025 "Integrated Filing" results API is still unknown.** The
+   pre-2025 "Financial Results" endpoint is confirmed working and its parser is fixed and
+   tested (see the Spike C entry), but the study window sits almost entirely after that
+   cutover, so most events will get `TTM = None` until this is found. Needs two minutes of
+   someone with a browser on NSE's live Integrated Filing page - two analogous URL guesses
+   already 404'd and a third was not spent.
+5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
+   ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
+   name a stronger model later). Both usable as they stand.
+6. **Not yet run for real**: `documents`, `batch-submit`/`batch-collect`, `events`,
+   `revenue`, `calculate`, `recheck-submit`/`recheck-collect`, `study`. Each is built,
+   unit-tested (several against real SQL in a scratch schema), and waits on the
+   announcements fetch finishing first.
+
+**Six real bugs were found and fixed today by re-reading code against real data or real
+APIs before trusting it** - worth knowing about even after they're fixed, because each one
+would otherwise have silently changed the verdict's numbers: two live-path bugs in the
+order pipeline (VASCONEQ/LCCPROJECT's scale, BDL's "amendment" stage); a genuine defect in
+NSE's own filed XBRL that made the point-in-time TTM parser collide two different figures
+under one key; a contamination-detection gap that would have understated contamination
+(making the study look artificially cleaner); and two bugs in the backfill CLI's own
+dispatch (a window-filter operator-precedence mistake, and a missing §5.4 gate-audit
+check) caught by a deliberate review pass during the fetch's idle time, not by a test
+failing. Full detail in the 27 Sep entries below.
 
 **Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
-`raw_announcements` **and, since 25 Sep, `order_extractions`** into two tabs of one Google
-Sheet, view-only, so Sravanth can browse filings and the order pipeline's output without
-writing SQL. Both verified live: raw tab 23 Sep night, orders tab 25 Sep (later). Neither
-is running continuously right now - `--once` has been run by hand each time. Live viewing
-needs three processes running at once: the collector, `orders --follow`, and `sheets`
-(no flags). All three were running as of 26 Sep, ~17:00 IST.
+`raw_announcements` and `order_extractions` into two tabs of one Google Sheet, view-only.
+Stopped along with the collector for tonight's fetch; restart together.
 
 **How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
 Do not start the next step unsolicited. He reviews every change and must be able to explain

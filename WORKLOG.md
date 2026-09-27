@@ -2313,3 +2313,27 @@ Migration 0014 was applied to both databases. **The live database also received 
 band history is loaded only into the backfill database.
 
 351 tests pass.
+
+### 27 Sep 2026 (night, 23:59) — revenue scope confirmed; the documents stage priced
+
+**Decided (Sravanth): the revenue stage fetches event companies only**, as built in
+`revenue/load.py`. It therefore cannot run alongside `documents`: the order is
+`documents` -> `batch-submit`/`batch-collect` -> `events` -> `revenue`. What can run
+alongside `documents` is the live collector (www.nseindia.com versus nsearchives, the same
+split as tonight's band fetch next to the announcements fetch); parallel downloads within
+`documents` are ruled out by the one-request-per-source rule.
+
+**The download choice deferred on 27 Sep (see the audit entry: every catch-all PDF is ~35
+GB and 35-40 h over the hotspot, and ~1 order in 4 was visible only in the PDF body) is
+now measured**, database only: 33,784 PDFs to download, of which 1,385 are order
+categories (1,258 order_win, 127 order_candidate) and 32,399 catch-all; 753 of the
+catch-all have a headline keyword hit. Restricted by company:
+- catch-all from companies at ₹500-50,000 cr on 22 Sep 2025: 25,061 (so the >₹50,000 cr
+  control group alone accounts for ~7,300); at ₹500-20,000 cr (D22's band): 21,263;
+- catch-all from companies that filed any order-category filing in the window: 5,277.
+  **Rejected as a filter**: of the 7 live orders found only in a PDF body, it keeps 2
+  (SILVERTUC, ASHOKA). DREDGECORP and HMT are in the band and never file under the order
+  categories; DHRUV and AASTHA are outside the universe; POWERGRID is in the control group.
+Put to Sravanth: everything (~33 GB), everything except the control group's catch-all
+(~26 GB), or order categories plus headline hits (~2 GB, missing about one order in four).
+Mobile data on the hotspot (D19) is his constraint to judge. Not started.

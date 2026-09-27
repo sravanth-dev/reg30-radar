@@ -81,3 +81,9 @@ def llm() -> dict:
 
 def database_url() -> str:
     return env("DATABASE_URL")
+
+
+def backfill_database_url() -> str:
+    """The laptop's separate backfill database (ARCHITECTURE §5.1, 27 Sep 2026), so a year
+    of history never reaches the live database, the Sheet or `orders --follow`."""
+    return env("BACKFILL_DATABASE_URL")

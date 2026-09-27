@@ -1611,3 +1611,30 @@ therefore stops after three attempts, 15 minutes apart. Test:
 
 **Not yet verified:** the image build and the Linux cp314 wheels (D12), which wait on
 Docker Desktop being started on the laptop.
+
+### 27 Sep 2026 (afternoon, cont.) — B1: market-data loader built, not yet run
+
+`src/tradebot/market/`: `parse.py` (pure parsers for the UDiFF bhavcopy, the PR bundle's
+`pd`/`mcap`/`bh`/`an`, and member matching by prefix plus date digits),
+`fetch.py` (`ArchiveFetcher`: warm-up, ≥3 s jittered gap, idle reconnect, 50 MB cap, and a
+request counter that includes warm-ups), `store.py` (one transaction per day; every file is
+keyed to ISINs through *that day's* bhavcopy, because a symbol can pass to another company
+over time) and `__main__.py` (`python -m tradebot.market --from --to`, backfill database
+only, resumable through `archive_days`). `migrations/0007_market_data.sql`: `instruments`,
+`instrument_symbols` (every symbol an ISIN traded under, for the symbol-change Verify),
+`prices`, `index_prices`, `market_caps`, `bundle_announcements`, `archive_days`,
+`backfill_checkpoints`. Plumbing: `connect(url=)`, `backfill_url()`,
+`python -m tradebot.common.migrate --backfill`.
+
+**Every parser reproduces a number a spike recorded by hand before it existed**: 1,229
+bundle bodies with 23 order filings, 298 band hitters (181 high), CORP_IND XD 70 / XI 2 /
+XO 1, BEL's market cap to the paisa, and the Nifty 50 close of 23,346.40. The day loader's
+calendar logic is tested with a fake fetcher serving real fixture zips. A clean 404 on the
+bhavcopy means no trading, and nothing more is fetched. An error leaves the day undecided,
+so it is retried. A trading day whose bundle fails keeps its prices but stays retryable. A
+bhavcopy carrying another date is rejected. The SQL has a rollback-only test against
+`tradebot_backfill`, which skips until that database exists. 262 tests pass.
+
+**One thing to verify before the full run:** what nsearchives returns for a holiday. The
+calendar logic assumes a clean 404. If it answers 403 or a 200 HTML page instead, every
+holiday would be retried as an error. One request against a known holiday settles it.

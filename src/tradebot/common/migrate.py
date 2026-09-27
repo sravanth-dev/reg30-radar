@@ -3,16 +3,18 @@
 Plain numbered SQL files and a small runner (ARCHITECTURE Sect.7): every schema change is
 readable in the diff, and nothing is generated from Python objects.
 
-Run with:  python -m tradebot.common.migrate
+Run with:  python -m tradebot.common.migrate              the live database
+           python -m tradebot.common.migrate --backfill   the laptop's tradebot_backfill
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
 from tradebot.common.config import ROOT
-from tradebot.common.db import connect
+from tradebot.common.db import backfill_url, connect
 
 MIGRATIONS_DIR = ROOT / "migrations"
 
@@ -31,10 +33,10 @@ def pending(conn) -> list[Path]:
     return [p for p in files if p.stem not in applied]
 
 
-def apply_all() -> list[str]:
+def apply_all(url: str | None = None) -> list[str]:
     """Apply every pending migration. Each one runs in its own transaction."""
     done: list[str] = []
-    with connect() as conn:
+    with connect(url) as conn:
         for path in pending(conn):
             sql = path.read_text(encoding="utf-8")
             with conn.transaction():
@@ -50,4 +52,8 @@ def apply_all() -> list[str]:
 
 
 if __name__ == "__main__":
-    sys.exit(0 if apply_all() is not None else 1)
+    parser = argparse.ArgumentParser(prog="python -m tradebot.common.migrate")
+    parser.add_argument("--backfill", action="store_true",
+                        help="migrate BACKFILL_DATABASE_URL instead of DATABASE_URL")
+    args = parser.parse_args()
+    sys.exit(0 if apply_all(backfill_url() if args.backfill else None) is not None else 1)

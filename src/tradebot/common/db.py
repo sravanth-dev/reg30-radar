@@ -12,11 +12,16 @@ from typing import Iterator
 
 import psycopg
 
-from tradebot.common.config import database_url
+from tradebot.common.config import backfill_database_url, database_url
 
 
 @contextmanager
-def connect() -> Iterator[psycopg.Connection]:
-    """Open a connection, commit on success, roll back on any exception."""
-    with psycopg.connect(database_url()) as conn:
+def connect(url: str | None = None) -> Iterator[psycopg.Connection]:
+    """Open a connection, commit on success, roll back on any exception. `url` defaults
+    to the live database; the backfill passes `backfill_url()`."""
+    with psycopg.connect(url or database_url()) as conn:
         yield conn
+
+
+def backfill_url() -> str:
+    return backfill_database_url()

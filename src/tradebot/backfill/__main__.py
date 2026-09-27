@@ -172,14 +172,15 @@ def main(argv: list[str] | None = None) -> int:
                    "excluded": universe.apply_exclusions(conn, cfg)}
         elif args.stage == "expected":
             out = {**universe.expected_counts(conn, since, until),
-                   "documents (after the announcements stage)": documents.expected(conn, since, until)}
+                   "documents (after the announcements stage)":
+                       documents.expected(conn, since, until, cfg)}
         elif args.stage == "announcements":
             out = announcements.run(conn, cfg["window"], max_requests=args.max_requests)
             universe.apply_exclusions(conn, cfg)
         elif args.stage == "reconcile":
             out = announcements.reconcile_window(conn, since, until)
         elif args.stage == "documents":
-            s = documents.run(conn, since, until, max_downloads=args.max_requests)
+            s = documents.run(conn, since, until, max_downloads=args.max_requests, cfg=cfg)
             out = {"considered": s.considered, "downloaded": s.downloaded,
                    "download_failed": s.download_failed, "order_related": s.order_related,
                    "verified_by_T0": s.verified, "waiting_on_batch": s.pending_llm,

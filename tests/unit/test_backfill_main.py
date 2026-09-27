@@ -75,7 +75,7 @@ def isolated(monkeypatch):
 
 def test_a_gate_violation_exits_2_but_still_prints_the_summary(isolated, monkeypatch, capsys):
     monkeypatch.setattr(backfill.documents, "run",
-                        lambda conn, since, until, max_downloads:
+                        lambda conn, since, until, max_downloads, cfg:
                         FakeDocSummary(considered=5, gate_violations=[123]))
     assert backfill.main(["documents"]) == 2
     out = capsys.readouterr().out
@@ -84,5 +84,6 @@ def test_a_gate_violation_exits_2_but_still_prints_the_summary(isolated, monkeyp
 
 def test_no_violation_exits_0(isolated, monkeypatch):
     monkeypatch.setattr(backfill.documents, "run",
-                        lambda conn, since, until, max_downloads: FakeDocSummary(considered=5))
+                        lambda conn, since, until, max_downloads, cfg:
+                        FakeDocSummary(considered=5))
     assert backfill.main(["documents"]) == 0

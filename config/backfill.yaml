@@ -94,8 +94,17 @@ analysis:
        - no price data for the event window
        - fewer than 120 trading days of price history before the event
 
-# Download scope for listed companies (27 Sep 2026): the order categories plus every
-# catch-all filing (D7 as widened). The expected count and size are reported before any
-# download starts.
+# Download scope for listed companies (27 Sep 2026): the order categories plus catch-all
+# filings (D7 as widened). The expected count and size are reported before any download
+# starts. Narrowed the same night (Sravanth, "option B"), after measuring 33,784 PDFs (~33
+# GB over the hotspot, D19) for the window: every order-category filing and every catch-all
+# filing whose headline hits the order keywords is downloaded; other catch-all filings
+# (where only the PDF body could show an order) only for companies at or below
+# `other_catch_all_max_mcap_crore` on `universe.as_of`. Above it is the low-reaction
+# control, which D22 treats as exploratory; skipping its body-only checks saves ~7,300 PDFs
+# (~7 GB) at the cost of that group's body-only orders. Files are fetched in that order -
+# order categories, headline hits, the rest - so a run cut short has the ones most likely
+# to be orders. null downloads every catch-all filing.
 documents:
   max_requests_per_run: 3000
+  other_catch_all_max_mcap_crore: 50000

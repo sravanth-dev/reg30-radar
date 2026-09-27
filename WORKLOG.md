@@ -31,27 +31,23 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 338 tests pass.
 
-**Right now, live**: two fetches run as **detached** Windows processes (so they outlive a
-Claude session, which the first attempt did not: both died at ~19:00 when the session
-ended). `python -m tradebot.backfill announcements` (PID 7568, log
-`data/announcements_resume.log`, started 19:21 IST, 1,173 companies left, ETA ~21:10) and
-`python -m tradebot.market.bands --from 2025-03-01 --to 2026-09-26` (PID 30868, log
-`data/bands_resume.log`, 420 of 575 days left; it logs only when it finishes). Both
-resume from checkpoints if killed. **Before resuming, a real bug was fixed: 85 of the first
-495 companies had silently kept zero filings** because NSE's announcements carry a
-company's original ISIN and the universe its current one (see the 27 Sep night entry).
-Those 85 were re-queued. **The laptop's live collector, `orders --follow` and `sheets`
-are all stopped** for the duration, per Sravanth's decision that only one request stream
-may hit NSE's announcements host at a time; restart them once the announcements fetch
-finishes.
-Nothing has been deployed to the VPS; `Dockerfile`/`docker-compose.yml` exist and were
-rehearsed successfully in a throwaway local container (cutover, migrate, health check,
-append-only trigger all verified), but production cutover is still pending Sravanth's
-go-ahead. DEPLOY.md has the runbook.
+**Right now**: nothing is running. **The company-wise announcements fetch is complete**
+(27 Sep, 22:12 IST): all 1,583 listed companies, 162,251 filings in `tradebot_backfill`,
+0 report dates below the 95% coverage floor so far. Band history is complete too (575
+of 575 days). Two real bugs were found and fixed on the way (see the 27 Sep night
+entries): the original-vs-current ISIN filter that had emptied 85 companies, and the
+first attempt dying with its session. **The laptop's live collector, `orders --follow`
+and `sheets` are still stopped** and can be restarted now: NSE's announcements host is
+free again.
 
 **Blocking a real verdict, in order:**
-1. **The announcements fetch finishing** (background, no action needed). Then the
-   `reconcile` stage, then `documents` onward, in the order `backfill/__main__.py` lists.
+1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** Next is the `reconcile`
+   stage (database only, no requests), then `documents` onward, in the order
+   `backfill/__main__.py` lists.
+1a. **38 universe companies got a new ISIN during the window** (BEML, KOTAKBANK, MCX and
+   35 more), and the study loads prices by the universe's ISIN, so their events after the
+   reissue would find no price. Must be handled before the `study` stage; the fix needs
+   Sravanth's decision (see the 22:15 entry).
 2. **`config/backfill.yaml`'s universe is frozen** (`frozen_on: 2026-09-27`, ≥₹500 cr
    collected with no ceiling, primary band ₹500–20,000 cr per the revised D22) — done,
    1,583 companies, but re-freezing after any return is computed would make the result
@@ -2157,3 +2153,62 @@ requests:
 The capture's session cookies were not written anywhere. Asked for a capture from the
 Integrated Filing page itself, for a quarter from Apr-Jun 2025 onward. Not tested live
 either way: the host is busy with the announcements fetch (one stream at a time).
+
+### 27 Sep 2026 (night, 22:00) — fetch nearly done; timeouts and three truncated answers
+
+**Band history finished** at 19:50: 420 days, 0 errors, 421 requests (575 of 575 days
+now in `band_days`).
+
+**Announcements, as of 22:00**: 1,121 of the 1,173 re-queued companies processed, 1,487
+checkpointed in all. **59 failed**, 55 of them `ReadTimeout` at 45 s plus 2 read timeouts
+and 2 connection resets. **No 401/403 at all**, so this is slowness, not a block. They
+cluster between 20:30 and 21:20 (12-13 per ten minutes) and then taper off, which points
+at the hotspot or NSE's evening load. A failed company is never checkpointed, so
+re-running the stage retries exactly these.
+
+**Three companies got a truncated answer that counted as a success**: ABBOTINDIA (the
+API returned 0 rows), BAYERCROP (2) and MCX (4), each with `other_issuer: 0`, so the
+filter was not the cause. All three have histories of years. They are clear outliers:
+the median company returned 675 rows (96 kept) and the next-lowest returned 40
+(RNBDENIMS, plausibly a recent listing). They are re-queued by hand. A thin response is
+not treated as a failure in code, because there is no objective row count below which a
+company's history is "wrong"; the checkpoint's `returned` count is what makes it visible.
+
+### 27 Sep 2026 (night, 22:15) — fetch complete; a second face of the ISIN problem
+
+**Announcements fetch complete.** The retry run (22:06-22:12, 62 requests) fetched all 59
+timed-out companies with 0 failures. `backfill status`: 1,583 of 1,583 companies,
+162,251 filings, 0 report dates below 95% coverage.
+
+**The three thin companies are empty for real, not truncated.** Re-fetched, they returned
+exactly the same counts (ABBOTINDIA 0, BAYERCROP 2, MCX 4, none in the window), and the
+PR bundles, NSE's complete daily record, have **no line for any of them in the whole
+window**, searched by symbol and by company name. Two independent NSE sources agree. Best
+guess, **not verified**: they are listed on BSE and only permitted to trade on NSE, so they
+file with BSE (MCX has been BSE-listed since its 2012 IPO). Under D26 they simply
+contribute no events. Whether to mark them excluded in `backfill_universe` is Sravanth's
+call; left unchanged.
+
+**New: 38 universe companies were issued a new equity ISIN during the window**, e.g. BEML
+(`INE258A01016` → `INE258A01024` on 3 Nov 2025), KOTAKBANK (14 Jan 2026), MCX (2 Jan 2026),
+CAMS, ANGELONE, NUVAMA, TDPOWERSYS. They are the same issuer and security type (first 9
+characters), trading under the same symbol, one ISIN ending the day before the next
+begins. This is the market-data side of the 19:00 finding. The universe holds the ISIN
+as of 22 Sep 2025, and `study_data` loads prices and market caps by that ISIN, so
+**every event after a reissue would find no price and be excluded**, as would any event
+whose window reaches past it. These 38 companies filed 27 `Bagging/Receiving of orders`
+filings in the window, against D22's floor of 30 clean events, so this is not a rounding
+error. (Another 20 same-issuer lines are rights entitlements, `-RE` symbols with security
+type `20`, which trade for a week alongside the main ISIN and are not the same thing.)
+48 universe ISINs have no price in the data's last week, which is consistent with this
+plus a handful of delistings and mergers.
+
+**Not fixed yet, because the fix is a design choice.** The obvious fix is to load a
+company's prices across every ISIN with its issuer code and security type `01`. But prices
+are unadjusted, so the switch day is exactly a split's price discontinuity, and it is not
+known whether `CORP_IND` flags a split on the new ISIN's first day. Merging the series
+without also treating the switch as a capital action (excluded under §5.9's
+exclude-don't-adjust rule) could turn a 1:2 split into a fake −50% return. Proposed to
+Sravanth: merge by the 9-character prefix, and treat the first day of a new ISIN as a
+capital action in the window. It only matters at the `study` stage, so nothing before it
+is blocked.

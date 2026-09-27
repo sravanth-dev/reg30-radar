@@ -70,11 +70,17 @@ def load_events(conn, states: tuple[str, ...] = ("verified",)) -> list[EventIn]:
             periods_cache[isin] = _periods(conn, isin)
         ttm, _basis = ttm_as_of(periods_cache[isin], ts)
         others = []
+        # Match on isin, falling back to symbol only when a row's own isin is null - Spike A
+        # found sm_isin is not 100% populated (null for HILINFRA), and missing a company's
+        # other filing here would understate contamination, making the study look cleaner
+        # than it is. A ±10-day window makes the (already rare in practice) risk of a
+        # symbol once used by a different company falling in the same window negligible.
         for fts, category in conn.execute(
                 "select exchange_ts, category_raw from raw_announcements"
-                " where (isin = %s) and exchange_ts between %s and %s"
-                " and not (id = any(%s))",
-                (isin, ts - timedelta(days=10), ts + timedelta(days=10), raw_ids)):
+                " where (isin = %(isin)s or (isin is null and symbol = %(symbol)s))"
+                " and exchange_ts between %(from)s and %(to)s and not (id = any(%(raw_ids)s))",
+                {"isin": isin, "symbol": symbol, "from": ts - timedelta(days=10),
+                 "to": ts + timedelta(days=10), "raw_ids": raw_ids}):
             bucket = bucket_of(category)
             if bucket == "unknown":
                 log_unknown(conn, category, now)

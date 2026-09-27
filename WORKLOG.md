@@ -2012,3 +2012,17 @@ than wait idle. Two real issues found and fixed, no new tests skipped:
 4 new offline tests (`tests/unit/test_backfill_main.py`). 325 pass.
 
 Announcements fetch still clean: 123/1,583, 0 failures, 18:24 IST.
+
+### 27 Sep 2026 (evening, cont.) — a third real bug found reviewing study_data.py
+
+**Contamination detection was trusting `raw_announcements.isin` alone**, unlike
+`backfill/events.py`'s own event-building query, which already falls back to symbol via
+`instrument_symbols` because Spike A found `sm_isin` is not 100% populated (null for
+HILINFRA). A company's other filing with a null isin would have been silently invisible to
+the "another filing within ±3 trading days" check, understating contamination in exactly
+the direction that makes a study look cleaner - and therefore more GO-favouring - than it
+really is. Fixed: the lookup now matches on isin, falling back to symbol only when a row's
+own isin is null. 3 new tests on real SQL (`tests/unit/test_study_data.py`), including one
+confirming a null-isin row for a *different* symbol is correctly never matched. 328 pass.
+
+Announcements fetch: 150/1,583, 0 failures, 18:27 IST.

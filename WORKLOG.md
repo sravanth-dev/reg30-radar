@@ -31,9 +31,13 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now**: the backfill's `documents` stage is running **detached** (PID 21200, log
-`data/documents_tier1.log`, started 23:14 IST 27 Sep, ETA ~02:15): tonight's tier of
-Sravanth's "option B", the 2,138 order-category and headline-hit filings. The remaining
+**Right now**: the backfill's `documents` stage is running **detached** (PID 29820, log
+`data/documents_tier1_resume.log`, restarted 00:40 IST 28 Sep, ETA ~02:30) on the last
+1,221 of tonight's tier - Sravanth's "option B", the 2,138 order-category and headline-hit
+filings. The first run (23:14) was killed at 00:36 when the laptop was switched off; 916
+were done and nothing was lost (see the 28 Sep entry). A detached waiter (PID 6836) then
+runs `documents --max-requests 1` for RAILTEL, the one filing in flight at the shutdown,
+log `data/documents_tier1_railtel.log`. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
 `python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
 filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
@@ -2363,3 +2367,33 @@ hotspot, 108 GB free on the laptop. First two minutes: 26 documents (~5 s each, 
 ~02:15), 8 verified by the T0 parser, 18 waiting on Batch, 1 download failed (retried on
 the next run). Two vision-OCR calls so far, both `purpose = 'ocr'`, $0.0017 in all from
 the backfill's $3 budget; order extraction stays deferred to Batch as designed.
+
+### 28 Sep 2026 (00:40) — laptop switched off mid-run; nothing lost, restarted
+
+Sravanth switched the laptop off by accident. The `documents` run (PID 21200) died at
+00:36:22 with no error logged; `LastBootUpTime` still reads 24 Sep, as Windows Fast
+Startup keeps it on a shutdown. Postgres came back by itself.
+
+**Checked, nothing lost:**
+- 915 documents and 917 extraction rows committed (391 verified by T0, 525 waiting on
+  Batch): 916 of tonight's 2,138 filings, 43% in 82 minutes. Every document has an
+  extraction row pointing at it, and no processed extraction lacks a document, so the kill
+  did not split a document from its extraction.
+- The one filing in flight, RAILTEL (raw 23653), carries `orders/run.py`'s pre-work marker,
+  `download_failed` / "interrupted: processing started but did not finish", attempts 1 of
+  3. That marker exists for exactly this case, and the next run retries it once 15 minutes
+  have passed.
+- `data/backfill_work/` is empty: no PDF was left behind, so D8 holds.
+- 78 OCR calls ($0.078 so far); the last three (00:35:59-00:36:20) belong to document 914's
+  3 OCR pages, which were committed, so no OCR was paid for and lost.
+- `raw_announcements` and the market data were untouched (their loads had finished).
+
+**Restarted 00:40** (PID 29820), `--max-requests 1221`: exactly the remaining order
+categories (468) plus headline hits (753), 2,138 − 917, still on the POCO X7 hotspot.
+RAILTEL was not yet past its retry delay when the queue was built, so a detached waiter
+(PID 6836) runs `documents --max-requests 1` after this run exits, which picks it up as
+the only tier-one filing left.
+
+**Lesson**: a detached process survives a Claude session ending but not the laptop shutting
+down or sleeping. Keep the laptop on mains power with sleep disabled while a backfill stage
+runs; every stage resumes from its checkpoints, so an interruption costs time, not data.

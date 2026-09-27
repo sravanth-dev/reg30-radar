@@ -1783,3 +1783,30 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   category, which counts as other news for contamination and is never downloaded. **Live
   effect** once processes restart: "General updates" and "Press Release (Revised)"
   filings now reach the order pipeline.
+
+### 27 Sep 2026 (evening, cont.) — calculator and event study built (pure, tested)
+
+- `calculator/materiality.py` (§5.10): `value_to_ttm`, `next12m_to_ttm` (a 24-month order
+  counts half, a 6-month one is not doubled), `value_to_mcap`, and flags `manual_review`
+  (> 1× TTM), `suspect_parse` (< ₹1 lakh), `missing_ttm` and `missing_mcap`. Ratios are
+  quantized to 6 places. `execution_months()` also reads a completion month ("Delivery
+  Completion is November, 2026") counted from the filing date, as §5.7 asks.
+- `backfill/event_study.py` (§5.11, D22 as revised, Sravanth's rules): day 0 (before 15:30
+  on a trading day, else the next); **valuation date = the trading day before day 0**,
+  which satisfies both §5.10's "last close strictly before the filing" and his "never the
+  event day's own close". Excess returns from the day-0 close against the Nifty 50 at
+  +1/+3/+5/+10, and pre-event drift at −5/−20. An after-hours next-open variant, whose
+  index leg starts from the prior close because only Nifty closes are stored; that
+  approximation is recorded in the code. Hard exclusions (rule 5): no price on day 0, not
+  mainboard on day 0, under 120 trading days of history, no price for the window, and
+  window incomplete in the loaded data. Capital actions XB/XS/XR/XO in [−20, +10] exclude
+  the event and are reported; XD is tagged. Contamination is other news within ±3
+  trading days in buckets results, other_material, red_flag, order and catch_all
+  categories, or unknown. **Leadership is its own tag, not contamination** (rule 4).
+  Other fields: locked upper or lower on day 0..+3 (band hit AND close at the high or
+  low); tradeable = entry fillable at the day-0 close; median traded value over 60 days;
+  volume ratio (Muhurat days excluded from the baseline); days since the previous order.
+  The **verdict is D22 verbatim**: at least 30 clean events in the primary cell, median and
+  mean both beating the 0.75% hurdle, and the same sign in both halves. A half with no
+  events fails that last check, so it is NO-GO, not GO.
+- 20 new tests on a hand-built 200-day market with known answers. 293 pass.

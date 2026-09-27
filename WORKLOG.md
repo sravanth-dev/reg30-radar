@@ -1890,3 +1890,51 @@ load started**: 1 Mar 2025 to 26 Sep 2026, about 970 requests, log in
   (a Sunday, so few), with the catch-up time as `first_seen_at`. Order of NSE work tonight:
   finish the market load, then Spike C, then the band/ASM spike, then the company-wise
   fetch, one after another.
+
+### 27 Sep 2026 (evening, cont.) — Spike C done: a real XBRL defect found and fixed
+
+Market load finished clean: 575 calendar days, 386 trading days, zero errors, 958
+requests, 1.26M price rows.
+
+**Spike C, 14/14 requests, all against the older "Financial Results" endpoint**
+(`GET /api/corporates-financial-results?symbol=&period=Quarterly`, confirmed working; real
+XBRL links from 2018 onward for BEL, "-" placeholders before that). One untracked pair of
+requests (a warm-up and a date-range retry, sent from an ad-hoc script instead of the
+tracked one) was caught and folded into the shared counter - the exact mistake the WORKLOG
+gotcha about Spike A's budget exists to prevent, repeated and caught in the same session.
+
+**The post-April-2025 "Integrated Filing" API endpoint is still unknown.** Two guesses by
+analogy with the announcements endpoint both 404'd (`/api/integrated-filing`,
+`/api/corporate-integrated-filing`). Per the BSE lesson (WORKLOG, 22 Sep: "guessing an
+undocumented API shape cost two requests for nothing"), a third guess was not spent. Needs
+a browser's network tab on NSE's live Integrated Filing page - Sravanth's to do, or to hand
+to a session with browser access.
+
+**A real, demonstrated XBRL defect, not a synthetic worry.** `revenue/xbrl.py` originally
+read a fact's period from its `<context>` element's own dates only, exactly as §5.8
+specified. Real BEL filings break that two distinct ways: a Jan-2025 filing's cumulative
+context ("FourD") declares the *same* dates as the discrete quarter's context ("OneD") - a
+template copy-paste bug - while its revenue (₹146.19bn) is plainly nine months' worth
+against the quarter's ₹57.7bn; and a 2018 filing's revenue facts reference
+`contextRef="OneD"/"FourD"` where **no such `<context>` element exists in the file at
+all**. Both filings correctly tag `DateOfStartOfReportingPeriod`/
+`DateOfEndOfReportingPeriod` facts next to the revenue figure, and those are right in both
+cases, so the parser now reads a fact's period from these declared elements first, falling
+back to the context's own dates only when neither is present. Also fixed in the same pass:
+`NatureOfReportStandaloneConsolidated` was read as one global value for the whole file;
+it's a per-context fact, and a filing with both standalone and consolidated contexts would
+have stamped every fact with whichever was seen last. Regression tests reproduce both real
+defects verbatim (`tests/unit/test_xbrl.py`).
+
+**End-to-end proof, real numbers.** BEL's FY24 Q3 filing gives a real 9-month cumulative
+figure (₹117.04bn); its Q4/FY filing gives the real full year (₹202.68bn) and its own
+directly-reported Q4 (₹85.64bn). `FY − 9M` = ₹85,640,800,000.00 - **an exact match, to the
+rupee**, against BEL's own reported Q4. Point-in-time TTM logic (`revenue/ttm.py`) was
+already unit-tested against synthetic data; this is the confirmation that the numbers it
+will be fed are read correctly from a real, messy filing. ARCHITECTURE §5.8 and §10
+updated. 314 tests pass.
+
+**`revenue/load.py`** (the fetcher `backfill/__main__.py`'s `revenue` stage imports) is
+**not yet built** - Spike C answered the parsing question; wiring it to the per-company
+fetch, writing `financials` rows and handling the still-unknown Integrated Filing endpoint
+is the remaining work.

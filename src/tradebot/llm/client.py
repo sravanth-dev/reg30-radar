@@ -60,13 +60,18 @@ class LlmClient:
     """
 
     def __init__(self, *, conn=None, openai_client=None, api_key: str | None = None,
-                 config: dict | None = None):
+                 config: dict | None = None, budget: str = "live"):
         self.conn = conn
         self._openai_client = openai_client
         self._api_key = api_key
         # `config` is injectable so tests can exercise a real (non-PLACEHOLDER, non-null-cap)
         # configuration without touching config/llm.yaml, which ships dormant on purpose.
         self._cfg = config if config is not None else llm_config()
+        # "live": the monthly caps, per purpose. "backfill": one cap for the whole backfill,
+        # every purpose included (§6, set 27 Sep 2026), measured in the backfill database.
+        if budget not in ("live", "backfill"):
+            raise ValueError(f"unknown budget {budget!r}")
+        self.budget = budget
 
     def _price(self, model: str) -> dict:
         prices = self._cfg.get("prices") or {}
@@ -87,7 +92,21 @@ class LlmClient:
         ).fetchone()
         return Decimal(row[0])
 
-    def _check_cap(self, *, purpose: str, cap_key: str) -> None:
+    def _spent_backfill(self) -> Decimal:
+        """Everything the backfill database has logged, plus the worst-case estimate of any
+        submitted Batch whose results have not been collected yet: that money is committed
+        even though no `llm_calls` row exists for it until collection."""
+        logged = Decimal(self.conn.execute(
+            "select coalesce(sum(cost_usd), 0) from llm_calls").fetchone()[0])
+        open_batches = self.conn.execute(
+            "select coalesce(sum(estimate_usd), 0) from llm_batches where collected_at is null"
+        ).fetchone()[0]
+        return logged + Decimal(open_batches)
+
+    def _check_cap(self, *, purpose: str, cap_key: str,
+                   about_to_spend: Decimal = Decimal("0")) -> None:
+        if self.budget == "backfill":
+            cap_key = "backfill_usd_per_run"
         caps = self._cfg.get("caps") or {}
         cap = caps.get(cap_key)
         if cap is None:
@@ -98,11 +117,12 @@ class LlmClient:
             raise LlmRefused(
                 f"{cap_key} is set but no database connection was given, so spend-to-date "
                 f"cannot be checked - refusing rather than spending blind.")
-        spent = self._spent_this_month(purpose)
-        if spent >= Decimal(str(cap)):
+        spent = self._spent_backfill() if self.budget == "backfill" else self._spent_this_month(purpose)
+        if spent + about_to_spend >= Decimal(str(cap)):
             raise LlmRefused(
-                f"{purpose} spend this month (${spent}) has reached the {cap_key} cap "
-                f"(${cap}) - waiting as pending_llm, not retrying (§6).")
+                f"{purpose}: spend so far (${spent}) plus this request's worst case "
+                f"(${about_to_spend}) reaches the {cap_key} cap (${cap}) - waiting as "
+                f"pending_llm, not retrying (§6).")
 
     def _api_key_or_refuse(self) -> str:
         if self._api_key:
@@ -220,11 +240,37 @@ class LlmClient:
         and spans only - `extractor/llm_extract.py` does every conversion and the
         provenance check, never this client.
         """
-        model = self._cfg.get("tier1_model")
+        body = self.extraction_body(
+            document_text, prompt_version=prompt_version, schema_name=schema_name,
+            json_schema=json_schema, max_output_tokens=max_output_tokens,
+            retry_note=retry_note,
+        )
+        return self._call(
+            model=body["model"], messages=body["messages"], purpose="order_extract",
+            cap_key="live_usd_per_month", tier="t1", prompt_version=prompt_version,
+            max_output_tokens=body["max_completion_tokens"],
+            response_format=body["response_format"],
+        )
+
+    def model_for(self, tier: str) -> str:
+        """The configured model for "t1" or "t2", refusing an unset one (§6)."""
+        key = {"t1": "tier1_model", "t2": "tier2_model"}[tier]
+        model = self._cfg.get(key)
         if not model or model == "PLACEHOLDER":
             raise LlmRefused(
-                "tier1_model is unset in config/llm.yaml - LLM extraction stays dormant "
-                "until a model id is set (§6).")
+                f"{key} is unset in config/llm.yaml - calls on this tier stay refused until "
+                f"Sravanth sets a model id and its prices (§6).")
+        return model
+
+    def extraction_body(
+        self, document_text: str, *, prompt_version: str, schema_name: str,
+        json_schema: dict, max_output_tokens: int | None = None,
+        retry_note: str | None = None, tier: str = "t1",
+    ) -> dict:
+        """The chat-completions request for one extraction, without sending it. The live path
+        sends it at once; the backfill puts the same body in a Batch file, so both paths ask
+        exactly the same question."""
+        model = self.model_for(tier)
         prompt_text = _load_prompt(prompt_version)
         max_out = max_output_tokens or int(
             (self._cfg.get("max_output_tokens") or {}).get("order_extract", 800))
@@ -247,8 +293,100 @@ class LlmClient:
             "type": "json_schema",
             "json_schema": {"name": schema_name, "schema": json_schema, "strict": True},
         }
-        return self._call(
-            model=model, messages=messages, purpose="order_extract",
-            cap_key="live_usd_per_month", tier="t1", prompt_version=prompt_version,
-            max_output_tokens=max_out, response_format=response_format,
+        return {"model": model, "messages": messages, "max_completion_tokens": max_out,
+                "response_format": response_format}
+
+    # ------------------------------------------------------------------ Batch API (§6)
+    #
+    # The backfill's LLM work goes through OpenAI's Batch API (CLAUDE.md), which prices a
+    # request lower in exchange for results within 24 hours. These methods only move
+    # requests and results; which filings go in a batch, and what a result means, is
+    # decided in src/tradebot/backfill/batch.py.
+
+    def _batch_price(self, model: str) -> dict:
+        price = (self._cfg.get("batch_prices") or {}).get(model)
+        if not price:
+            raise LlmRefused(
+                f"no batch_prices entry for {model!r} in config/llm.yaml - the Batch discount "
+                f"is copied from the pricing page like every other price, never assumed (§6).")
+        return price
+
+    def estimate_batch_cost(self, bodies: list[dict]) -> Decimal:
+        """A worst case for the cap check before submitting, not a recorded cost: every
+        request is assumed to use its full output allowance, and input is counted at one
+        token per 3 characters, more than English text needs. The real cost is logged
+        from each result's usage when the batch is collected."""
+        total = Decimal("0")
+        for body in bodies:
+            price = self._batch_price(body["model"])
+            chars = sum(len(m["content"]) if isinstance(m["content"], str)
+                        else len(str(m["content"])) for m in body["messages"])
+            in_tok = Decimal(chars) / 3
+            out_tok = Decimal(body["max_completion_tokens"])
+            total += (in_tok * Decimal(str(price["input"]))
+                      + out_tok * Decimal(str(price["output"]))) / Decimal(1_000_000)
+        return total.quantize(Decimal("0.000001"))
+
+    def _client(self):
+        if self._openai_client is not None:
+            return self._openai_client
+        import openai
+        return openai.OpenAI(api_key=self._api_key_or_refuse())
+
+    def submit_batch(self, items: list[tuple[str, dict]], *, purpose: str,
+                     prompt_version: str) -> tuple[str, Decimal]:
+        """Upload one JSONL file of (custom_id, body) requests and start a Batch. Checks the
+        cap against the batch's worst-case cost first, and records the batch in
+        `llm_batches` so that estimate counts as committed spend until it is collected.
+        Returns (batch_id, estimate)."""
+        import json
+
+        bodies = [body for _, body in items]
+        models = {b["model"] for b in bodies}
+        if len(models) != 1:
+            raise ValueError(f"one model per batch, got {models}")
+        estimate = self.estimate_batch_cost(bodies)
+        self._check_cap(purpose=purpose, cap_key="backfill_usd_per_run",
+                        about_to_spend=estimate)
+
+        lines = [json.dumps({"custom_id": cid, "method": "POST",
+                             "url": "/v1/chat/completions", "body": body})
+                 for cid, body in items]
+        client = self._client()
+        uploaded = client.files.create(
+            file=("batch.jsonl", "\n".join(lines).encode("utf-8")), purpose="batch")
+        batch = client.batches.create(input_file_id=uploaded.id,
+                                      endpoint="/v1/chat/completions",
+                                      completion_window="24h")
+        self.conn.execute(
+            "insert into llm_batches (batch_id, purpose, model, prompt_version, submitted_at,"
+            " status, requests, estimate_usd, input_file_id)"
+            " values (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (batch.id, purpose, models.pop(), prompt_version, datetime.now(timezone.utc),
+             batch.status, len(items), estimate, uploaded.id),
         )
+        self.conn.commit()
+        return batch.id, estimate
+
+    def retrieve_batch(self, batch_id: str):
+        return self._client().batches.retrieve(batch_id)
+
+    def read_file(self, file_id: str) -> str:
+        return self._client().files.content(file_id).text
+
+    def log_batch_result(self, *, batch_id: str, model: str, prompt_version: str,
+                         purpose: str, tier: str, usage: dict | None, status: str,
+                         error: str | None = None) -> Decimal:
+        """One `llm_calls` row per batch result, costed at the Batch price. Returns it."""
+        usage = usage or {}
+        in_tok = int(usage.get("prompt_tokens") or 0)
+        out_tok = int(usage.get("completion_tokens") or 0)
+        cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+        price = self._batch_price(model)
+        cost = ((Decimal(in_tok) * Decimal(str(price["input"])))
+                + (Decimal(out_tok) * Decimal(str(price["output"])))) / Decimal(1_000_000)
+        self._log(tier=tier, model=model, prompt_version=prompt_version, purpose=purpose,
+                  event_id=None, in_tokens=in_tok, cached_tokens=cached, out_tokens=out_tok,
+                  cost_usd=cost, batch_id=batch_id, latency_ms=None, status=status,
+                  escalation_reason=None, error=error)
+        return cost

@@ -23,6 +23,14 @@ prices:
     input: 0.10
     output: 0.50
 
+# Batch API prices (USD per million tokens), used for every backfill request (§6). Copied
+# from the pricing page by Sravanth like the table above - never derived by assuming the
+# Batch discount. A model missing here cannot be batched: the client refuses.
+batch_prices: {}
+  # gpt-6-luna:
+  #   input: <from the pricing page>
+  #   output: <from the pricing page>
+
 caps:
   # Set 24 Sep 2026 (night, continued) by Sravanth directly, so the first day's ~124-filing
   # run could proceed - estimated well under $0.10 at gpt-6-luna's prices, so $1 leaves

@@ -318,6 +318,7 @@ def process_pending(
     conn, raw_rows: list[dict], *, fetcher, client: LlmClient, work_dir: Path,
     max_requests: int | None = None, process_url_fn=_real_process_url,
     get_text_fn=documents_store.get_text,
+    retry_statuses: tuple[str, ...] = orders_store.PENDING_STATUSES,
 ) -> Summary:
     """The single code path both `--date`/`--from`/`--to` and `--follow` call.
 
@@ -327,7 +328,8 @@ def process_pending(
     """
     summary = Summary()
     candidate_ids = [r["id"] for r in raw_rows]
-    pending_ids = orders_store.pending_raw_ids(conn, candidate_ids)
+    pending_ids = orders_store.pending_raw_ids(conn, candidate_ids,
+                                               retry_statuses=retry_statuses)
     to_process = [r for r in raw_rows if r["id"] in pending_ids]
 
     # Classify before counting: `--max-requests` guards the number of *downloads* this run

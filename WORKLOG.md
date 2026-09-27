@@ -1670,3 +1670,36 @@ holiday would be retried as an error. One request against a known holiday settle
   treated as material but not downloaded, which deviates from §5.4's "unknown ->
   catch_all" because D7's widening would otherwise download them; four additions to
   red_flag.
+
+### 27 Sep 2026 (afternoon, cont.) — B6 (part): backfill document stage and the Batch API path
+
+- `llm/client.py`: `budget="backfill"`, a single $3 cap across every purpose, measured over
+  `llm_calls` in the backfill database **plus the worst-case estimate of every uncollected
+  Batch**, because that money is committed before any `llm_calls` row exists. Also
+  `extraction_body()` (so the live call and a Batch line send byte-identical requests),
+  `model_for(tier)`, and `submit_batch` / `retrieve_batch` / `read_file` /
+  `log_batch_result`. Batch cost is computed only from `batch_prices` in
+  `config/llm.yaml`. That section ships empty, so batching is refused until Sravanth
+  copies the prices in, and the 50% discount is never assumed.
+- `extractor/llm_extract.py`: `interpret()` and `build_request()` split out, so a Batch
+  result is judged by exactly the live call's rules: provenance, suspect scale, unknown
+  judgment fields.
+- `backfill/documents.py`: the backfill's document stage reuses the live
+  `process_pending` unchanged. A `BatchDeferringClient` sends OCR to the real client (the
+  recorded exception) and refuses extraction, which the pipeline already records as
+  `pending_llm`. `pending_llm` is not retried here, so waiting on a Batch never
+  re-downloads a PDF (`retry_statuses`, new in `orders/store.py` and `orders/run.py`).
+  `expected()` counts downloads and GB before any are made.
+- `backfill/batch.py`: `submit` (one request per `pending_llm` filing, chunked,
+  cap-checked first) and `collect` (applies results; one retry with the error fed back,
+  then `needs_review`; a failed or expired request is resubmitted at most three times).
+  Migration 0009: `llm_batches`, `llm_batch_items`.
+- `tests/unit/conftest.py`: a `scratch_conn` fixture that runs every migration into a
+  throwaway schema in `tradebot_backfill` and drops it afterwards. Code that commits, as
+  the backfill stages do on purpose, can then be tested against real SQL, which a
+  rollback-only transaction cannot do. It never touches the live database.
+
+**Not yet run against a real database:** the Batch round-trip tests
+(`test_backfill_batch_db.py`) and the market store test skip until `tradebot_backfill`
+exists. 265 pass, 4 skipped. The live processes have been down since about 12:55 IST,
+waiting on Sravanth to restart them.

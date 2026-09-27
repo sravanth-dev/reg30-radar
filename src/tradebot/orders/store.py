@@ -95,9 +95,14 @@ def existing_for(conn, raw_ids: list[int]) -> dict[int, dict]:
             for r in rows}
 
 
-def pending_raw_ids(conn, raw_ids: list[int], *, now: datetime | None = None) -> set[int]:
+def pending_raw_ids(conn, raw_ids: list[int], *, now: datetime | None = None,
+                    retry_statuses: tuple[str, ...] = PENDING_STATUSES) -> set[int]:
     """Which of these ids still need processing: no row at all, or a retryable row that is
     under the attempt cap and past its retry delay.
+
+    The backfill passes `retry_statuses=("download_failed",)`: its `pending_llm` rows are
+    waiting on a Batch (backfill/batch.py), and retrying them here would download the PDF
+    again for nothing.
     """
     if not raw_ids:
         return set()
@@ -109,7 +114,7 @@ def pending_raw_ids(conn, raw_ids: list[int], *, now: datetime | None = None) ->
         if info is None:
             pending.add(rid)
             continue
-        if info["review_status"] not in PENDING_STATUSES:
+        if info["review_status"] not in retry_statuses:
             continue
         if info["attempts"] >= MAX_ATTEMPTS:
             continue

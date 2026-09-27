@@ -89,6 +89,44 @@ def _parse_and_validate(raw_text: str) -> OrderFields:
     return OrderFields(**data)
 
 
+def interpret(document_text: str, raw_text: str) -> ExtractResult:
+    """What one model response means for one filing. Shared by the live call below and the
+    backfill's Batch results (backfill/batch.py), so both are judged by identical rules.
+
+    Raises json.JSONDecodeError or pydantic.ValidationError on an invalid response; the
+    caller decides whether that earns the one retry §6 allows.
+    """
+    fields = _parse_and_validate(raw_text)
+    if not fields.is_order_announcement:
+        return ExtractResult(review_status="not_order", fields=fields)
+
+    money = parse_money(fields.consideration_raw)
+    provenance_ok = verify_provenance(document_text, fields.value_span, money.value_inr)
+    # A suspect scale (units/money.py) is never verified, whatever provenance says.
+    status = "verified" if provenance_ok and not is_suspect(money) else "needs_review"
+    # §6 trigger 3: a judgment field coming back unknown is itself an escalation trigger.
+    # With no second tier to escalate to it lands in review, which is the correct outcome
+    # of the trigger firing with nowhere further to go.
+    if fields.company_is_recipient == "unknown" or fields.stage == "unknown":
+        status = "needs_review"
+    return ExtractResult(review_status=status, fields=fields, value_inr=money.value_inr,
+                         provenance_ok=provenance_ok)
+
+
+RETRY_NOTE = ("Your previous response was invalid and could not be used: {error}. Return a "
+              "single JSON object that matches the schema exactly, with every field present.")
+
+
+def build_request(document_text: str, *, client: LlmClient, retry_error: str | None = None,
+                  tier: str = "t1") -> dict:
+    """The request body for one filing, for a Batch file (backfill/batch.py)."""
+    return client.extraction_body(
+        document_text, prompt_version=PROMPT_VERSION, schema_name=SCHEMA_NAME,
+        json_schema=ORDER_FIELDS_SCHEMA, tier=tier,
+        retry_note=RETRY_NOTE.format(error=retry_error) if retry_error else None,
+    )
+
+
 def extract_order_fields(document_text: str, *, client: LlmClient) -> ExtractResult:
     """One order filing, T1. Retries once on an invalid response with the error fed back
     (§6), then gives up to `needs_review` rather than looping. A cap refusal or any other
@@ -110,36 +148,17 @@ def extract_order_fields(document_text: str, *, client: LlmClient) -> ExtractRes
 
         total_cost += result.cost_usd
         try:
-            fields = _parse_and_validate(result.text)
+            outcome = interpret(document_text, result.text)
         except (json.JSONDecodeError, ValidationError) as exc:
             if attempt == 1:
-                retry_note = (
-                    "Your previous response was invalid and could not be used: "
-                    f"{exc}. Return a single JSON object that matches the schema exactly, "
-                    "with every field present."
-                )
+                retry_note = RETRY_NOTE.format(error=exc)
                 continue
             return ExtractResult(review_status="needs_review", cost_usd=total_cost,
                                   attempts=attempt, error=f"invalid response twice: {exc}")
 
-        if not fields.is_order_announcement:
-            return ExtractResult(review_status="not_order", fields=fields,
-                                  cost_usd=total_cost, attempts=attempt)
-
-        money = parse_money(fields.consideration_raw)
-        provenance_ok = verify_provenance(document_text, fields.value_span, money.value_inr)
-        # A suspect scale (units/money.py) is never verified, whatever provenance says.
-        status = "verified" if provenance_ok and not is_suspect(money) else "needs_review"
-        # §6 trigger 3: a judgment field coming back unknown is itself an escalation
-        # trigger. There is no tier 2 configured (single-tier, Sravanth's choice this
-        # session), so it lands in review rather than a second model - which is the
-        # correct outcome of the trigger firing with nowhere further to escalate to.
-        if fields.company_is_recipient == "unknown" or fields.stage == "unknown":
-            status = "needs_review"
-        return ExtractResult(
-            review_status=status, fields=fields, value_inr=money.value_inr,
-            provenance_ok=provenance_ok, cost_usd=total_cost, attempts=attempt,
-        )
+        outcome.cost_usd = total_cost
+        outcome.attempts = attempt
+        return outcome
 
     # Unreachable (the loop always returns), but keeps the function's return type honest.
     return ExtractResult(review_status="needs_review", cost_usd=total_cost, attempts=2,

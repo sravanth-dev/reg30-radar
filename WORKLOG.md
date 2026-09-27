@@ -29,23 +29,29 @@ measure-and-verdict half in one session: market data, the frozen company univers
 company-wise announcement fetch, the full category map, the document/Batch-extraction
 pipeline reused for the backfill, event merging, the §6 state machine and recheck,
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
-study, and the report writer with D22's verdict. 338 tests pass.
+study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now**: nothing is running. **The company-wise announcements fetch is complete**
-(27 Sep, 22:12 IST): all 1,583 listed companies, 162,251 filings in `tradebot_backfill`,
-0 report dates below the 95% coverage floor so far. Band history is complete too (575
-of 575 days). Two real bugs were found and fixed on the way (see the 27 Sep night
-entries): the original-vs-current ISIN filter that had emptied 85 companies, and the
-first attempt dying with its session. **The laptop's live collector, `orders --follow`
-and `sheets` are still stopped** and can be restarted now: NSE's announcements host is
-free again.
+**Right now**: the backfill's `documents` stage is running **detached** (PID 21200, log
+`data/documents_tier1.log`, started 23:14 IST 27 Sep, ETA ~02:15): tonight's tier of
+Sravanth's "option B", the 2,138 order-category and headline-hit filings. The remaining
+24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
+`python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
+filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
+announcements fetch (1,583 companies, 162,251 filings) and band history are complete.
+**The laptop's live collector, `orders --follow` and `sheets` are still stopped.** The
+collector and `sheets` can be restarted any time (the collector uses www.nseindia.com,
+`documents` uses nsearchives); keep `orders --follow` stopped while `documents` runs, as
+both download from nsearchives, and catch it up afterwards with
+`python -m tradebot.orders --from ... --to ...`.
 
 **Blocking a real verdict, in order:**
 1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** `reconcile` has run with
    the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
-   23:45 entry). **Next is `documents`** (PDF downloads from nsearchives; one request
-   stream, so not while another NSE job runs), then the stages after it in the order
-   `backfill/__main__.py` lists.
+   "ISIN reissues handled" entry). **`documents` is running** (tier one tonight, see
+   above). After it: `batch-submit` / `batch-collect` (LLM extraction through the Batch
+   API, results within 24 h), `events`, `revenue` (event companies only), `calculate`,
+   `recheck-submit` / `recheck-collect`. **`study` only after every documents tier is
+   done**, or orders found only in a PDF body are missing from the verdict.
 1a. ~~**38 universe companies got a new ISIN during the window.**~~ **Fixed 27 Sep night**
    (Sravanth approved): the study joins prices across a company's reissued ISINs and
    treats the switch day as a capital action.
@@ -2278,7 +2284,7 @@ checkpoint, and a revised filing counts from the later of `broadcast_Date` and
 backfill event are fetched, since TTM feeds nothing but event ratios; the stage therefore
 runs after `events`, as `backfill/__main__.py` already orders it.
 
-### 27 Sep 2026 (night, 23:45) — ISIN reissues handled; reconcile corrected to 96.6%
+### 27 Sep 2026 (night, cont.) — ISIN reissues handled; reconcile corrected to 96.6%
 
 **ISIN reissues (Sravanth: "okay let's do what you have said").** `study_data.load_market`
 reads a company's prices and market caps under every ISIN sharing its first nine
@@ -2314,7 +2320,7 @@ band history is loaded only into the backfill database.
 
 351 tests pass.
 
-### 27 Sep 2026 (night, 23:59) — revenue scope confirmed; the documents stage priced
+### 27 Sep 2026 (night, cont.) — revenue scope confirmed; the documents stage priced
 
 **Decided (Sravanth): the revenue stage fetches event companies only**, as built in
 `revenue/load.py`. It therefore cannot run alongside `documents`: the order is
@@ -2337,3 +2343,23 @@ catch-all have a headline keyword hit. Restricted by company:
 Put to Sravanth: everything (~33 GB), everything except the control group's catch-all
 (~26 GB), or order categories plus headline hits (~2 GB, missing about one order in four).
 Mobile data on the hotspot (D19) is his constraint to judge. Not started.
+
+### 27 Sep 2026 (night, 23:14) — documents stage: option B, tonight's tier running
+
+**Decided (Sravanth): option B, with option C finished tonight.** Built into
+`backfill/documents.py`: filings are fetched in tiers - order categories (1,385), then
+catch-all with a headline keyword hit (753), then catch-all that only a PDF-body check
+could make an order (24,425) - so a run cut short has the most likely orders; and a
+body-check-only catch-all filing is left out for a company above ₹50,000 cr on 22 Sep 2025
+(7,221 files, the control group). The ceiling is `documents.other_catch_all_max_mcap_crore`
+in `config/backfill.yaml`. **Slip caught before running**: my first edit added a second
+top-level `documents:` key; YAML silently lets the later one win, so the ceiling read as
+null and `expected` reported 0 left out. Merged into the existing section, which also
+holds `max_requests_per_run: 3000`, a key nothing reads (the CLI's `--max-requests` is the
+real limit). `expected` now reports each tier. 2 new tests on real SQL; 353 pass.
+
+**Launched 23:14 IST, detached** (PID 21200), `--max-requests 2138`, over the `POCO X7`
+hotspot, 108 GB free on the laptop. First two minutes: 26 documents (~5 s each, so ETA
+~02:15), 8 verified by the T0 parser, 18 waiting on Batch, 1 download failed (retried on
+the next run). Two vision-OCR calls so far, both `purpose = 'ocr'`, $0.0017 in all from
+the backfill's $3 budget; order extraction stays deferred to Batch as designed.

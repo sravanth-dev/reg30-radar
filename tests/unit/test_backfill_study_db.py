@@ -54,6 +54,12 @@ def seed(conn, value_cr="200", mcap_cr="1000"):
         " value_inr, currency, company_is_recipient, state) values (%s, 'TEST', %s, '{1}', 1,"
         " 'order_win', %s, 'INR', true, 'extracted')",
         (ISIN, datetime.combine(EVENT_DAY, time(11, 0), IST), Decimal(value_cr) * CR))
+    # A band snapshot and one change, so study()'s price-band enrichment has something real
+    # to reconstruct: on EVENT_DAY (before the 1 Sep 2026 change) the band was 5%.
+    conn.execute("insert into band_snapshot (symbol, series, band, as_of_date)"
+                 " values ('TEST', 'EQ', '10', %s)", (date(2026, 9, 27),))
+    conn.execute("insert into band_changes (symbol, series, change_date, from_band, to_band)"
+                 " values ('TEST', 'EQ', '2026-09-01', '5', '10')")
     conn.commit()
 
 
@@ -81,3 +87,8 @@ def test_calculate_verifies_a_modest_order_and_study_writes_a_report(scratch_con
     text = (tmp_path / f"backfill_{date.today().isoformat()}.md").read_text(encoding="utf-8")
     assert "VERDICT: INSUFFICIENT DATA" in text and "10.00%" in text   # +10% excess at +5
     assert scratch_conn.execute("select count(*) from event_results").fetchone()[0] == 1
+
+    csv_path = tmp_path / f"backfill_{date.today().isoformat()}_events.csv"
+    row = csv_path.read_text(encoding="utf-8").splitlines()[1].split(",")
+    header = csv_path.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert dict(zip(header, row))["price_band"] == "5"   # reconstructed as of EVENT_DAY

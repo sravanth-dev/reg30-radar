@@ -32,6 +32,7 @@ from tradebot.backfill import (
     announcements, batch, documents, event_study, events, recheck, report, study_data,
     universe,
 )
+from tradebot.market import bands as band_history
 from tradebot.common.calendar import IST
 from tradebot.common.config import load_yaml
 from tradebot.common.db import backfill_url, connect
@@ -95,6 +96,16 @@ def study(conn, cfg) -> dict:
     market = _market_for(conn, cfg, evs)
     since, until = _window(cfg)
     results = [event_study.measure(ev, market) for ev in events_in_window(evs, since, until)]
+    # Price band (Sravanth's rule 3, §11) - a targeted lookup for exactly the
+    # (symbol, series, day0) each event actually resolved to, not a full day-by-day
+    # series for the whole window; band_history.reconstruct() never guesses a value it
+    # cannot derive, so an event outside the loaded band-change window or for a
+    # delisted symbol simply keeps price_band = None.
+    band_pairs = [(r.symbol, r.series, r.day0) for r in results if r.day0 and r.series]
+    band_lookup = band_history.reconstruct(conn, band_pairs)
+    for r in results:
+        if r.day0 and r.series:
+            r.price_band = band_lookup.get((r.symbol, r.series, r.day0))
     split = date.fromordinal(since.toordinal() + (until.toordinal() - since.toordinal()) // 2)
     band = tuple(cfg["analysis"]["primary_mcap_crore"])
     v = event_study.verdict(event_study.primary(results, band), split)

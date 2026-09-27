@@ -2038,3 +2038,37 @@ own isin is null. 3 new tests on real SQL (`tests/unit/test_study_data.py`), inc
 confirming a null-isin row for a *different* symbol is correctly never matched. 328 pass.
 
 Announcements fetch: 150/1,583, 0 failures, 18:27 IST.
+
+### 27 Sep 2026 (evening, cont.) — richer per-event detail built; a real endpoint capture, still incomplete
+
+**Price band, built end to end** (Sravanth: "let's get the richer per-event detail"):
+`src/tradebot/market/bands.py` reconstructs any symbol's exact band (2/5/10/20%) on any past
+date, walking NSE's daily `eq_band_changes_{ddmmyyyy}.csv` change log backward from the
+current `sec_list.csv` snapshot. Confirmed live that a day with no changes gives a clean
+HTTP 404 (checked on two Sundays), not an empty 200 - the loader treats that as "checked,
+nothing published," matching D27's own past-date pattern. Migration 0013
+(`band_snapshot`, `band_changes`, `band_days`). Wired into `EventResult.price_band`, set
+once per event as of day 0 by `study()` after `measure()` runs - a targeted lookup, kept
+out of `event_study.py` so that module stays a pure function of `Market` with no database
+of its own. 5 new tests, one of which caught a real issue before it ran: `reconstruct()`'s
+first draft matched `(symbol, series) = any(...)` in SQL, which needs an array of Postgres
+composite rows that a Python list of tuples does not reliably adapt to - fixed to filter by
+symbol alone in SQL and narrow to the exact pair in Python. The real fetch is running now
+(started 18:49, background, 575 calendar days including weekends since a band change is an
+exchange notice, not tied to a trading day; 40 done as of 18:52, 0 errors). 333 tests pass.
+
+**Sravanth sent a real cURL capture for the Integrated Filing endpoint.** It reveals a
+genuinely new, previously unknown detail endpoint,
+`https://www.nseindia.com/api/corporates-financial-results-data`, which takes a `params`
+string and `seq_id` copied directly from a `results` listing row (recorded in
+`config/sources.yaml` as `nse.results_detail`, called only with values a listing row
+already supplied, never constructed from scratch). **But the captured example was
+Reliance's Q3 FY25 (Oct-Dec 2024), filed around January 2025 - before the April 2025
+cutover** - so it confirms a detail endpoint exists without yet proving anything reachable
+past the cutover. Asked him for one more capture, this time of a quarter filed after April
+2025 (Q1 FY26 or later). Deliberately did not test this myself: `corporates-financial-
+results`/`-data` are both on `www.nseindia.com`, the same host the announcements fetch is
+actively polling right now, and running a second request stream there at the same time
+would break the one-request-at-a-time rule the whole night has held to. Verification waits
+until either he sends another capture or the announcements fetch finishes and frees the
+host.

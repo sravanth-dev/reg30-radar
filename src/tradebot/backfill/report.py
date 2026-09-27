@@ -125,7 +125,8 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
 
 CSV_FIELDS = ["event_id", "symbol", "isin", "event_ts", "day0", "valuation_date", "mcap_cr",
               "value_to_ttm", "next12m_to_ttm", "value_to_mcap", "materiality_flags",
-              "company_is_recipient", "series", *[f"excess_{h}" for h in HORIZONS],
+              "company_is_recipient", "series", "price_band",
+              *[f"excess_{h}" for h in HORIZONS],
               *[f"excess_from_open_{h}" for h in HORIZONS], "pre_5", "pre_20",
               "volume_ratio", "median_traded_value_60", "history_days", "locked_0",
               "locked_1", "locked_2", "locked_3", "after_hours", "exclusions",
@@ -143,6 +144,7 @@ def row(r: EventResult) -> dict:
         "value_to_mcap": m and m.value_to_mcap,
         "materiality_flags": ";".join(sorted(m.flags)) if m else "",
         "company_is_recipient": r.company_is_recipient, "series": r.series,
+        "price_band": r.price_band,
         **{f"excess_{h}": r.excess.get(h) for h in HORIZONS},
         **{f"excess_from_open_{h}": r.excess_from_open.get(h) for h in HORIZONS},
         "pre_5": r.pre_excess.get(5), "pre_20": r.pre_excess.get(20),

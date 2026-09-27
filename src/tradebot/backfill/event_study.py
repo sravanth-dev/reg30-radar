@@ -135,6 +135,11 @@ class EventResult:
     leadership: bool = False
     muhurat_day0: bool = False
     days_since_previous_order: int | None = None
+    # Set after measure() returns, by backfill/__main__.py's study(): the actual band
+    # (2/5/10/20%) on day0, reconstructed from NSE's daily change log (market/bands.py,
+    # §11, 27 Sep 2026 - rule 3). Kept out of measure() itself so this module stays a
+    # pure function of Market, with no database dependency of its own.
+    price_band: str | None = None
     company_is_recipient: bool | None = None
 
     @property

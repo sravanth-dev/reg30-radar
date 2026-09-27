@@ -43,6 +43,17 @@ nse:
       index: equities
       period: Quarterly
 
+  # Found from a real browser capture (Sravanth, 27 Sep 2026): a detail view for one
+  # listing row, not yet confirmed to reach past the April-2025 cutover (§5.8). Its
+  # parameters are copied straight from that row's own fields (`params`, `seqNumber`,
+  # `industry`, `oldNewFlag` -> frOldNewFlag, `reInd` -> ind, `format`), so this endpoint
+  # is only ever called with values a `results` listing row already supplied - never
+  # constructed from scratch.
+  results_detail:
+    url: https://www.nseindia.com/api/corporates-financial-results-data
+    params:
+      index: equities
+
   # Verified in Spike B (ARCHITECTURE.md Sect.5.2, Sect.5.9).
   archives:
     udiff_cm: https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip

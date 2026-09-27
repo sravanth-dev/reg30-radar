@@ -27,6 +27,8 @@ class PollResult:
     latency_ms: int
     rows: list[dict] = field(default_factory=list)
     error: str | None = None
+    # `totalCount`, for endpoints that page their answer; lets a caller see a truncated page
+    total: int | None = None
 
 
 class NseClient:
@@ -79,6 +81,12 @@ class NseClient:
         docstring for what that does and does not cover."""
         return self._get_json({"symbol": symbol}, endpoint="results")
 
+    def fetch_integrated_results(self, symbol: str) -> PollResult:
+        """One company's "Integrated Filing - Financials" results, from the quarter ended
+        31-Mar-2025 on (Spike C2): `config/sources.yaml`'s `nse.integrated_results`. One
+        page of 20 rows; `PollResult.total` says whether that was all of them."""
+        return self._get_json({"symbol": symbol}, endpoint="integrated_results")
+
     def _get_json(self, extra_params: dict, *, endpoint: str = "announcements") -> PollResult:
         """One GET against `config/sources.yaml`'s `nse.<endpoint>` with its configured
         parameters plus `extra_params`.
@@ -110,7 +118,8 @@ class NseClient:
 
             body = r.json()
             rows = body if isinstance(body, list) else body.get("data", [])
-            return PollResult(True, 200, latency, rows=list(rows))
+            total = body.get("totalCount") if isinstance(body, dict) else None
+            return PollResult(True, 200, latency, rows=list(rows), total=total)
         except Exception as exc:
             latency = int((time.monotonic() - started) * 1000)
             return PollResult(False, None, latency, error=f"{type(exc).__name__}: {exc}")

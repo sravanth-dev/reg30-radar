@@ -54,15 +54,11 @@ free again.
    exploratory, so don't edit it further without asking.
 3. **`config/category_map.yaml` is approved and in force** (146 categories, 8 buckets
    including a new `leadership` confounder class) — done.
-4. **The post-April-2025 "Integrated Filing" results API is still unknown.** The
-   pre-2025 "Financial Results" endpoint is confirmed working and its parser is fixed and
-   tested (see the Spike C entry), but the study window sits almost entirely after that
-   cutover, so **every** event gets `TTM = None` until this is found (corrected 27 Sep
-   night from "most": the earliest event, 22 Sep 2025, already needs Q4 FY25 and Q1 FY26,
-   both filed after the cutover). Needs a browser capture from NSE's **Integrated Filing**
-   page, not the "Financial Results" page - the capture received twice so far came from
-   the latter and is a pre-cutover quarter. Two analogous URL guesses already 404'd and a
-   third was not spent.
+4. ~~**The post-April-2025 "Integrated Filing" results API is still unknown.**~~ **Found and
+   verified (Spike C2, 27 Sep night)** from Sravanth's capture: `api/integrated-filing-results`,
+   back to the quarter ended 31-Mar-2025, parsed unchanged by `revenue/xbrl.py`.
+   `revenue/load.py` now reads both results listings (ARCHITECTURE §5.8). Not yet run: it
+   fetches event companies only, so it runs after the `events` stage.
 5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
    ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
    name a stronger model later). Both usable as they stand.
@@ -2212,3 +2208,71 @@ exclude-don't-adjust rule) could turn a 1:2 split into a fake −50% return. Pro
 Sravanth: merge by the 9-character prefix, and treat the first day of a new ISIN as a
 capital action in the window. It only matters at the `study` stage, so nothing before it
 is blocked.
+
+### 27 Sep 2026 (night, 23:00) — exclusions, reconcile, Spike C2 and the revenue loader
+
+Sravanth's answers to the 22:15 questions: restart the live processes later (he will);
+**yes** to the ISIN-reissue proposal; **exclude** ABBOTINDIA, BAYERCROP and MCX for now;
+**run** reconcile. He also sent a capture from the Integrated Filing page.
+
+**Exclusions are config, not a database edit.** `config/backfill.yaml` gains
+`universe.exclude_companies` (ISIN -> reason), and `universe.apply_exclusions` (was
+`apply_industry_exclusions`) re-applies it with the industry list after every `universe`
+and `announcements` run, so a rebuild cannot silently drop it. The three are now excluded
+("by hand: ..."). **A latent bug fixed on the way**: the old function read
+`exclude_industries` from the `universe:` section, but the config has it under
+`analysis:`, so any industry exclusion would have been ignored. The list is empty, so
+nothing changed. Lesson from 27 Sep evening still applies: if Sravanth has
+`config/backfill.yaml` open, he should reload it before saving.
+
+**Reconcile ran: 86 of 246 report dates below 95%, but mostly our window model, not the
+API.** Measured (database only):
+- The ±1-day window is wrong after weekends and holidays. The PR bundle for a date covers
+  everything since the previous report, so Monday's bundle holds Friday evening and the
+  weekend (RVNL disseminated Sat 20 Jun 09:00 and ZAGGLE Fri 19 Jun 17:55, both in
+  Monday 22 Jun's bundle, which matched 0 of 13). Spike A2 tested a Friday, where ±1
+  happens to be right. With the window "previous report date .. report date", order-filer
+  coverage goes from **81.9% to 95.9%** and below-floor days from 86 to 44. 44 of the 86
+  failing days had a 3-day gap to the previous report.
+- The offset histogram counts every in-window API order filing of a matched company,
+  including a separate next-day filing, so its +1 counts (95) do not by themselves mean the
+  window is wrong. And it cannot show a too-narrow window at all, since it only sees
+  matches inside it.
+- **Symbol changes**: the API files a company's whole history under its current symbol
+  (LTIM's 153 filings sit under `LTM`, ARISINFRA's under `ARIS`; the old symbol returns 0),
+  while older bundles use the old one. Reconcile matches on symbol, so it misses them. This
+  answers §5.1's Verify item: the current symbol's query covers filings under earlier ones.
+- **Category mismatch between NSE's two sources**: the rest are mostly bundle lines
+  "Bagging/Receiving of orders/contracts (Sub-para 4-Para B)" whose API record is
+  "Updates"/"Press Release" (CAPACITE "Work order", HGINFRA "declared as L-1 bidder",
+  CENTENKA). These are catch-all filings, which D7 downloads and the prefilter catches, so
+  they are reachable by the pipeline, just not counted as matches.
+- **Fix pending** (next): window from the previous report date, companies matched by ISIN
+  rather than symbol, and a separate count of bundle orders found only under a catch-all
+  category.
+
+**Spike C2: the Integrated Filing endpoint, 6/8 requests.** `spikes/spike_c2_integrated_filing.py`,
+one persisted counter, warm-up counted. `GET /api/integrated-filing-results` answers a
+warmed-up script; `issuer` is not needed (identical 8,901 bytes without it); BEL has 12
+rows, 31-Mar-2025 to 30-Jun-2026, both bases, all `type_Sub: Original`. The three
+consolidated XBRLs downloaded parse unchanged: Q1 FY27 ₹55,469,800,000 (matches
+Sravanth's check); FY26 − 9M = ₹102,244,300,000 = the Q4 BEL's own filing states. The
+three files are committed as `tests/fixtures/xbrl/` for a permanent regression test.
+Sravanth's note said the file was ~300 KB; the XBRL is 19 KB (the ~300 KB is presumably
+the iXBRL HTML view).
+
+**`revenue/load.py` rewritten to use both listings**, with three problems in the old
+version fixed before it ever ran:
+1. It ignored `window.results_from` and would have downloaded every filing back to 2018,
+   both bases: about 50 files per company, ~79,000 requests (~66 h) for the universe. Now
+   only quarters ending on or after 1 Sep 2024: about 18 requests per company.
+2. It counted only the listing call against `--max-requests`, never the XBRL downloads.
+   Now every request counts, and a company is not started unless 18 more fit.
+3. It checkpointed a company even when some downloads failed, leaving a quarter silently
+   missing (TTM null). Now a failed download leaves it to be retried.
+Also: a company is queried under its **latest symbol by issuer** (LTIM -> LTM, SABTNL ->
+AQYLON), a truncated integrated listing (totalCount > rows) is logged and recorded in the
+checkpoint, and a revised filing counts from the later of `broadcast_Date` and
+`revised_Date`. **Decision taken, to be confirmed by Sravanth**: only companies with a
+backfill event are fetched, since TTM feeds nothing but event ratios; the stage therefore
+runs after `events`, as `backfill/__main__.py` already orders it.

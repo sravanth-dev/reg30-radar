@@ -168,13 +168,14 @@ def main(argv: list[str] | None = None) -> int:
     with connect(backfill_url()) as conn:
         client = lambda: LlmClient(conn=conn, budget="backfill")   # noqa: E731
         if args.stage == "universe":
-            out = {"companies": universe.build(conn, cfg)}
+            out = {"companies": universe.build(conn, cfg),
+                   "excluded": universe.apply_exclusions(conn, cfg)}
         elif args.stage == "expected":
             out = {**universe.expected_counts(conn, since, until),
                    "documents (after the announcements stage)": documents.expected(conn, since, until)}
         elif args.stage == "announcements":
             out = announcements.run(conn, cfg["window"], max_requests=args.max_requests)
-            universe.apply_industry_exclusions(conn, cfg)
+            universe.apply_exclusions(conn, cfg)
         elif args.stage == "reconcile":
             out = announcements.reconcile_window(conn, since, until)
         elif args.stage == "documents":

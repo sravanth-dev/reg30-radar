@@ -93,17 +93,23 @@ def build(conn, cfg: dict | None = None) -> int:
     return len(rows)
 
 
-def apply_industry_exclusions(conn, cfg: dict | None = None) -> int:
-    """Mark companies whose smIndustry is on the exclusion list. Runs after the
-    announcements stage has filled `industry`. Returns how many are excluded."""
+def apply_exclusions(conn, cfg: dict | None = None) -> int:
+    """Mark excluded companies: by hand (`universe.exclude_companies`, ISIN -> reason) and
+    by industry (`analysis.exclude_industries`, which needs the announcements stage to have
+    filled `industry`). Both are cleared and re-applied from config on every call, so the
+    config is the one record of who is out and why. Returns how many are excluded."""
     cfg = cfg or config()
-    excluded = list(cfg["universe"].get("exclude_industries") or [])
+    by_hand = dict(cfg["universe"].get("exclude_companies") or {})
+    industries = list(cfg["analysis"].get("exclude_industries") or [])
     conn.execute("update backfill_universe set excluded_reason = null "
-                 "where excluded_reason like %s", ("industry:%",))
-    if excluded:
+                 "where excluded_reason like 'industry:%' or excluded_reason like 'by hand:%'")
+    if industries:
         conn.execute(
             "update backfill_universe set excluded_reason = 'industry: ' || industry "
-            "where industry = any(%s)", (excluded,))
+            "where industry = any(%s)", (industries,))
+    for isin, reason in by_hand.items():
+        conn.execute("update backfill_universe set excluded_reason = %s where isin = %s",
+                     (f"by hand: {reason}", isin))
     conn.commit()
     return conn.execute("select count(*) from backfill_universe "
                         "where excluded_reason is not null").fetchone()[0]

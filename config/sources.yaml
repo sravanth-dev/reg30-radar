@@ -54,6 +54,20 @@ nse:
     params:
       index: equities
 
+  # The post-April-2025 "Integrated Filing - Financials" results (ARCHITECTURE §5.8). Found
+  # from Sravanth's capture of NSE's Integrated Filing page and verified by Spike C2 (27 Sep
+  # 2026): answers a warmed-up script session, the page's `issuer` parameter is not needed
+  # (same bytes without it), and BEL's 12 rows reach back to the quarter ended 31-Mar-2025,
+  # where the `results` listing above stops at 31-Dec-2024. Returns {data, totalCount}.
+  integrated_results:
+    url: https://www.nseindia.com/api/integrated-filing-results
+    params:
+      index: equities
+      period_ended: all
+      type: Integrated Filing- Financials
+      page: 1
+      size: 20
+
   # Verified in Spike B (ARCHITECTURE.md Sect.5.2, Sect.5.9).
   archives:
     udiff_cm: https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip

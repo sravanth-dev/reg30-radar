@@ -34,6 +34,15 @@ universe:
   # added back without re-running the backfill. The analysis bands below narrow it.
   mcap_min_crore: 500
   mcap_max_crore: null
+  # Companies taken out by hand, with the reason (Sravanth, 27 Sep 2026). Re-applied after
+  # every `universe` and `announcements` run, so a rebuild cannot silently undo it.
+  # These three: the symbol= API and every PR bundle in the window hold no filing from
+  # them; likely BSE-listed and only permitted to trade on NSE (not verified), and BSE is
+  # out of Phase 1 (D26).
+  exclude_companies:
+    INE358A01014: no NSE filings in the window (ABBOTINDIA)
+    INE462A01022: no NSE filings in the window (BAYERCROP)
+    INE745G01035: no NSE filings in the window (MCX)
 
 # ANALYSIS bands, applied per event at its own valuation date (notes rule 1), never at
 # collection. Decided 27 Sep 2026.

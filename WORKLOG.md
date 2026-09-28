@@ -31,15 +31,10 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now: nothing is running.** Sravanth stopped the backfill at 00:43 IST on 28 Sep to
-resume it in the morning session. The `documents` stage is part-way through tonight's
-tier of his "option B" (the 2,138 order-category and headline-hit filings): 941 done,
-**1,197 left** (442 order categories, 753 headline hits, and APTECHT and RAILTEL, both
-flagged "interrupted" and retried automatically). **To resume**: check the laptop is on
-the POCO X7 hotspot, run `python -m tradebot.backfill expected`, then
-`python -m tradebot.backfill documents --max-requests <order categories + headline hits>`
-(1,197 if nothing has changed), detached so it survives the session, with the laptop on
-mains power and sleep off. The remaining
+**Right now**: the backfill's `documents` stage is running **detached** (PID 19220, log
+`data/documents_tier1_morning.log`, started 10:06 IST 28 Sep, ETA ~11:50) on the last
+1,197 filings of the first tier of Sravanth's "option B" (2,138 order-category and
+headline-hit filings; 941 were done the night before). The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
 `python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
 filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
@@ -2417,3 +2412,12 @@ RAILTEL, and is downloaded again on the next run. The work directory is empty.
 extraction. The pipeline does not sweep `data/backfill_work/` on start, so check it is
 empty after any interrupted run, and delete what is there only after confirming no
 `documents` row has its hash.
+
+### 28 Sep 2026 (10:06) — morning session: documents tier one resumed
+
+Pre-flight: nothing running, `data/backfill_work/` empty, Postgres up, on the POCO X7
+hotspot, 118 GB free. **The laptop was on battery at 47%**; Sravanth asked to plug it in.
+`expected` gave 444 order categories + 753 headline hits = 1,197, matching last night's
+count exactly now that APTECHT and RAILTEL are past their retry delay. Launched detached
+(PID 19220), `--max-requests 1197`. First minute: 945 documents, and one of the two
+interrupted filings already reprocessed.

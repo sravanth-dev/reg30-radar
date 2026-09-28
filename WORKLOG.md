@@ -31,10 +31,12 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now**: the backfill's `documents` stage is running **detached** (PID 19220, log
-`data/documents_tier1_morning.log`, started 10:06 IST 28 Sep, ETA ~11:50) on the last
-1,197 filings of the first tier of Sravanth's "option B" (2,138 order-category and
-headline-hit filings; 941 were done the night before). The remaining
+**Right now**: the backfill's `documents` stage is running **detached** (PID 14936, log
+`data/documents_tier1_final.log`, started 12:01 IST 28 Sep, ETA ~12:25) on the last 240
+filings of the first tier of Sravanth's "option B" (2,138 order-category and headline-hit
+filings). The 10:06 run crashed at 11:45 on a Windows-only bug in `documents/fetch.py`,
+now fixed (see the 11:45 entry). The live collector and `sheets` are running again
+(Sravanth, 10:11 and 10:16); `orders --follow` stays off until `documents` is done. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
 `python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
 filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
@@ -2444,3 +2446,8 @@ collector (restarted by Sravanth at 10:11) and `sheets` (10:16), unrelated.
 done (~240 left). RVNL carries the pre-work "interrupted" marker and JISLJALEQS a read
 timeout from 10:41; both are retried. The leftover 0-byte file was not referenced by any
 document and was deleted; `data/backfill_work/` is empty.
+
+**Relaunched 12:01** (PID 14936), `--max-requests 240`, after waiting for RVNL's
+15-minute retry delay to pass (12:00:30) so the queue included it: 1 order category + 239
+headline hits, exactly the morning's remainder. JISLJALEQS and RVNL both processed on
+this run; RVNL's attachment came back as a real PDF, so the empty 200 was transient.

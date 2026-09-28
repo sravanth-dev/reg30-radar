@@ -31,18 +31,22 @@ pipeline reused for the backfill, event merging, the §6 state machine and reche
 point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
 study, and the report writer with D22's verdict. 353 tests pass.
 
-**Right now**: the backfill's `documents` stage is running **detached** (PID 14936, log
-`data/documents_tier1_final.log`, started 12:01 IST 28 Sep, ETA ~12:25) on the last 240
-filings of the first tier of Sravanth's "option B" (2,138 order-category and headline-hit
-filings). The 10:06 run crashed at 11:45 on a Windows-only bug in `documents/fetch.py`,
-now fixed (see the 11:45 entry). The live collector and `sheets` are running again
-(Sravanth, 10:11 and 10:16); `orders --follow` stays off until `documents` is done. The remaining
+**Right now: no backfill stage is running. The first `documents` tier is complete**
+(28 Sep, ~12:20): all 2,138 order-category and headline-hit filings of Sravanth's "option
+B" are downloaded, extracted and T0-parsed. The last run (12:01, 240 filings) had 0
+download failures. The 10:06 run crashed at 11:45 on a Windows-only bug in
+`documents/fetch.py`, now fixed (see the 11:45 entry). **`batch-submit` ran at 13:02**:
+1,415 filings the parser could not confirm went to OpenAI's Batch API in one batch
+(`batch_6aba1814a7188190aefc196d0b620e57`), worst-case cost $0.440437 against the $3
+backfill cap. Results are due within 24 hours; `batch-collect` reads them back, applying
+§6's rules exactly as a live call would. The live collector and `sheets` are running again
+(Sravanth restarted them at 10:11 and 10:16); `orders --follow` can now be restarted and
+caught up from 27 Sep, since `documents` is done for this tier. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
 `python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
 filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
 announcements fetch (1,583 companies, 162,251 filings) and band history are complete.
-**The laptop's live collector, `orders --follow` and `sheets` are still stopped.** The
-collector and `sheets` can be restarted any time (the collector uses www.nseindia.com,
+The collector and `sheets` can be restarted any time (the collector uses www.nseindia.com,
 `documents` uses nsearchives); keep `orders --follow` stopped while `documents` runs, as
 both download from nsearchives, and catch it up afterwards with
 `python -m tradebot.orders --from ... --to ...`.
@@ -50,11 +54,11 @@ both download from nsearchives, and catch it up afterwards with
 **Blocking a real verdict, in order:**
 1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** `reconcile` has run with
    the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
-   "ISIN reissues handled" entry). **`documents` is running** (tier one tonight, see
-   above). After it: `batch-submit` / `batch-collect` (LLM extraction through the Batch
-   API, results within 24 h), `events`, `revenue` (event companies only), `calculate`,
-   `recheck-submit` / `recheck-collect`. **`study` only after every documents tier is
-   done**, or orders found only in a PDF body are missing from the verdict.
+   "ISIN reissues handled" entry). **Tier one of `documents` is done, `batch-submit` has
+   run** (see above). Waiting on: `batch-collect` (within 24 h of 13:02, 28 Sep), then
+   `events`, `revenue` (event companies only), `calculate`, `recheck-submit` /
+   `recheck-collect`. **`study` only after every documents tier is done**, or orders found
+   only in a PDF body are missing from the verdict.
 1a. ~~**38 universe companies got a new ISIN during the window.**~~ **Fixed 27 Sep night**
    (Sravanth approved): the study joins prices across a company's reissued ISINs and
    treats the switch day as a capital action.
@@ -2451,3 +2455,28 @@ document and was deleted; `data/backfill_work/` is empty.
 15-minute retry delay to pass (12:00:30) so the queue included it: 1 order category + 239
 headline hits, exactly the morning's remainder. JISLJALEQS and RVNL both processed on
 this run; RVNL's attachment came back as a real PDF, so the empty 200 was transient.
+
+### 28 Sep 2026 (12:20-13:02) — first documents tier finished; batch-submit run
+
+The 12:01 relaunch (240 files) finished cleanly at ~12:20: 240/240 downloaded, 0 failures,
+0 not-order, 29 OCR pages. **Tier one of Sravanth's "option B" is complete**: every
+order-category and headline-hit filing in the window (2,138 total) is downloaded,
+extracted and T0-parsed. Roughly half were verified by the annexure parser alone with no
+model involved; the rest needed the LLM step.
+
+**`batch-submit` run at 13:02**: 1,415 `pending_llm` order-related filings became one
+Batch (`batch_6aba1814a7188190aefc196d0b620e57`), each request built from
+`prompts/order_extract_v1.md` plus that filing's extracted text only - fixed instructions,
+document text last, for the prefix-caching shape §6 asks for. `estimate_batch_cost`
+(worst case: full output allowance, ~1 token per 3 characters of input, no cached-input
+discount assumed) gave $0.440437 against the $3 backfill cap; the client records that as
+committed spend until the batch is collected, so a second submission can't double-spend
+the same headroom. 0 filings were left for review at this cap check (§6's 3-submission
+exhaustion limit not yet hit by anything). Results are due within 24 h; `batch-collect`
+will read them back through `llm_extract.interpret` - the same provenance check and
+retry-once rule as a live call - and log real cost to `llm_calls`.
+
+Explained to Sravanth in the same conversation: what happens at each remaining stage, and
+exactly what a Batch request contains (only the prompt and one filing's text; the model
+returns raw quoted values and spans, never a converted number or a computed ratio - §6's
+"the model never normalizes" rule, unchanged from the live path).

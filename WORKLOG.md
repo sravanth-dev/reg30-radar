@@ -2421,3 +2421,26 @@ hotspot, 118 GB free. **The laptop was on battery at 47%**; Sravanth asked to pl
 count exactly now that APTECHT and RAILTEL are past their retry delay. Launched detached
 (PID 19220), `--max-requests 1197`. First minute: 945 documents, and one of the two
 interrupted filings already reprocessed.
+
+### 28 Sep 2026 (11:45) — the documents run crashed on a Windows-only bug; fixed
+
+The morning run (PID 19220) **died at 11:45:30 with a traceback**, not at the end:
+`PermissionError: [WinError 32]` deleting `data/backfill_work/e3b0c442...b855.pdf`. That
+name is the SHA-256 of an empty file. NSE answered RVNL's 22 May 2026 "Updates"
+attachment (listed as 1.32 MB) with an **empty 200**; `documents/fetch.py` correctly judged
+it "not a PDF", but called `unlink()` **inside the `with` block that still held the file
+open**. Linux deletes an open file; Windows refuses, reporting "used by another process"
+even when the holder is the same process. The path had never run on this laptop, and no
+test covered it. The same bug sat on the live `orders --follow` path on the laptop (same
+fetcher); on the VPS (Linux) it would not have crashed.
+
+**Fixed**: the handle is closed before the delete. New test
+(`test_http_idle.py::test_a_response_that_is_not_a_pdf_is_refused_and_leaves_no_file`,
+empty body and an HTML page) reproduces the exact WinError 32 on the old code and passes
+on the new; 354 pass. The two other Python processes running at the time were the live
+collector (restarted by Sravanth at 10:11) and `sheets` (10:16), unrelated.
+
+**State at the crash, nothing lost**: 1,888 documents; 957 of the morning's 1,197 filings
+done (~240 left). RVNL carries the pre-work "interrupted" marker and JISLJALEQS a read
+timeout from 10:41; both are retried. The leftover 0-byte file was not referenced by any
+document and was deleted; `data/backfill_work/` is empty.

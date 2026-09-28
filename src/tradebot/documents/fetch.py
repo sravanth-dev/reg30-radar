@@ -119,11 +119,15 @@ class PdfFetcher:
         tmp.replace(final)
 
         with final.open("rb") as fh:
-            if fh.read(4) != b"%PDF":
-                # A 200 that is not a PDF is usually an Akamai interstitial. Keep nothing.
-                final.unlink(missing_ok=True)
-                return Fetched(False, sha256=sha, size_bytes=size, http_status=200,
-                               error="response is not a PDF")
+            is_pdf = fh.read(4) == b"%PDF"
+        if not is_pdf:
+            # A 200 that is not a PDF is usually an Akamai interstitial, or an empty body
+            # (RVNL's 1.32 MB attachment came back as 0 bytes, 28 Sep 2026). Keep nothing.
+            # Deleted only after the read handle is closed: Windows refuses to delete an
+            # open file, and doing it inside the `with` crashed the backfill that day.
+            final.unlink(missing_ok=True)
+            return Fetched(False, sha256=sha, size_bytes=size, http_status=200,
+                           error="response is not a PDF")
 
         return Fetched(True, path=final, sha256=sha, size_bytes=size, http_status=200)
 

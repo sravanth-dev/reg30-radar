@@ -135,3 +135,15 @@ def test_pdf_fetcher_closes_the_pool_after_an_idle_gap(clock, tmp_path: Path):
     clock.now += 300                     # --follow waits minutes between cycles
     assert fetcher.fetch("https://example.invalid/b.pdf", tmp_path).ok
     assert fetcher.session.calls[-2:] == ["close", "get"]
+
+
+def test_a_response_that_is_not_a_pdf_is_refused_and_leaves_no_file(clock, tmp_path: Path):
+    # 28 Sep 2026: NSE answered a 1.32 MB attachment with an empty 200. The rejection
+    # deleted the file while its read handle was open, which Windows refuses (WinError 32),
+    # and the backfill crashed. Runs on the laptop, so it fails there if that comes back.
+    fetcher = PdfFetcher()
+    for body in (b"", b"<html>Access Denied</html>"):
+        fetcher.session = FakeSession(content=body)
+        got = fetcher.fetch("https://example.invalid/c.pdf", tmp_path)
+        assert not got.ok and got.error == "response is not a PDF"
+        assert list(tmp_path.iterdir()) == []

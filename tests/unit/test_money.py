@@ -48,11 +48,29 @@ def test_indian_number_words():
     assert "number_in_words" in got.flags
 
 
-def test_foreign_currency_is_flagged_and_not_converted():
+def test_usd_converts_at_the_configured_fixed_rate():
+    # Sravanth, 29 Sep 2026: USD at Rs 94 "for now" (config/fx.yaml), for the ratios.
     got = parse_money("USD 5 million")
     assert got.currency == "USD"
-    assert got.value_inr is None, "FX is Open (§11); converting would be guessing a number"
+    assert got.value_inr == Decimal("470000000.00")
+    assert "fx_converted" in got.flags
+
+
+def test_a_currency_with_no_configured_rate_is_flagged_and_not_converted():
+    got = parse_money("EUR 5 million")
+    assert got.currency == "EUR"
+    assert got.value_inr is None, "no rate set for EUR; converting would be guessing a number"
     assert "foreign_currency_not_converted" in got.flags
+
+
+def test_currency_is_read_beside_the_number_not_anywhere_in_the_string():
+    # With conversion on, a string naming both currencies must not have its crore figure
+    # multiplied by the dollar rate.
+    assert parse_money("INR 651 Crores (USD 73.47 million)").value_inr == Decimal("6510000000")
+    got = parse_money("USD ($) 73.47 million (lNR - 651 Crores)")
+    assert got.currency == "USD" and got.value_inr == Decimal("6906180000.00")
+    got = parse_money("3.8 million USD (Rs. 34 crs) [approx.]")
+    assert got.currency == "USD" and got.value_inr == Decimal("357200000.00")
 
 
 def test_range_takes_the_low_end_and_flags_it():

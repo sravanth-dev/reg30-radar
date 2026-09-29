@@ -79,6 +79,10 @@ def llm() -> dict:
     return load_yaml("llm.yaml")
 
 
+def fx() -> dict:
+    return load_yaml("fx.yaml")
+
+
 def database_url() -> str:
     return env("DATABASE_URL")
 

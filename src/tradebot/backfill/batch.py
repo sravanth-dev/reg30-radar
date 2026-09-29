@@ -22,12 +22,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from pydantic import ValidationError
 
-from tradebot.extractor.llm_extract import PROMPT_VERSION, build_request, interpret
+from tradebot.extractor.llm_extract import (PROMPT_VERSION, OrderFields, build_request,
+                                            interpret, judge)
 from tradebot.llm.client import LlmClient
 
 log = logging.getLogger("backfill")
@@ -184,6 +186,7 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
     conn.execute(
         """update order_extractions set
                path = 'llm', review_status = %(status)s, value_inr = %(value)s,
+               currency = %(currency)s,
                provenance_ok = %(prov)s, consideration_raw = %(cons)s, value_span = %(span)s,
                execution_period_raw = %(period)s, awarding_entity = %(awarder)s,
                company_is_recipient = %(recipient)s, stage = %(stage)s,
@@ -191,6 +194,7 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
                processed_at = now()
            where raw_announcement_id = %(raw_id)s""",
         {"status": result.review_status, "value": result.value_inr,
+         "currency": result.currency,
          "prov": result.provenance_ok, "cons": f.consideration_raw, "span": f.value_span,
          "period": f.execution_period_raw, "awarder": f.awarding_entity,
          "recipient": f.company_is_recipient_bool, "stage": f.stage, "cost": cost,
@@ -203,3 +207,40 @@ def _set_review(conn, raw_id, reason, cost=Decimal("0")):
     conn.execute("update order_extractions set review_status = 'needs_review', last_error = %s,"
                  " llm_cost_usd = llm_cost_usd + %s where raw_announcement_id = %s",
                  (reason, cost, raw_id))
+
+
+_RECIPIENT = {True: "true", False: "false", None: "unknown"}
+_STAGES = {"L1", "LoI", "LoA", "PO", "contract", "amendment", "unknown"}
+
+
+def rejudge(conn) -> dict:
+    """Re-apply the current verification rules (`llm_extract.judge`) to model answers
+    already stored, without calling the model, for when a rule changes after the answers
+    came back. 29 Sep 2026: an unknown stage no longer blocks, provenance accepts a verbatim
+    part of the quote, and USD converts at config/fx.yaml's rate.
+
+    Touches only answers the model judged to be an order (`verified` or `needs_review` with
+    no error recorded). `not_order`, and review items that never got a usable answer, keep
+    their outcome. Returns how many rows moved between statuses."""
+    rows = conn.execute("""
+        select oe.raw_announcement_id, d.text, oe.consideration_raw, oe.value_span,
+               oe.company_is_recipient, oe.stage, oe.review_status
+        from order_extractions oe join documents d on d.id = oe.document_id
+        where oe.path = 'llm' and oe.review_status in ('verified', 'needs_review')
+          and oe.last_error is null""").fetchall()
+    moved = Counter()
+    for raw_id, text, cons, span, recipient, stage, before in rows:
+        fields = OrderFields(
+            is_order_announcement=True, company_is_recipient=_RECIPIENT[recipient],
+            consideration_raw=cons, value_span=span, awarding_entity=None,
+            nature_of_order=None, execution_period_raw=None, domestic_or_international=None,
+            stage=stage if stage in _STAGES else "unknown")
+        result = judge(text, fields)
+        conn.execute(
+            "update order_extractions set review_status = %s, value_inr = %s,"
+            " provenance_ok = %s, currency = %s where raw_announcement_id = %s",
+            (result.review_status, result.value_inr, result.provenance_ok, result.currency,
+             raw_id))
+        moved[f"{before} -> {result.review_status}"] += 1
+    conn.commit()
+    return dict(moved)

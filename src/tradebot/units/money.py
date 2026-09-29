@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 
 # Scale words, longest first so "crores" wins before "crore" and "cr".
 SCALES: list[tuple[str, Decimal]] = [
@@ -32,9 +33,10 @@ SCALES: list[tuple[str, Decimal]] = [
     ("thousand", Decimal(10) ** 3),
 ]
 
-# Currency markers. INR forms mean rupees; everything else is foreign and is never
-# converted, because the FX source is still Open (§11) and guessing a rate would be
-# guessing a number.
+# Currency markers. INR forms mean rupees; everything else is foreign. A foreign amount is
+# converted only at a fixed rate Sravanth has set in config/fx.yaml (USD at Rs 94, 29 Sep
+# 2026); any other currency is never converted, because inventing a rate would be guessing
+# a number (§11).
 INR_MARKERS = ("₹", "rs.", "rs", "inr", "rupees", "inr.")
 FOREIGN = {
     "usd": "USD", "us$": "USD", "$": "USD", "dollar": "USD",
@@ -148,6 +150,61 @@ def _words_to_decimal(text: str) -> Decimal | None:
     return total + group
 
 
+@lru_cache(maxsize=1)
+def fx_rates() -> dict[str, Decimal]:
+    """Fixed rupee rates per foreign currency, from config/fx.yaml."""
+    from tradebot.common.config import fx
+    return {code: Decimal(str(rate)) for code, rate in (fx().get("rates_to_inr") or {}).items()}
+
+
+def _rate_to_inr(currency: str) -> Decimal | None:
+    """1 for rupees; the configured fixed rate for a foreign currency that has one; None for
+    a foreign currency without one, which is never converted."""
+    return Decimal(1) if currency == "INR" else fx_rates().get(currency)
+
+
+def _set_value(out: Money, amount: Decimal) -> None:
+    """Store an amount read in `out.currency` as rupees: converted at the fixed rate when the
+    currency has one, left unset (and flagged) when it does not."""
+    rate = _rate_to_inr(out.currency)
+    if rate is None:
+        out.flags.add("foreign_currency_not_converted")
+        return
+    if out.currency != "INR":
+        out.flags.add("fx_converted")
+        amount = (amount * rate).quantize(Decimal("0.01"))
+    out.value_inr = amount
+
+
+# Indian scale words are rupee units by convention, whatever else the string mentions.
+INDIAN_SCALES = {"crores", "crore", "crs", "cr", "lakhs", "lakh", "lacs", "lac"}
+
+
+def _marker_in(window: str) -> str | None:
+    for marker, code in FOREIGN.items():
+        if marker in window:
+            return code
+    for marker in INR_MARKERS:
+        if marker in window:
+            return "INR"
+    return None
+
+
+def _currency_of(text: str, start: int, end: int, scale_word: str | None) -> str:
+    """The currency of the one amount that was read, decided beside it, not from the whole
+    string. Once a foreign amount converts to a rupee value this matters: "INR 651 Crores
+    (USD 73.47 million)" names both, and taking the string's currency would multiply the
+    crore figure by the dollar rate. Checked in order: a marker in the 12 characters before
+    the number, a crore/lakh scale, a marker in the 16 characters after it, and only then
+    the whole string."""
+    marked = _marker_in(text[max(0, start - 12):start].lower())
+    if marked:
+        return marked
+    if scale_word in INDIAN_SCALES:
+        return "INR"
+    return _marker_in(text[end:end + 16].lower()) or detect_currency(text)
+
+
 def detect_currency(text: str) -> str:
     low = text.lower()
     # Check foreign first: "USD 5 million" also contains no rupee marker, but "Rs" can
@@ -197,10 +254,7 @@ def parse_money(raw: str | None) -> Money:
         spelled = _words_to_decimal(text)
         if spelled is not None and spelled > 0:
             out.flags.add("number_in_words")
-            if out.currency == "INR":
-                out.value_inr = spelled
-            else:
-                out.flags.add("foreign_currency_not_converted")
+            _set_value(out, spelled)
             return out
         out.flags.add("no_number_found")
         return out
@@ -215,45 +269,48 @@ def parse_money(raw: str | None) -> Money:
         mult = scale[0] if scale else Decimal(1)
         if lo is not None and hi is not None and hi > lo:
             out.flags.add("range")
+            out.currency = _currency_of(text, range_match.start(), range_match.end(),
+                                        scale[1] if scale else None)
+            rate = _rate_to_inr(out.currency)
+            if rate is None:
+                out.flags.add("foreign_currency_not_converted")
+                return out
+            if out.currency != "INR":
+                out.flags.add("fx_converted")
+                mult = mult * rate
             out.low_inr = lo * mult
             out.high_inr = hi * mult
             # §5.7 leaves which end to use to the caller; the low end is the conservative
             # choice and is what the calculator should see.
-            if out.currency == "INR":
-                out.value_inr = out.low_inr
-            else:
-                out.flags.add("foreign_currency_not_converted")
+            out.value_inr = out.low_inr
             return out
 
     # Otherwise: take the numeral that carries a scale word, else the largest numeral.
-    best: tuple[Decimal, str | None] | None = None
+    best: tuple[Decimal, str | None, re.Match] | None = None
     for m in numbers:
         val = _to_decimal(m.group(0))
         if val is None:
             continue
         scale = _scale_after(text, m.end())
         if scale is not None:
-            best = (val * scale[0], scale[1])
+            best = (val * scale[0], scale[1], m)
             break
         if best is None or val > best[0]:
-            best = (val, None)
+            best = (val, None, m)
 
     if best is None:
         out.flags.add("no_number_found")
         return out
 
-    value = best[0]
-    if best[1] is None:
+    value, scale_word, chosen = best
+    if scale_word is None:
         # A bare numeral with no scale word is taken as rupees, which is what filings mean
         # when they print "INR 65,02,160.50/-".
         out.flags.add("no_scale_word")
         value = _check_against_words(text, value, out.flags)
 
-    if out.currency != "INR":
-        out.flags.add("foreign_currency_not_converted")
-        return out
-
-    out.value_inr = value
+    out.currency = _currency_of(text, chosen.start(), chosen.end(), scale_word)
+    _set_value(out, value)
     return out
 
 

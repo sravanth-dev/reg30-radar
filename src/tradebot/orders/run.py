@@ -160,6 +160,7 @@ def _llm_row(row, relevance: Relevance, *, document_id: int, doc_text: str, clie
         consideration_raw=fields.consideration_raw if fields else None,
         value_span=fields.value_span if fields else None,
         value_inr=result.value_inr, provenance_ok=result.provenance_ok,
+        currency=result.currency,
         execution_period_raw=fields.execution_period_raw if fields else None,
         awarding_entity=fields.awarding_entity if fields else None,
         company_is_recipient=fields.company_is_recipient_bool if fields else None,

@@ -94,6 +94,8 @@ def test_submit_then_collect_writes_a_verified_order(scratch_conn):
     status, value, cost = scratch_conn.execute(
         "select review_status, value_inr, llm_cost_usd from order_extractions").fetchone()
     assert status == "verified" and value == Decimal("5720000000.00")
+    # The currency is written too; the LLM paths used to leave it empty.
+    assert scratch_conn.execute("select currency from order_extractions").fetchone()[0] == "INR"
     # 1000 in x $0.05/M + 100 out x $0.25/M, the Batch price, not the standard one.
     assert cost == Decimal("0.000075")
     assert scratch_conn.execute("select batch_id from llm_calls").fetchone()[0] == "batch-1"
@@ -197,3 +199,51 @@ def test_a_batch_cannot_be_sized_without_the_configured_limit(scratch_conn):
         raise AssertionError("expected a refusal")
     except LlmRefused as exc:
         assert "enqueued_token_limit" in str(exc)
+
+
+def _seed_answer(conn, raw_id, *, text, cons, span, recipient=True, stage="PO",
+                 status="needs_review", last_error=None):
+    """One stored LLM answer, as batch.collect left it under the old rules."""
+    conn.execute(
+        "insert into raw_announcements (id, source, source_id, payload_sha256, first_seen_at,"
+        " symbol, category_raw, payload) overriding system value values"
+        " (%s,'nse',%s,%s,now(),'CO','Bagging/Receiving of orders/contracts','{}')",
+        (raw_id, f"s{raw_id}", f"h{raw_id}"))
+    conn.execute("insert into documents (id, url, sha256, text, method, extracted_at)"
+                 " overriding system value values (%s,'u',%s,%s,'fake',now())",
+                 (raw_id, f"sha{raw_id}", text))
+    conn.execute(
+        "insert into order_extractions (raw_announcement_id, document_id, bucket, order_related,"
+        " relevance_reason, path, review_status, consideration_raw, value_span,"
+        " company_is_recipient, stage, last_error, processed_at)"
+        " values (%s, %s, 'order_win', true, 'category', 'llm', %s, %s, %s, %s, %s, %s, now())",
+        (raw_id, raw_id, status, cons, span, recipient, stage, last_error))
+
+
+def test_rejudge_applies_the_29_sep_rules_to_stored_answers_without_calling_the_model(scratch_conn):
+    c = scratch_conn
+    # 1. verified value, stage unknown: was review only because of the stage
+    _seed_answer(c, 1, text=DOC, cons="Rs. 572 Crore", span="Rs. 572 Crore", stage="unknown")
+    # 2. the value quoted across an interleaved table column (RAILTEL)
+    _seed_answer(c, 2, text="Value is Rs.\n(in INR); 38,59,27,045/-(ExcludingTax)",
+                 cons="Rs. 38,59,27,045/-(ExcludingTax)",
+                 span="Rs.\n38,59,27,045/-(ExcludingTax)")
+    # 3. a USD order: now converted at the configured Rs 94
+    _seed_answer(c, 3, text="Order of USD 7.53 Million (Approximately INR 67.12 Crores).",
+                 cons="USD 7.53 Million", span="USD 7.53 Million")
+    # 4. no value in the filing: stays in review
+    _seed_answer(c, 4, text=DOC, cons=None, span=None)
+    # 5. recipient unknown: stays in review
+    _seed_answer(c, 5, text=DOC, cons="Rs. 572 Crore", span="Rs. 572 Crore", recipient=None)
+    # 6. never got a usable answer: untouched
+    _seed_answer(c, 6, text=DOC, cons=None, span=None, last_error="invalid response twice: x")
+    c.commit()
+
+    moved = batch.rejudge(c)
+    assert moved == {"needs_review -> verified": 3, "needs_review -> needs_review": 2}
+    got = dict((r[0], r[1:]) for r in c.execute(
+        "select raw_announcement_id, review_status, value_inr, currency from order_extractions"))
+    assert got[1] == ("verified", Decimal("5720000000.00"), "INR")
+    assert got[2] == ("verified", Decimal("385927045.00"), "INR")
+    assert got[3] == ("verified", Decimal("707820000.00"), "USD")
+    assert got[4][0] == got[5][0] == got[6][0] == "needs_review"

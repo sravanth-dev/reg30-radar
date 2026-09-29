@@ -27,16 +27,25 @@ def _collapse(text: str) -> str:
 
 
 def verify(doc_text: str, value_span: str | None, value_inr: Decimal | None) -> bool:
-    """True only if `value_span` occurs verbatim (whitespace aside) in `doc_text` AND
-    parsing `value_span` on its own produces exactly `value_inr`.
+    """True only if some continuous run of words from `value_span` occurs verbatim
+    (whitespace aside) in `doc_text` AND parses, on its own, to exactly `value_inr`.
 
-    A span that exists in the document but parses to a different number fails - that is
-    the case a substring-only check would miss, and it is what actually catches a model
-    that quotes something real while reporting a number it didn't come from.
+    The whole span is tried first, then shorter runs. A part is allowed (Sravanth, 29 Sep
+    2026) because PDF tables come out with their columns interleaved: RAILTEL's text reads
+    "Rs.\\n(in INR); 38,59,27,045/-", the label column inside the value, so a model quoting
+    the value as a reader sees it, "Rs. 38,59,27,045/-", quotes something that is not one
+    piece of the text. In the first backfill batch that failed 54 correct answers, 51 of
+    which pass this rule. It stays strict where it matters: the number still has to come
+    verbatim from the document and parse to the same value, so a real passage that parses
+    to a different number still fails - the case a substring-only check would miss.
     """
     if not value_span or value_inr is None:
         return False
-    if _collapse(value_span) not in _collapse(doc_text):
-        return False
-    span_value = parse_money(value_span).value_inr
-    return span_value is not None and span_value == value_inr
+    doc = _collapse(doc_text)
+    words = value_span.split()
+    for size in range(len(words), 0, -1):            # longest first: the whole span
+        for start in range(len(words) - size + 1):
+            piece = " ".join(words[start:start + size])
+            if piece in doc and parse_money(piece).value_inr == value_inr:
+                return True
+    return False

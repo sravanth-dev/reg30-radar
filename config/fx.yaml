@@ -1,0 +1,11 @@
+# Fixed rupee rates for foreign-currency order values (ARCHITECTURE.md §5.7, §11).
+#
+# Decided by Sravanth, 29 Sep 2026: USD is converted at Rs 94 "for now", so that a USD
+# order's value can be set against TTM revenue and market cap; every other currency stays
+# flagged `foreign_currency_not_converted` and goes to review, as before. This is a fixed
+# planning rate, not a dated market rate, so a converted value is approximate by
+# construction. A converted order keeps its original currency in `order_extractions.currency`
+# ('USD' with a `value_inr` set means "converted at this rate"), and units/money.py adds the
+# flag `fx_converted`.
+rates_to_inr:
+  USD: 94

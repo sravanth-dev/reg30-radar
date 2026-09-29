@@ -86,11 +86,14 @@ def test_unknown_recipient_forces_review_even_with_good_provenance():
     assert result.provenance_ok is True
 
 
-def test_unknown_stage_forces_review():
+def test_unknown_stage_no_longer_forces_review():
+    # Sravanth, 29 Sep 2026: stage is not used by the verdict, and an unknown stage alone
+    # had sent 112 verified values to review. An unknown recipient still does (above).
     fields = dict(GOOD_FIELDS, stage="unknown")
     client = FakeClient([json.dumps(fields)])
     result = extract_order_fields(DOC, client=client)
-    assert result.review_status == "needs_review"
+    assert result.review_status == "verified"
+    assert result.currency == "INR"
 
 
 # --------------------------------------------------------------------- retry-once rule

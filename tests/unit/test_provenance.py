@@ -55,3 +55,21 @@ def test_reworded_span_is_not_verbatim_and_fails():
     # The span must be an exact quote, not a paraphrase - "verbatim" is enforced, not
     # just "the same number appears somewhere".
     assert verify(DOC, "Rs 13.51 crore", Decimal("135100000")) is False
+
+
+# RAILTEL, 2026: the PDF table's label column lands inside the value in the extracted text.
+TABLE_DOC = ("h) Value of order as per Work Order is Rs.\n(in INR); 38,59,27,045/-(ExcludingTax)\n"
+             "i) Whether the promoter has any interest: No")
+
+
+def test_a_quote_split_by_an_interleaved_table_column_verifies_on_its_verbatim_part():
+    # The model quotes "Rs. 38,59,27,045/-(ExcludingTax)" as a reader sees it; that is not
+    # one piece of the text, but "38,59,27,045/-(ExcludingTax)" is, and gives the same
+    # value (Sravanth, 29 Sep 2026: 51 of 54 such answers in the first batch).
+    assert verify(TABLE_DOC, "Rs.\n38,59,27,045/-(ExcludingTax)", Decimal("385927045")) is True
+
+
+def test_a_verbatim_part_that_gives_a_different_number_still_fails():
+    # Allowing a part must not let a real passage vouch for a number it doesn't state.
+    assert verify(TABLE_DOC, "Rs.\n38,59,27,045/-(ExcludingTax)", Decimal("3859270450")) is False
+    assert verify(DOC, "worth Rs. 13.51 Crs from ABC", Decimal("1351")) is False

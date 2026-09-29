@@ -76,6 +76,7 @@ class ExtractResult:
     fields: OrderFields | None = None
     value_inr: Decimal | None = None
     provenance_ok: bool = False
+    currency: str | None = None   # as stated; non-INR with a value_inr means converted
     cost_usd: Decimal = Decimal("0")
     attempts: int = 0
     error: str | None = None
@@ -96,7 +97,13 @@ def interpret(document_text: str, raw_text: str) -> ExtractResult:
     Raises json.JSONDecodeError or pydantic.ValidationError on an invalid response; the
     caller decides whether that earns the one retry §6 allows.
     """
-    fields = _parse_and_validate(raw_text)
+    return judge(document_text, _parse_and_validate(raw_text))
+
+
+def judge(document_text: str, fields: OrderFields) -> ExtractResult:
+    """The verification rules for one set of extracted fields. Separate from `interpret`
+    so `backfill.batch.rejudge` can re-apply them to answers already stored, when a rule
+    changes after the answers came back, without asking the model again."""
     if not fields.is_order_announcement:
         return ExtractResult(review_status="not_order", fields=fields)
 
@@ -104,13 +111,15 @@ def interpret(document_text: str, raw_text: str) -> ExtractResult:
     provenance_ok = verify_provenance(document_text, fields.value_span, money.value_inr)
     # A suspect scale (units/money.py) is never verified, whatever provenance says.
     status = "verified" if provenance_ok and not is_suspect(money) else "needs_review"
-    # §6 trigger 3: a judgment field coming back unknown is itself an escalation trigger.
-    # With no second tier to escalate to it lands in review, which is the correct outcome
-    # of the trigger firing with nowhere further to go.
-    if fields.company_is_recipient == "unknown" or fields.stage == "unknown":
+    # §6 trigger 3, narrowed by Sravanth on 29 Sep 2026: an unknown recipient still sends
+    # the order to review (the verdict needs the company to have won it), but an unknown
+    # stage no longer does. Stage is not used by the verdict, and it alone had sent 112 of
+    # the first batch's 369 reviews there with a verified value.
+    if fields.company_is_recipient == "unknown":
         status = "needs_review"
     return ExtractResult(review_status=status, fields=fields, value_inr=money.value_inr,
-                         provenance_ok=provenance_ok)
+                         provenance_ok=provenance_ok,
+                         currency=money.currency if fields.consideration_raw else None)
 
 
 RETRY_NOTE = ("Your previous response was invalid and could not be used: {error}. Return a "

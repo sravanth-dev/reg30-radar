@@ -8,7 +8,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from tradebot.backfill import batch
-from tradebot.llm.client import LlmClient
+from tradebot.extractor.llm_extract import build_request
+from tradebot.llm.client import LlmClient, LlmRefused
 
 DOC = ("BEL has received orders worth Rs. 572 Crore from Cochin Shipyard for supply of "
        "communication equipment.")
@@ -18,6 +19,7 @@ CFG = {
     "batch_prices": {"m1": {"input": 0.05, "output": 0.25}},
     "caps": {"live_usd_per_month": 1.0, "ocr_usd_per_month": 1.0, "backfill_usd_per_run": 3.0},
     "max_output_tokens": {"order_extract": 800},
+    "batch": {"enqueued_token_limit": 2_000_000, "enqueue_share": 0.8},
 }
 GOOD = {"is_order_announcement": True, "company_is_recipient": "true",
         "consideration_raw": "Rs. 572 Crore", "value_span": "Rs. 572 Crore",
@@ -31,6 +33,7 @@ class FakeOpenAI:
         self.uploaded = None
         self.output_lines = []
         self.batches_made = 0
+        self.status, self.errors = "completed", None
         self.files = SimpleNamespace(create=self._create_file, content=self._content)
         self.batches = SimpleNamespace(create=self._create_batch, retrieve=self._retrieve)
 
@@ -43,7 +46,9 @@ class FakeOpenAI:
         return SimpleNamespace(id=f"batch-{self.batches_made}", status="validating")
 
     def _retrieve(self, batch_id):
-        return SimpleNamespace(status="completed", output_file_id="file-out", error_file_id=None)
+        failed = self.status == "failed"
+        return SimpleNamespace(status=self.status, output_file_id=None if failed else "file-out",
+                               error_file_id=None, errors=self.errors)
 
     def _content(self, file_id):
         return SimpleNamespace(text="\n".join(self.output_lines))
@@ -124,3 +129,71 @@ def test_submit_refuses_when_the_worst_case_would_pass_the_cap(scratch_conn):
     except Exception as exc:
         assert "cap" in str(exc)
     assert scratch_conn.execute("select count(*) from llm_batches").fetchone()[0] == 0
+
+
+def _seed_many(conn, n):
+    """n order filings waiting on the LLM, all pointing at one document."""
+    conn.execute("insert into documents (id, url, sha256, text, method, extracted_at)"
+                 " overriding system value values (1,'u','sha',%s,'fake',now())", (DOC,))
+    for raw_id in range(1, n + 1):
+        conn.execute(
+            "insert into raw_announcements (id, source, source_id, payload_sha256, first_seen_at,"
+            " symbol, category_raw, payload) overriding system value values"
+            " (%s,'nse',%s,%s,now(),'BEL','Bagging/Receiving of orders/contracts','{}')",
+            (raw_id, f"s{raw_id}", f"h{raw_id}"))
+        conn.execute(
+            "insert into order_extractions (raw_announcement_id, document_id, bucket,"
+            " order_related, relevance_reason, path, review_status, processed_at)"
+            " values (%s, 1, 'order_win', true, 'category', 'llm', 'pending_llm', now())",
+            (raw_id,))
+    conn.commit()
+
+
+def test_a_batch_rejected_whole_does_not_use_up_a_submission(scratch_conn):
+    # 28 Sep 2026: OpenAI rejected the first backfill batch whole ("Enqueued token limit
+    # reached"). No request ran, so the filing must keep all three of its submissions.
+    _seed(scratch_conn)
+    fake = FakeOpenAI()
+    client = LlmClient(conn=scratch_conn, openai_client=fake, config=CFG, budget="backfill")
+    fake.status = "failed"
+    fake.errors = SimpleNamespace(data=[SimpleNamespace(
+        code="token_limit_exceeded", message="Enqueued token limit reached")])
+    for _ in range(3):
+        batch.submit(scratch_conn, client)
+        assert json.loads(fake.uploaded[0])["custom_id"] == "oe-1-1"    # still attempt 1
+        batch.collect(scratch_conn, client)
+    assert scratch_conn.execute("select review_status from order_extractions").fetchone()[0] \
+        == "pending_llm"
+
+
+def test_a_large_pending_set_goes_out_one_token_sized_batch_at_a_time(scratch_conn):
+    _seed_many(scratch_conn, 3)
+    fake = FakeOpenAI()
+    probe = LlmClient(conn=scratch_conn, openai_client=fake, config=CFG, budget="backfill")
+    one = probe.estimate_input_tokens(build_request(DOC, client=probe))
+    # room for two and a half requests, so two fit and the third waits
+    cfg = {**CFG, "batch": {"enqueued_token_limit": int(one * 2.5 / 0.8), "enqueue_share": 0.8}}
+    client = LlmClient(conn=scratch_conn, openai_client=fake, config=cfg, budget="backfill")
+
+    out = batch.submit(scratch_conn, client)
+    assert out["submitted"][0]["requests"] == 2 and out["waiting"] == 1
+    # nothing more goes out while that batch is still uncollected
+    assert batch.submit(scratch_conn, client)["submitted"] == []
+    assert fake.batches_made == 1
+
+    fake.output_lines = [_result_line(f"oe-{i}-1", json.dumps(GOOD)) for i in (1, 2)]
+    batch.collect(scratch_conn, client)
+    out = batch.submit(scratch_conn, client)
+    assert out["submitted"][0]["requests"] == 1 and out["waiting"] == 0
+    assert json.loads(fake.uploaded[0])["custom_id"] == "oe-3-1"
+
+
+def test_a_batch_cannot_be_sized_without_the_configured_limit(scratch_conn):
+    cfg = {k: v for k, v in CFG.items() if k != "batch"}
+    client = LlmClient(conn=scratch_conn, openai_client=FakeOpenAI(), config=cfg,
+                       budget="backfill")
+    try:
+        client.batch_token_room("m1")
+        raise AssertionError("expected a refusal")
+    except LlmRefused as exc:
+        assert "enqueued_token_limit" in str(exc)

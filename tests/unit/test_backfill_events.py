@@ -58,7 +58,8 @@ def test_state_machine_triggers():
 CFG = {"tier1_model": "m1", "tier2_model": "m2",
        "prices": {"m1": {"input": 0.1, "output": 0.5}, "m2": {"input": 0.1, "output": 0.5}},
        "batch_prices": {"m2": {"input": 0.05, "output": 0.25}},
-       "caps": {"backfill_usd_per_run": 3.0}, "max_output_tokens": {"order_extract": 800}}
+       "caps": {"backfill_usd_per_run": 3.0}, "max_output_tokens": {"order_extract": 800},
+       "batch": {"enqueued_token_limit": 2_000_000, "enqueue_share": 0.8}}
 DOC = "Genesys has been awarded a contract of Rs. 283 Crore by the municipal corporation."
 ANSWER = {"is_order_announcement": True, "company_is_recipient": "true",
           "consideration_raw": "Rs. 283 Crore", "value_span": "Rs. 283 Crore",

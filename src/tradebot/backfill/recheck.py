@@ -19,6 +19,7 @@ import logging
 
 from pydantic import ValidationError
 
+from tradebot.backfill.batch import failure_reason
 from tradebot.backfill.events import log_transition
 from tradebot.extractor.llm_extract import PROMPT_VERSION, build_request, interpret
 from tradebot.llm.client import LlmClient
@@ -30,8 +31,10 @@ TERMINAL = ("completed", "failed", "expired", "cancelled")
 
 PENDING_SQL = """
 select e.id, e.primary_raw_id, d.text,
+       -- tries so far; a batch rejected whole ('failed') never ran, so not counted
        (select count(*) from llm_batch_items i join llm_batches b using (batch_id)
-        where b.purpose = 'recheck' and i.raw_announcement_id = e.primary_raw_id)
+        where b.purpose = 'recheck' and i.raw_announcement_id = e.primary_raw_id
+          and b.status <> 'failed')
 from backfill_events e
 join order_extractions oe on oe.raw_announcement_id = e.primary_raw_id
 join documents d on d.id = oe.document_id
@@ -54,15 +57,23 @@ def submit(conn, client: LlmClient) -> dict:
     conn.commit()
     if not items:
         return {"submitted": 0}
+    # One batch per model in OpenAI's queue, sized to the enqueued-token limit (batch.py).
+    bodies = [body for _, _, _, body in items]
+    chunk = items[:client.batch_fit(bodies, client.batch_token_room(bodies[0]["model"]))]
+    if not chunk:
+        log.info("an earlier %s batch is not collected yet; collect it first",
+                 bodies[0]["model"])
+        return {"submitted": 0, "waiting": len(items)}
     batch_id, estimate = client.submit_batch(
-        [(cid, body) for cid, _, _, body in items], purpose=PURPOSE,
+        [(cid, body) for cid, _, _, body in chunk], purpose=PURPOSE,
         prompt_version=PROMPT_VERSION)
     with conn.cursor() as cur:
         cur.executemany(
             "insert into llm_batch_items (batch_id, custom_id, raw_announcement_id, attempt)"
-            " values (%s,%s,%s,%s)", [(batch_id, cid, raw, n) for cid, raw, n, _ in items])
+            " values (%s,%s,%s,%s)", [(batch_id, cid, raw, n) for cid, raw, n, _ in chunk])
     conn.commit()
-    return {"submitted": len(items), "batch_id": batch_id, "worst_case_usd": str(estimate)}
+    return {"submitted": len(chunk), "waiting": len(items) - len(chunk),
+            "batch_id": batch_id, "worst_case_usd": str(estimate)}
 
 
 def collect(conn, client: LlmClient) -> dict:
@@ -74,6 +85,9 @@ def collect(conn, client: LlmClient) -> dict:
         if batch.status not in TERMINAL:
             out["still_running"] += 1
             continue
+        if batch.status == "failed":
+            log.warning("%s was rejected whole by OpenAI, no request ran: %s", batch_id,
+                        failure_reason(batch))
         lines = []
         for file_id in (batch.output_file_id, batch.error_file_id):
             if file_id:

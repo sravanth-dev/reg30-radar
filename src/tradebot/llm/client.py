@@ -311,21 +311,61 @@ class LlmClient:
                 f"is copied from the pricing page like every other price, never assumed (§6).")
         return price
 
+    @staticmethod
+    def estimate_input_tokens(body: dict) -> int:
+        """One request's input at one token per 3 characters of message text, more than
+        English text needs. Used for both the cost worst case and the queue limit."""
+        chars = sum(len(m["content"]) if isinstance(m["content"], str)
+                    else len(str(m["content"])) for m in body["messages"])
+        return -(-chars // 3)
+
     def estimate_batch_cost(self, bodies: list[dict]) -> Decimal:
         """A worst case for the cap check before submitting, not a recorded cost: every
-        request is assumed to use its full output allowance, and input is counted at one
-        token per 3 characters, more than English text needs. The real cost is logged
-        from each result's usage when the batch is collected."""
+        request is assumed to use its full output allowance, and input is counted by
+        `estimate_input_tokens`. The real cost is logged from each result's usage when the
+        batch is collected."""
         total = Decimal("0")
         for body in bodies:
             price = self._batch_price(body["model"])
-            chars = sum(len(m["content"]) if isinstance(m["content"], str)
-                        else len(str(m["content"])) for m in body["messages"])
-            in_tok = Decimal(chars) / 3
+            in_tok = Decimal(self.estimate_input_tokens(body))
             out_tok = Decimal(body["max_completion_tokens"])
             total += (in_tok * Decimal(str(price["input"]))
                       + out_tok * Decimal(str(price["output"]))) / Decimal(1_000_000)
         return total.quantize(Decimal("0.000001"))
+
+    def batch_token_room(self, model: str) -> int:
+        """How many input tokens a new Batch for `model` may carry right now.
+
+        OpenAI caps the input tokens queued across an organisation's unfinished batches,
+        per model; a batch over it is rejected whole before any request runs (the first
+        backfill batch, 1,415 requests, 28 Sep 2026: "Enqueued token limit reached ...
+        2,000,000"). So one batch per model is kept in the queue at a time: 0 while an
+        earlier batch for the model has not been collected, otherwise the configured share
+        of the limit, which leaves room for the JSON schema each request also carries and
+        `estimate_input_tokens` does not count."""
+        cfg = self._cfg.get("batch") or {}
+        limit, share = cfg.get("enqueued_token_limit"), cfg.get("enqueue_share")
+        if not limit or not share:
+            raise LlmRefused("config/llm.yaml batch.enqueued_token_limit and enqueue_share "
+                             "must be set before a Batch can be sized (§6)")
+        still_open = self.conn.execute(
+            "select count(*) from llm_batches where model = %s and collected_at is null",
+            (model,)).fetchone()[0]
+        return 0 if still_open else int(int(limit) * float(share))
+
+    def batch_fit(self, bodies: list[dict], room: int) -> int:
+        """How many of `bodies`, taken in order, fit in `room` input tokens. At least one
+        whenever there is room at all, so a single oversized request is tried, not stuck."""
+        if room <= 0:
+            return 0
+        used = count = 0
+        for body in bodies:
+            tokens = self.estimate_input_tokens(body)
+            if count and used + tokens > room:
+                break
+            used += tokens
+            count += 1
+        return count
 
     def _client(self):
         if self._openai_client is not None:

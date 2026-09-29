@@ -68,3 +68,11 @@ batch:
   # The cached-input discount is deliberately excluded from the cost model.
   enabled: true
   assume_cache_discount: false
+  # OpenAI caps the input tokens queued across this organisation's unfinished batches, per
+  # model: 2,000,000 for gpt-6-luna, from the error that rejected the first backfill batch
+  # whole (28 Sep 2026, found 29 Sep). backfill/batch.py and recheck.py keep one batch per
+  # model in the queue at a time and fill it to this share of the limit, counted by the
+  # client's estimate (1 token per 3 characters of message text), leaving room for the JSON
+  # schema each request also carries.
+  enqueued_token_limit: 2000000
+  enqueue_share: 0.8

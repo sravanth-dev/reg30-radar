@@ -9,7 +9,13 @@
 §6's retry rule holds: an invalid response is sent once more, with the error fed back, in
 a later Batch; a second invalid response goes to `needs_review`. A request that failed or
 expired inside a Batch is resubmitted, at most three times in all, then left for review.
-Nothing loops: each run of `submit` or `collect` does one pass.
+A batch OpenAI rejected whole (status `failed`) ran no request, so it does not count
+toward those three. Nothing loops: each run of `submit` or `collect` does one pass.
+
+One batch per model is in OpenAI's queue at a time, filled to the organisation's
+enqueued-token limit (`LlmClient.batch_token_room`): the first backfill batch, 1,415
+requests in one file, was rejected whole for passing it. So a large pending set goes out
+over several `collect` + `submit` rounds.
 """
 
 from __future__ import annotations
@@ -28,13 +34,14 @@ log = logging.getLogger("backfill")
 
 PURPOSE = "order_extract"
 MAX_SUBMISSIONS = 3
-BATCH_SIZE = 2000
 TERMINAL = ("completed", "failed", "expired", "cancelled")
 INVALID = "invalid batch response: "
 
 PENDING_SQL = """
 select oe.raw_announcement_id, d.text, oe.last_error,
-       (select count(*) from llm_batch_items i where i.raw_announcement_id = oe.raw_announcement_id)
+       -- submissions so far; a batch rejected whole ('failed') never ran, so not counted
+       (select count(*) from llm_batch_items i join llm_batches b using (batch_id)
+        where i.raw_announcement_id = oe.raw_announcement_id and b.status <> 'failed')
 from order_extractions oe
 join documents d on d.id = oe.document_id
 where oe.review_status = 'pending_llm'
@@ -59,23 +66,31 @@ def submit(conn, client: LlmClient) -> dict:
         items.append((custom_id, raw_id, submissions + 1,
                       build_request(text, client=client, retry_error=retry_error)))
     conn.commit()
+    if not items:
+        return {"submitted": [], "waiting": 0, "left_for_review": exhausted}
 
-    submitted = []
-    for start in range(0, len(items), BATCH_SIZE):
-        chunk = items[start:start + BATCH_SIZE]
-        batch_id, estimate = client.submit_batch(
-            [(cid, body) for cid, _, _, body in chunk], purpose=PURPOSE,
-            prompt_version=PROMPT_VERSION)
-        with conn.cursor() as cur:
-            cur.executemany(
-                "insert into llm_batch_items (batch_id, custom_id, raw_announcement_id, attempt)"
-                " values (%s,%s,%s,%s)",
-                [(batch_id, cid, raw_id, attempt) for cid, raw_id, attempt, _ in chunk])
-        conn.commit()
-        submitted.append({"batch_id": batch_id, "requests": len(chunk),
-                          "worst_case_usd": str(estimate)})
-        log.info("submitted %s: %d requests, worst case $%s", batch_id, len(chunk), estimate)
-    return {"submitted": submitted, "left_for_review": exhausted}
+    bodies = [body for _, _, _, body in items]
+    room = client.batch_token_room(bodies[0]["model"])
+    chunk = items[:client.batch_fit(bodies, room)]
+    if not chunk:
+        log.info("an earlier %s batch is not collected yet; run batch-collect first",
+                 bodies[0]["model"])
+        return {"submitted": [], "waiting": len(items), "left_for_review": exhausted}
+
+    batch_id, estimate = client.submit_batch(
+        [(cid, body) for cid, _, _, body in chunk], purpose=PURPOSE,
+        prompt_version=PROMPT_VERSION)
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into llm_batch_items (batch_id, custom_id, raw_announcement_id, attempt)"
+            " values (%s,%s,%s,%s)",
+            [(batch_id, cid, raw_id, attempt) for cid, raw_id, attempt, _ in chunk])
+    conn.commit()
+    log.info("submitted %s: %d requests, worst case $%s; %d wait for the next round",
+             batch_id, len(chunk), estimate, len(items) - len(chunk))
+    return {"submitted": [{"batch_id": batch_id, "requests": len(chunk),
+                           "worst_case_usd": str(estimate)}],
+            "waiting": len(items) - len(chunk), "left_for_review": exhausted}
 
 
 def collect(conn, client: LlmClient) -> dict:
@@ -92,6 +107,9 @@ def collect(conn, client: LlmClient) -> dict:
             summary["still_running"] += 1
             conn.commit()
             continue
+        if batch.status == "failed":
+            log.warning("%s was rejected whole by OpenAI, no request ran: %s", batch_id,
+                        failure_reason(batch))
 
         items = {cid: (raw_id, attempt) for cid, raw_id, attempt in conn.execute(
             "select custom_id, raw_announcement_id, attempt from llm_batch_items"
@@ -123,6 +141,13 @@ def collect(conn, client: LlmClient) -> dict:
         summary["collected"] += 1
         log.info("collected %s (%s)", batch_id, batch.status)
     return summary
+
+
+def failure_reason(batch) -> str:
+    """OpenAI's own reason for rejecting a whole batch, e.g. token_limit_exceeded."""
+    errors = getattr(getattr(batch, "errors", None), "data", None) or []
+    return "; ".join(f"{getattr(e, 'code', None)}: {getattr(e, 'message', '')}"
+                     for e in errors) or "no reason given"
 
 
 def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:

@@ -38,10 +38,13 @@ download failures. The 10:06 run crashed at 11:45 on a Windows-only bug in
 `documents/fetch.py`, now fixed (see the 11:45 entry). **The first Batch was rejected whole by OpenAI** (`token_limit_exceeded`: the
 organisation may queue at most 2,000,000 tokens per model; our 1,415 requests were ~3.07M
 by our estimate), so no filing was read and nothing was charged. Fixed 29 Sep: batches are
-now sized to 80% of that limit, one per model in the queue at a time. **Batch 1 of 2 is
-running** (`batch_6abbe57fe3248190b4cbf73e62824924`, 763 filings, worst case $0.23,
-submitted 21:51 IST 29 Sep, past validation). When it completes: `batch-collect`, then
-`batch-submit` sends the other 652, then `batch-collect` again. The live collector and `sheets` are running again
+now sized to 80% of that limit, one per model in the queue at a time. **Batch 1
+collected** (29 Sep 22:18: 763 answers, $0.123): 246 verified, 140 not an order, 369
+needs_review, 8 invalid (resent). **Batch 2 is running** (`batch_6abbec95bbf08190b15113eb02dad6ec`,
+660 requests incl. the 8 retries, worst case $0.21, submitted 22:21, past validation);
+`batch-collect` when it completes. **Three decisions are open for Sravanth** on why so
+many land in review (see the 29 Sep 22:20 entry); the model's raw answers are stored, so
+any rule he changes can be re-applied offline without paying OpenAI again. The live collector and `sheets` are running again
 (Sravanth restarted them at 10:11 and 10:16); `orders --follow` can now be restarted and
 caught up from 27 Sep, since `documents` is done for this tier. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
@@ -58,7 +61,7 @@ both download from nsearchives, and catch it up afterwards with
    the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
    "ISIN reissues handled" entry). **Tier one of `documents` is done, `batch-submit` has
    run** (see above; the first attempt was rejected and resent in two rounds). Waiting
-on: `batch-collect` for batch 1, `batch-submit` + `batch-collect` for batch 2, then
+on: `batch-collect` for batch 2, Sravanth's three review-rule decisions, then
    `events`, `revenue` (event companies only), `calculate`, `recheck-submit` /
    `recheck-collect`. **`study` only after every documents tier is done**, or orders found
    only in a PDF body are missing from the verdict.
@@ -2518,3 +2521,45 @@ requests in one batch). 357 pass.
 
 **Resent 21:51 IST**: `batch_6abbe57fe3248190b4cbf73e62824924`, 763 requests, worst case
 $0.232534, 652 waiting for the next round. Checked at 21:52: `in_progress`, 763 accepted.
+
+### 29 Sep 2026 (22:18-22:40) — batch 1 collected, batch 2 sent; why half went to review
+
+**Batch 1 collected**: 763 answers, 1,311,509 input + 230,640 output tokens, **$0.123**
+(Batch price). 246 verified, 140 judged not an order, **369 needs_review**, 8 invalid JSON
+(resent once, with the error, in batch 2). **Batch 2 submitted 22:21**: 660 requests (652 +
+the 8 retries), worst case $0.21, `in_progress`, nothing left waiting.
+
+**Why 369 went to review**, re-derived offline from the stored answers with the
+production functions (`scratchpad` scripts, no requests):
+- **112: stage "unknown" and nothing else wrong.** The value was found and passed
+  provenance (REFEX Rs. 474.45 Crore, WELCORP Rs 1,600 Crore); the model only could not
+  classify the stage (L1/LoA/PO/...). `llm_extract.interpret` sends any "unknown" stage or
+  recipient to review, per §6 trigger 3 (Decided: an unknown judgment field escalates; with
+  no T2 it lands in review). Stage is not used by D22's verdict. Another ~70 have stage
+  unknown on top of another cause.
+- **141: no value in the filing** (ZAGGLE and L&T often disclose none). Correct: a
+  number is never invented, and such orders cannot enter the primary cell anyway.
+- **54: quote "not in text"** - not model error. The PDF's table columns come out
+  interleaved in the extracted text: RAILTEL's text reads `Rs.
+(in INR); 38,59,27,045/-`,
+  HILINFRA's `Rs. 1,96,35,000/- (Rupees One Crore
+/contract (s); Ninety Six La...`, the
+  label column landing inside the value. The model quotes the value as a reader sees it,
+  which is then not one contiguous piece of the text, so `provenance.verify` (the whole
+  quote must be verbatim, whitespace aside) fails. Measured alternatives: accepting a
+  leading part of the quote rescues 10-11; accepting **any contiguous part of the quote
+  that parses to exactly the reported value and appears verbatim** rescues **51 of 54**
+  (the other 3: two foreign-currency, one genuine mismatch). The number would still be
+  traced to an exact quote from the filing.
+- **35: foreign currency** (flagged, never converted - FX is Open, §11). **17 of them
+  state the INR equivalent in the filing itself**, e.g. "USD ($) 73.47 million (INR - 651
+  Crores)", "3.8 million USD (Rs. 34 crs)".
+- **32: not a money value** ("148 MW", "Rs 2.75/kWh", "290.23" with the unit only in a
+  table header): correct, never a guessed scale.
+
+**Put to Sravanth, none implemented**: (1) should an unknown stage alone block
+verification (§6 trigger 3 is Decided); (2) should provenance accept a contiguous part of
+the quote that gives the same value verbatim (§5.6 is Decided); (3) may a filing's own
+stated INR equivalent be used for a foreign-currency order (FX is Open). `order_extractions`
+stores `consideration_raw`, `value_span`, `company_is_recipient` and `stage`, so whatever
+he decides can be re-applied to both batches offline, with no new OpenAI spend.

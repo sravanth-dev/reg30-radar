@@ -2480,3 +2480,12 @@ Explained to Sravanth in the same conversation: what happens at each remaining s
 exactly what a Batch request contains (only the prompt and one filing's text; the model
 returns raw quoted values and spans, never a converted number or a computed ratio - §6's
 "the model never normalizes" rule, unchanged from the live path).
+
+### 29 Sep 2026 — FILES.md: a one-page map of every file
+
+Sravanth asked for two to three lines on every file in the repo: what it does and how.
+Written as `FILES.md` at the root rather than in chat, since it covers ~190 files, grouped
+by folder. It was written from each file's own docstring or header comment, and a script
+confirmed every tracked file is covered. It is a map, not a spec: it links to
+ARCHITECTURE.md and WORKLOG.md and says the code wins if they disagree. **Keep it current**:
+when a file is added, removed or changes purpose, update its entry in the same commit.

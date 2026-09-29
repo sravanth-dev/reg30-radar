@@ -407,6 +407,7 @@ Order of operations:
 1. **Annexure parser** (deterministic, no LLM): find the labelled rows and pull the raw strings. Row labels vary: "Broad consideration or size of the order(s)", "Broad consideration for the order(s)", even the misspelt "Board commercial consideration…". Match loosely on "consideration".
 2. **LLM fallback** (§6), only for required fields the parser couldn't fill.
 3. **Verify by provenance** (Decided). Substring presence is not provenance: a document containing "13.51" anywhere would "verify" a value the model lifted from a date or an unrelated line item. So **both the parser and the model return the exact quoted span** they took the value from, and code checks two things — the span occurs verbatim in the document text, and the span contains the value. A field failing either check is rejected and `review_status = needs_review`.
+   **CHANGED 29 Sep 2026 (Sravanth): a verbatim part of the quote is enough.** The check now accepts any continuous run of words from the quote that appears verbatim (whitespace aside) in the text **and** parses to exactly the reported value; the whole quote is tried first. The reason is measured: PDF tables come out with their columns interleaved, so RAILTEL's text reads `Rs.\n(in INR); 38,59,27,045/-`, the label column inside the value, and a model quoting the value as a reader sees it produces a quote that is not one piece of the text. That failed 54 correct answers in the first backfill batch; 51 pass the new rule. The property that matters is kept: the number must come verbatim from the document and parse to the same value, and a real passage that parses to a different number still fails (`extractor/provenance.py`).
    On a page whose text came from this project's own vision OCR (§5.5 Part C, `source = vision`), the span check alone is circular — it proves the extractor copied the transcript, not that the transcript matches the image — so a value from such a page needs a second, independent read agreeing on it before it can be `verified`.
 4. **Normalize** with the unit normalizer (§5.7).
 
@@ -423,7 +424,7 @@ Order of operations:
   - "approx"/"approximately"/"about" → `approx` flag;
   - "incl./including GST" → `gst_inclusive`;
   - ranges → low/high values plus a flag;
-  - foreign currency → flagged and **not converted**; FX remains Open, and a foreign-currency order is flagged for review rather than guessed at;
+  - foreign currency → **USD converted at a fixed ₹94** (Sravanth, 29 Sep 2026, "for now", so a USD order's ratios can be computed; `config/fx.yaml`), flagged `fx_converted`, with the original currency kept in `order_extractions.currency`; **every other currency flagged and not converted**, and sent to review. Each amount's currency is read **beside the number that was chosen**, not from anywhere in the string, and a crore/lakh amount is rupees: otherwise "INR 651 Crores (USD 73.47 million)" would have its crore figure multiplied by the dollar rate;
   - **Indian number words** (Decided): "Rupees Thirteen Crore Fifty One Lakh only" and similar must parse in code. Filings write values in words often enough that a digits-only parser would reject correct answers and fill the review queue with them.
 - Execution period → months. Examples: "10 Months from Work Order", "2 Years", "Within 6 months", "60 days", "Delivery Completion is November, 2026" (absolute dates use the filing date as reference). Anything unclear → null.
 - Test vectors, taken from real filings:
@@ -563,7 +564,7 @@ trading. **It can never produce a GO on this same data.**
 - **Escalate only on objective triggers** (Decided):
   1. The tier-1 output fails schema validation or the provenance check after one retry.
   2. The parser's value fails verification *and* disagrees with tier 1.
-  3. A judgment field comes back unknown: `company_is_recipient` or `stage`.
+  3. A judgment field comes back unknown: `company_is_recipient`. **Narrowed 29 Sep 2026 (Sravanth): an unknown `stage` no longer triggers it.** Stage is not used by D22's verdict, and in the first backfill batch it alone had sent 112 verified values to review; an unknown recipient still does, because the verdict needs the company to have won the order.
      A non-INR currency is **not** a trigger — it is a determinate fact code can already see, and escalating on it would pay a stronger model to re-read something known. Foreign currency is flagged and left unconverted; FX stays Open (§11).
   4. High stakes: `value_to_mcap` ≥ 15%, **or TTM is null**. The escalation model extracts independently, without seeing tier 1's answer. If they disagree on `value_inr` or `company_is_recipient`, the order goes to manual review rather than being marked verified.
      This uses `value_to_mcap` rather than `value_to_ttm` deliberately: market cap is available for essentially every listed company, whereas TTM is not — and the old trigger silently skipped the messiest cases, the ones with missing financials, by never firing on them. Firing when TTM is null closes that gap.
@@ -751,7 +752,7 @@ Still open:
 
 - ~~User-Agent: whether to append a contact string.~~ **Decided 23 Sep 2026: no contact string.** The collector sends exactly the browser-like UA already in `config/sources.yaml`, which every spike and the live collector have now proven against Akamai. Sect.3 records the tension — an honest UA is what robots.txt invites and is also what bot management is most likely to refuse — and the call is to keep the proven string rather than risk the hard block D19 exists to avoid. The UA lives in `config/sources.yaml` only; `HTTP_USER_AGENT` has been removed from `.env`/`.env.example`, because it is not a secret and two places to set it invites exactly the rotation D25 forbids.
 - ~~Scanned PDFs: local OCR, a vision-capable model, or manual review only.~~ **Decided 24 Sep 2026: a vision-capable OpenAI model (§5.5 Part B), Sravanth's call.** Built and dormant: `documents/ocr.py`, `llm/client.py`, `config/llm.yaml`'s `ocr_model`. Activates once Sravanth supplies the model id, its prices and `caps.ocr_usd_per_month`; until then every image page lands in manual review, never guessed.
-- FX source for foreign-currency orders.
+- ~~FX source for foreign-currency orders.~~ **Decided for now, 29 Sep 2026 (Sravanth): USD at a fixed ₹94** (`config/fx.yaml`), other currencies unconverted and reviewed. A fixed planning rate, not a dated market rate, so a converted value is approximate; where a filing states its own INR figure the two differ by a few percent (WELCORP: ₹16,920 cr at ₹94 against its stated ~₹17,200 cr).
 - Opting into OpenAI data sharing for this project (free daily tokens vs sharing prompts).
 - ~~Backup mechanism (rclone or n8n).~~ **Decided 27 Sep 2026: rclone** (D14).
 - Event-study bucket edges (§5.11) — *narrowed*: the **primary** bucket is now fixed by D22 (value_to_ttm ≥ 15%, market cap < ₹10,000 cr, +5 days). The remaining reporting cells stay Default and are exploratory.
@@ -775,7 +776,7 @@ Work only he can do:
 
 Promised before the phases that need them: **VPS numbers** (Spike E — free memory, free disk, swap, the Docker network name, how Postgres is configured) and the **OpenAI model IDs and prices** (Spike D).
 
-Decisions owed, each blocking a slice: FX source (Slice 4) · OpenAI data-sharing opt-in (Spike D) · User-Agent contact string (Slice 1) · ~~backup mechanism~~ (decided 27 Sep 2026: rclone, D14).
+Decisions owed, each blocking a slice: ~~FX source~~ (USD at ₹94 for now, 29 Sep 2026) · OpenAI data-sharing opt-in (Spike D) · User-Agent contact string (Slice 1) · ~~backup mechanism~~ (decided 27 Sep 2026: rclone, D14).
 
 ---
 

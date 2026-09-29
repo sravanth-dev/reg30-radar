@@ -74,6 +74,9 @@ empty too; they exist so git keeps a folder before it has real files.
 - **`documents.yaml`** — Knobs for the document step: the resolution and greyscale setting
   for rendering a page for OCR, and how often `orders --follow` wakes up and how many days
   back it looks.
+- **`fx.yaml`** — Fixed rupee rates for foreign-currency order values: USD at ₹94, set by
+  Sravanth on 29 Sep 2026 so USD orders get ratios. A currency without a rate here is never
+  converted.
 - **`sheets.yaml`** — Google Sheets mirror settings: the API address, the names of the raw
   and orders tabs, the 5-minute sync interval with jitter, and the write chunk size. The
   spreadsheet id and key path come from `.env`.
@@ -223,13 +226,15 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   request from `order_extract_v1.md` plus the document text, validates the reply with
   Pydantic, then converts the value in code and checks provenance. An invalid reply is
   retried once.
-- **`extractor/provenance.py`** — The one check that decides "verified": the quoted passage
-  must appear in the document text, and parsing that passage alone must give back the same
-  value.
+- **`extractor/provenance.py`** — The one check that decides "verified": some continuous
+  part of the quoted passage must appear word for word in the document text and, parsed on
+  its own, give back exactly the same value. A part is allowed because PDF tables
+  interleave their columns in the extracted text.
 - **`units/money.py`** — Turns printed amounts into `Decimal` rupees. It handles ₹/Rs./INR,
   crore/lakh/million/billion, Indian digit grouping, amounts written in words, "approx" and
-  GST flags, and ranges. A foreign currency is flagged, not converted. It also turns
-  execution periods into months.
+  GST flags, and ranges. USD converts at the fixed rate in `config/fx.yaml`; other
+  currencies are flagged, not converted. Each amount's currency is read beside the number
+  itself. It also turns execution periods into months.
 
 ## src/tradebot/llm/
 
@@ -308,8 +313,8 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 - **`__main__.py`** — `python -m tradebot.backfill <stage>`. Each stage runs one pass
   against the backfill database: universe, expected, announcements, reconcile, documents,
-  batch-submit/collect, events, revenue, calculate, recheck-submit/collect, study and
-  status.
+  batch-submit/collect, rejudge, events, revenue, calculate, recheck-submit/collect, study
+  and status.
 - **`universe.py`** — Builds the frozen company list from the criteria as of 22 Sep 2025,
   and refuses if the criteria are not frozen. It applies hand and industry exclusions from
   config, and estimates what the list filed before anything is downloaded.
@@ -323,9 +328,10 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   (order categories, then headline hits, then the rest) and skips body-check-only catch-alls
   above ₹50,000 cr. The filings then go through the live pipeline, with LLM extraction held
   back for Batch.
-- **`batch.py`** — Sends every `pending_llm` filing to OpenAI's Batch API after a worst-case
-  cost check. Later it reads the results back through the same checks as a live call, with
-  retries capped at three submissions.
+- **`batch.py`** — Sends `pending_llm` filings to OpenAI's Batch API after a worst-case cost
+  check, one batch per model sized to OpenAI's queue limit. Later it reads the results back
+  through the same checks as a live call, with retries capped at three submissions.
+  `rejudge` re-applies the current rules to stored answers without calling the model.
 - **`events.py`** — Merges verified extractions into events on exact keys only (the same
   PDF hash, or the same company and value). It implements §6's state machine: extracted,
   then calculated, then verified or recheck.

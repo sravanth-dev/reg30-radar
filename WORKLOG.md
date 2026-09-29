@@ -38,13 +38,14 @@ download failures. The 10:06 run crashed at 11:45 on a Windows-only bug in
 `documents/fetch.py`, now fixed (see the 11:45 entry). **The first Batch was rejected whole by OpenAI** (`token_limit_exceeded`: the
 organisation may queue at most 2,000,000 tokens per model; our 1,415 requests were ~3.07M
 by our estimate), so no filing was read and nothing was charged. Fixed 29 Sep: batches are
-now sized to 80% of that limit, one per model in the queue at a time. **Batch 1
-collected** (29 Sep 22:18: 763 answers, $0.123): 246 verified, 140 not an order, 369
-needs_review, 8 invalid (resent). **Batch 2 is running** (`batch_6abbec95bbf08190b15113eb02dad6ec`,
-660 requests incl. the 8 retries, worst case $0.21, submitted 22:21, past validation);
-`batch-collect` when it completes. **Three decisions are open for Sravanth** on why so
-many land in review (see the 29 Sep 22:20 entry); the model's raw answers are stored, so
-any rule he changes can be re-applied offline without paying OpenAI again. The live collector and `sheets` are running again
+now sized to 80% of that limit, one per model in the queue at a time. **Both batches
+are collected** (1,423 answers, $0.236; with OCR the backfill has spent $0.45 of $3). On
+30 Sep Sravanth's three review-rule decisions were applied and `rejudge` re-applied them to
+the stored answers with no model call: **1,444 verified, 355 needs_review, 326 not an
+order, 13 `pending_llm`** (invalid answers owed one retry: next `batch-submit` +
+`batch-collect`). The review queue is now almost all genuine: 247 filings state no value,
+80 give a non-money figure, 19 a non-USD currency, 7 a quote that does not back the value.
+The live collector and `sheets` are running again
 (Sravanth restarted them at 10:11 and 10:16); `orders --follow` can now be restarted and
 caught up from 27 Sep, since `documents` is done for this tier. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
@@ -61,7 +62,7 @@ both download from nsearchives, and catch it up afterwards with
    the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
    "ISIN reissues handled" entry). **Tier one of `documents` is done, `batch-submit` has
    run** (see above; the first attempt was rejected and resent in two rounds). Waiting
-on: `batch-collect` for batch 2, Sravanth's three review-rule decisions, then
+on: the 13 retries (`batch-submit` + `batch-collect`), then
    `events`, `revenue` (event companies only), `calculate`, `recheck-submit` /
    `recheck-collect`. **`study` only after every documents tier is done**, or orders found
    only in a PDF body are missing from the verdict.
@@ -2563,3 +2564,51 @@ the quote that gives the same value verbatim (§5.6 is Decided); (3) may a filin
 stated INR equivalent be used for a foreign-currency order (FX is Open). `order_extractions`
 stores `consideration_raw`, `value_span`, `company_is_recipient` and `stage`, so whatever
 he decides can be re-applied to both batches offline, with no new OpenAI spend.
+
+### 30 Sep 2026 (00:59-01:40) — batch 2 collected; three review rules changed; rejudged
+
+**Batch 2 collected** 00:59: 660 answers, $0.113. 131 verified, 186 not an order, 330
+needs_review, 13 invalid (owed one retry). The 8 retries from batch 1 all resolved.
+Backfill LLM spend: $0.236 extraction + $0.214 OCR = **$0.45 of $3**.
+
+**Sravanth's decisions (29 Sep, applied 30 Sep)**, answering the three questions in the
+29 Sep 22:20 entry:
+1. **"Stop blocking by the stage."** `llm_extract.judge` no longer sends an unknown stage
+   to review; an unknown recipient still does. ARCHITECTURE §6 trigger 3 narrowed.
+2. **"Yes"** to provenance on a verbatim part of the quote: `provenance.verify` accepts any
+   continuous run of words from the quote that is verbatim in the text and parses to
+   exactly the reported value, whole quote first. §5.6 records it.
+3. **"Change the USD to Rs 94 for now, leave the other currencies as usual"**, to compute
+   the ratios. New `config/fx.yaml` (`rates_to_inr: USD: 94`); `units/money.py` converts
+   USD there and flags `fx_converted`; other currencies stay unconverted. §5.7 and §11
+   record it; FX is no longer Open.
+
+**Added with (3), because conversion made it dangerous**: `parse_money` used to take a
+string's currency from anywhere in it. With conversion on, "INR 651 Crores (USD 73.47
+million)" would have had its crore figure multiplied by 94. The currency is now read beside
+the number that was chosen (12 characters before, a crore/lakh scale meaning rupees, 16
+after, then the whole string). **Bug found on the way**: neither LLM path (live `_llm_row`,
+backfill `_apply`) wrote `order_extractions.currency`, so every LLM-read order had none;
+both do now, so "USD with a value_inr" visibly means converted.
+
+**New stage `python -m tradebot.backfill rejudge`**: re-applies `judge` to stored answers
+(only those the model judged an order with a usable answer), no model call. Run on the
+backfill database: **346 needs_review -> verified**, 377 verified stayed verified, 351
+stayed in review. Verified 1,098 -> 1,444; review 701 -> 355; spend unchanged.
+
+**Checked, not assumed**: 101 verified orders are now USD-converted, totalling ~₹1.9 lakh
+crore, which looked large. They are genuine dollar deals, mostly IT services quoting deal
+value in USD (TCS "US$9.3 billion", HCLTECH "US $ 1.14 Billion", COFORGE, LTM, LTTS), and
+no rupee amount was multiplied by 94. Where a filing states its own INR figure, ₹94 lands
+within a few percent (WELCORP ₹16,920 cr against its ~₹17,200 cr; RATNAMANI ₹2,688 cr
+against ₹2,700 cr).
+
+**What is left in review (353 LLM rows)**: 247 no value stated, 80 non-money figures (MW,
+tariffs, a number whose unit is only in a table header), 19 non-USD currency, 7 quotes that
+do not back the value. That is the queue working as designed.
+
+Tests: USD conversion, no-rate currency, currency beside the number, the interleaved-table
+quote, a verbatim part giving a different number still failing, unknown stage no longer
+blocking, currency written by the batch collector, and `rejudge` on real SQL. 362 pass.
+**Not rejudged**: the live database's `order_extractions` (the backfill CLI touches only
+the backfill database); new live results use the new rules automatically.

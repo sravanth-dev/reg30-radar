@@ -35,11 +35,13 @@ study, and the report writer with D22's verdict. 353 tests pass.
 (28 Sep, ~12:20): all 2,138 order-category and headline-hit filings of Sravanth's "option
 B" are downloaded, extracted and T0-parsed. The last run (12:01, 240 filings) had 0
 download failures. The 10:06 run crashed at 11:45 on a Windows-only bug in
-`documents/fetch.py`, now fixed (see the 11:45 entry). **`batch-submit` ran at 13:02**:
-1,415 filings the parser could not confirm went to OpenAI's Batch API in one batch
-(`batch_6aba1814a7188190aefc196d0b620e57`), worst-case cost $0.440437 against the $3
-backfill cap. Results are due within 24 hours; `batch-collect` reads them back, applying
-§6's rules exactly as a live call would. The live collector and `sheets` are running again
+`documents/fetch.py`, now fixed (see the 11:45 entry). **The first Batch was rejected whole by OpenAI** (`token_limit_exceeded`: the
+organisation may queue at most 2,000,000 tokens per model; our 1,415 requests were ~3.07M
+by our estimate), so no filing was read and nothing was charged. Fixed 29 Sep: batches are
+now sized to 80% of that limit, one per model in the queue at a time. **Batch 1 of 2 is
+running** (`batch_6abbe57fe3248190b4cbf73e62824924`, 763 filings, worst case $0.23,
+submitted 21:51 IST 29 Sep, past validation). When it completes: `batch-collect`, then
+`batch-submit` sends the other 652, then `batch-collect` again. The live collector and `sheets` are running again
 (Sravanth restarted them at 10:11 and 10:16); `orders --follow` can now be restarted and
 caught up from 27 Sep, since `documents` is done for this tier. The remaining
 24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
@@ -55,7 +57,8 @@ both download from nsearchives, and catch it up afterwards with
 1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** `reconcile` has run with
    the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
    "ISIN reissues handled" entry). **Tier one of `documents` is done, `batch-submit` has
-   run** (see above). Waiting on: `batch-collect` (within 24 h of 13:02, 28 Sep), then
+   run** (see above; the first attempt was rejected and resent in two rounds). Waiting
+on: `batch-collect` for batch 1, `batch-submit` + `batch-collect` for batch 2, then
    `events`, `revenue` (event companies only), `calculate`, `recheck-submit` /
    `recheck-collect`. **`study` only after every documents tier is done**, or orders found
    only in a PDF body are missing from the verdict.
@@ -2489,3 +2492,29 @@ by folder. It was written from each file's own docstring or header comment, and 
 confirmed every tracked file is covered. It is a map, not a spec: it links to
 ARCHITECTURE.md and WORKLOG.md and says the code wins if they disagree. **Keep it current**:
 when a file is added, removed or changes purpose, update its entry in the same commit.
+
+### 29 Sep 2026 (21:19-21:52) — the first Batch was rejected whole; fixed and resent
+
+`batch-collect` found `batch_6aba1814...` **`failed` with 0 results**. OpenAI's reason,
+read from the batch object (our collect did not record it): `token_limit_exceeded`,
+"Enqueued token limit reached for gpt-6-luna ... Limit: 2,000,000 enqueued tokens". The
+batch was rejected 62 s after submission on 28 Sep, before any request ran, so **nothing
+was charged and no filing was read**. The pending set is 1,415 requests, 5.4M characters of
+document text: ~3.07M tokens by our estimate (1 per 3 characters), ~2.3M at 1 per 4.
+
+**Two gaps it exposed, both fixed** (`llm/client.py`, `backfill/batch.py`, `recheck.py`,
+`config/llm.yaml` `batch.enqueued_token_limit` / `enqueue_share`):
+1. Batches were split by count (2,000 requests), never by tokens. Now
+   `LlmClient.batch_token_room` allows one uncollected batch per model at a time, filled to
+   80% of the limit (the estimate counts message text, not the JSON schema each request
+   also carries), and `batch_fit` packs requests up to that. The recheck step shares the
+   model and the limit, so it follows the same rule.
+2. **A batch rejected whole used up one of a filing's three submissions.** Two more
+   rejections would have sent all 1,415 to `needs_review` unread. Now a `failed` batch is
+   not counted, in both batch.py and recheck.py.
+`collect` now logs OpenAI's reason whenever a batch fails. 3 new tests (real SQL, fake
+OpenAI); the two key ones reproduce the faults on the old code (`oe-1-2`; all three
+requests in one batch). 357 pass.
+
+**Resent 21:51 IST**: `batch_6abbe57fe3248190b4cbf73e62824924`, 763 requests, worst case
+$0.232534, 652 waiting for the next round. Checked at 21:52: `in_progress`, 763 accepted.

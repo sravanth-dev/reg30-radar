@@ -79,7 +79,11 @@ on: the 13 retries (`batch-submit` + `batch-collect`), then
    verified (Spike C2, 27 Sep night)** from Sravanth's capture: `api/integrated-filing-results`,
    back to the quarter ended 31-Mar-2025, parsed unchanged by `revenue/xbrl.py`.
    `revenue/load.py` now reads both results listings (ARCHITECTURE §5.8). Not yet run: it
-   fetches event companies only, so it runs after the `events` stage.
+   fetches event companies only, so it runs after the `events` stage. **Sized 4 Oct:**
+   about 18 requests a company (2 listings + ~16 XBRL files), ~80 s each at backfill
+   pace; 231 companies have a verified order, so ~4,200 requests, **~5 hours**, ~70 MB.
+   Not alongside a `documents` night (both use nsearchives). Market caps need nothing
+   more: all 388 trading days are already loaded. No LLM in either.
 5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
    ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
    name a stronger model later). Both usable as they stand.
@@ -98,6 +102,10 @@ under one key; a contamination-detection gap that would have understated contami
 dispatch (a window-filter operator-precedence mistake, and a missing §5.4 gate-audit
 check) caught by a deliberate review pass during the fetch's idle time, not by a test
 failing. Full detail in the 27 Sep entries below.
+
+**Live order ratios are deferred until after the verdict** (Sravanth, 4 Oct). Live orders
+get no revenue or market-cap ratios for now: the live database has neither table filled,
+and nothing fetches them. See the 4 Oct entry for what building it would cost.
 
 **Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
 `raw_announcements` and `order_extractions` into two tabs of one Google Sheet, view-only.
@@ -2612,3 +2620,31 @@ quote, a verbatim part giving a different number still failing, unknown stage no
 blocking, currency written by the batch collector, and `rejudge` on real SQL. 362 pass.
 **Not rejudged**: the live database's `order_extractions` (the backfill CLI touches only
 the backfill database); new live results use the new rules automatically.
+
+### 4 Oct 2026 — revenue and market-cap fetch sized; live ratios deferred
+
+Sravanth asked how long fetching revenue and market caps for the order ratios (§5.10)
+takes, how many requests it needs, and whether it needs an LLM, for past and present
+orders. Measured on both databases, read-only:
+
+- **Past orders, market cap: nothing to fetch.** `market_caps` in the backfill database
+  already holds 388 trading days (3 Mar 2025 to 25 Sep 2026), 1,042,617 rows.
+- **Past orders, revenue: ~4,200 requests, ~5 hours.** `revenue/load.py` sends about 18
+  requests a company (2 listings + ~16 XBRL files for quarters from Sep 2024, both bases),
+  about 80 s each at >=3 s plus jitter. 231 universe companies have a verified order now
+  (1,444 verified orders); 226 filed under an order category. About 70 MB in all. Later
+  catch-all tiers add companies at the same cost, fetched incrementally because the
+  stage checkpoints per company. The whole universe would be ~28,000 requests (~35 h),
+  which the 27 Sep decision already rules out.
+- **No LLM** for revenue, market cap or the ratios: XBRL and the mcap CSV are parsed in
+  code. The only knock-on is §6 trigger 4's independent re-read of high-stakes orders
+  (value/mcap >= 15% or null TTM), on Batch under the $3 cap: cents.
+- **Present orders: not built.** The live database has no market caps and no financials;
+  it held 40 orders with a value from 32 companies (23-29 Sep). Building it would cost 2
+  archive downloads per trading day for market cap, ~18 requests per newly seen company
+  for revenue (kept until it files new results), and ~600 requests to catch up from
+  23 Sep. A filing after 15:30 would wait for that evening's bundle (§5.10), and the
+  requests would come from the VPS IP (D19).
+
+**Decided (Sravanth): live ratios wait for the backfill verdict**, since they are only
+useful for acting on orders and D18 defers that until the verdict. No code changed.

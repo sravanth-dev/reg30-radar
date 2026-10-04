@@ -84,8 +84,8 @@ on: the 13 retries (`batch-submit` + `batch-collect`), then
    pace; 231 companies have a verified order, so ~4,200 requests, **~5 hours**, ~70 MB.
    Not alongside a `documents` night (both use nsearchives). Market caps need nothing
    more: all 388 trading days are already loaded. No LLM in either. **`events` built and
-   the full `revenue` run started 4 Oct, 11:38** (see that entry); log in
-   `data/revenue_load.log`.
+   the full `revenue` run started 4 Oct, 11:38**, interrupted by a hotspot drop and
+   relaunched detached at 12:19 (PID 7024); log in `data/revenue_resume.log`.
 5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
    ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
    name a stronger model later). Both usable as they stand.
@@ -2678,3 +2678,23 @@ companies.
 
 **Full run started 11:38**: `revenue --max-requests 5000`, 229 companies left, expected
 ~4.5-5 h. Output in `data/revenue_load.log` / `.out`.
+
+### 4 Oct 2026 (12:07-12:20) — hotspot dropped mid-run; revenue relaunched detached
+
+**The `POCO X7` hotspot lost DNS at ~12:07** ("Failed to resolve 'www.nseindia.com'").
+The run did not stop: each remaining company failed at its first listing call and the loop
+moved on every ~3.5 s, so **55 companies were marked FAILED in about three minutes** with
+no traffic reaching NSE. Then the run, launched as a backgrounded Bash call, was **killed
+at ~12:08 by the tool's background time limit**. Nothing lost: 19 companies were
+checkpointed (17 + the 2 trial), failed ones are not, and a killed company's partial rows
+are skipped on re-insert. Laptop not rebooted; still on battery (36%).
+
+**Relaunched 12:19 as a detached process** (`Start-Process`, PID 7024, `--max-requests
+5000`; `data/revenue_resume.log` / `.out`), as the 27-28 Sep runs were. 212 companies
+pending; the first came back clean. **Lesson: start any stage longer than a few minutes
+detached, never as a backgrounded tool call**, which has a time limit.
+
+**Worth deciding (not changed):** during an outage the loop burns through the list,
+failing every company, and exits early. A long drop would end the run having fetched
+nothing, needing a manual restart. Stopping after a few consecutive connection failures
+would make that explicit; it is a code change, so it is Sravanth's call.

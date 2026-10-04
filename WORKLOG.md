@@ -83,7 +83,9 @@ on: the 13 retries (`batch-submit` + `batch-collect`), then
    about 18 requests a company (2 listings + ~16 XBRL files), ~80 s each at backfill
    pace; 231 companies have a verified order, so ~4,200 requests, **~5 hours**, ~70 MB.
    Not alongside a `documents` night (both use nsearchives). Market caps need nothing
-   more: all 388 trading days are already loaded. No LLM in either.
+   more: all 388 trading days are already loaded. No LLM in either. **`events` built and
+   the full `revenue` run started 4 Oct, 11:38** (see that entry); log in
+   `data/revenue_load.log`.
 5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
    ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
    name a stronger model later). Both usable as they stand.
@@ -2648,3 +2650,31 @@ orders. Measured on both databases, read-only:
 
 **Decided (Sravanth): live ratios wait for the backfill verdict**, since they are only
 useful for acting on orders and D18 defers that until the verdict. No code changed.
+
+### 4 Oct 2026 (11:30-11:38) — events built; revenue trial clean; full revenue run started
+
+Sravanth: "okay let's start the revenue backfill". Pre-flight: no Python process running
+on the laptop, on the `POCO X7` hotspot, **laptop on battery at 45-47%** (asked to plug in;
+the run is resumable per company either way).
+
+**`events`** (database only, rebuildable): 1,444 verified filings -> **1,286 events**, 158
+merged as repeats. The 13 `pending_llm` retries are still owed; re-running `events` after
+them keeps every existing event's state. 231 event companies, all with a symbol to query.
+
+**Trial, `revenue --max-requests 40`**: 2 companies, 38 requests, 0 failed, 0 unparseable,
+~3.9 s a request. PROTEAN 12 filings (53 s), AVANTEL 22 (94 s, incl. revised filings), so
+the per-company count varies more than the ~16 estimated. Checked by hand: AVANTEL's TTM
+at four event dates equals the sum of the four quarters known then, one of them derived
+as FY - 9M because its 26 Apr 2025 filing tagged the quarter as a 6-month fact; a revision
+filed 30 Sep 2026 is correctly invisible to every earlier event.
+
+**Gap found: the older `corporates-financial-results` listing returned 0 rows for
+PROTEAN** (listed Nov 2024), so its Dec 2024 quarter is missing and its 10 Jan 2026 event
+has TTM null (its Aug 2026 event is fine). AVANTEL's older listing returned 4 rows, so the
+call works in general. Not investigated yet, to keep the hosts free for the run: after it,
+count companies whose checkpoint shows `financial_results.rows = 0` and the events that
+lose TTM, then decide whether a probe is worth it. A fix would re-fetch only those
+companies.
+
+**Full run started 11:38**: `revenue --max-requests 5000`, 229 companies left, expected
+~4.5-5 h. Output in `data/revenue_load.log` / `.out`.

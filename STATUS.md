@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 22:15 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 20 Oct 2026, 22:35 IST (checkpoint before the night). The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -52,12 +52,21 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       54,081 placebos: 5.75% raw, 4.43% robust, MDE(median, n=30) 2.50%; ordinary-day
       median excess -0.44% (`reports/power_analysis_2026-10-20.md`). 448 tests pass
 
-## In progress
-- [ ] Nothing running. `data/nse.lock` is free.
+- [x] Step 1.8: `tradebot.live` + `tradebot.catchup` built (commit `388075b`), migration
+      0018 on both DBs, order-path retries fixed. 461 tests pass. Catch-up 1-20 Oct:
+      7,806 new filings, no failed or flagged day
+
+## In progress (running unattended)
+- [ ] **`python -m tradebot.live` is running detached** (started 22:30, python PID 8316,
+      log `data/live.log`, holds `data/nse.lock`). It is draining the catch-up backlog: 1,894
+      in-scope PDFs at 6 per cycle (about 2 days at the off-window pace). It needs no input.
+      It stops by itself on 5 NSE failures in a row (exit 3) or a calendar problem (exit 2);
+      restart it with the command below. While it runs, no other NSE command can start
+      (the lock refuses), which is intended.
+- [ ] Batch `batch_6ad799778dc08190a9fbb5d15054aad9` (30 pending backfill filings,
+      submitted 22:10, worst case $0.0092): collect after it completes (<= 24 h)
 
 ## Next (in order)
-8. A single live runner (`python -m tradebot.live`) and `catchup`; then start live on the
-   laptop and catch up from 1 Oct
 9. Backfill stages: `batch-submit`/`collect` → `events` → `calculate` → `recheck` →
    `study` → `report`
 10. GATE 2 preparation (Compose locally, README, hosting options), then **stop**
@@ -80,5 +89,9 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Select ProcessId, Co
 python -m tradebot.backfill status       # backfill counters
 python -m pytest -q                      # must be green before any commit
 python -m tradebot.common.backup         # before any stage that writes to a database
+# live runner: is it up? restart it if it exited
+Get-Content data\live.log -Tail 20
+Start-Process cmd.exe -ArgumentList '/c','.venv\Scripts\python.exe -m tradebot.live 2>> data\live.log' -WindowStyle Hidden
+python -m tradebot.backfill batch-collect   # once the 20 Oct batch is done
 ```
 Rule: never start an NSE-talking command while another one is running.

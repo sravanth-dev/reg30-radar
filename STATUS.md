@@ -95,3 +95,20 @@ Start-Process cmd.exe -ArgumentList '/c','.venv\Scripts\python.exe -m tradebot.l
 python -m tradebot.backfill batch-collect   # once the 20 Oct batch is done
 ```
 Rule: never start an NSE-talking command while another one is running.
+
+## GATE 2: hosting options (moved from the old README, 21 Oct 2026; Sravanth's decision)
+
+The VPS was cancelled in Oct 2026 (D28). Three options:
+
+| | (a) This laptop + Task Scheduler | (b) A cloud VM | (c) A small always-on box at home |
+|---|---|---|---|
+| How | `live` at logon, `catchup` daily at 07:30 | Compose with `local-db` | Compose with `local-db` (mini-PC or Raspberry Pi 5) |
+| Cost | ₹0 | ~₹400-1,000 / month | ~₹6,000-12,000 once, plus power |
+| NSE access | residential / hotspot IP, proven since Sep | **datacenter IP, never tested** against NSE's Akamai layer; a block is likely to be the first finding | residential broadband IP, as now |
+| Uptime | stops whenever the laptop sleeps, travels or reboots (it rebooted at 03:52 on 21 Oct and the runner stopped) | high | high |
+| first_seen_at quality | gaps whenever it is off; `catchup` recovers the filings, not the timing | continuous, if not blocked | continuous |
+| Broker later | no static IP | static IP possible (needed for an Angel One whitelist) | no static IP without an ISP add-on |
+
+Recommendation: (c) if live timing matters for Phase 2, otherwise (a) with the daily
+catch-up. (b) only after one test week from that VM, since a block would also put a broker
+IP at risk if the two share it.

@@ -2944,3 +2944,9 @@ trades" failed for that reason alone. The calendar code was right.
   extension), now holds the 1,281 backfill events, and the study columns fill in after
   `study`. Two latent bugs in `client.clear_from` were fixed: it sent a 400-raising range
   when the data filled the grid exactly, and it cleared only columns A-Z.
+- **README rewritten for the public repo** (Sravanth will post it). It covers what the
+  project is, a diagram, each pipeline step in plain language, the pre-registered rule,
+  measured numbers only (no result claimed before the study), design choices, known
+  limitations, how to run it, a repository map, and a note on NSE's terms. The hosting
+  options moved to STATUS.md. Full-history secret scan before going public: clean. One hit
+  was a documentation placeholder; no sensitive file was ever committed.

@@ -2698,3 +2698,44 @@ detached, never as a backgrounded tool call**, which has a time limit.
 failing every company, and exits early. A long drop would end the run having fetched
 nothing, needing a manual restart. Stopping after a few consecutive connection failures
 would make that explicit; it is a code change, so it is Sravanth's call.
+
+### 4 Oct 2026 (16:30-16:55) — revenue run finished; a quarter-tagging defect found
+
+**The run finished 16:30**: 204 companies fetched, 8 FAILED, 3,869 requests. With the 19
+from before, **223 of 231 event companies are done**. The 8 failures are transient (6 lost
+1-4 XBRL downloads, 2 connection resets: e.g. INE018A01030, INE248A01017 ITI,
+INE287B01021, INE323I01011); none is checkpointed, so `revenue` again fetches only them
+(~160 requests, ~12 min). **Not yet re-run: Sravanth is shutting the laptop down.**
+
+**Three integrated listings truncated at one page** (ITI, MCLOUD, AHLUCONT: 20 of 22-23
+rows; `size: 20` in `config/sources.yaml`, page 1 only). The rows cut are the oldest
+(MCLOUD lost Mar25 standalone, AHLUCONT Mar25 consolidated); harmless where the other
+basis is complete. Fix later: ask for `size` 40 or read page 2.
+
+**TTM coverage, measured with `ttm_as_of` per event** (database only): **1,160 of 1,286
+events have TTM**; 37 belong to the 8 failed companies; 89 are null across 25 companies:
+- 63 at 16 companies whose older `corporates-financial-results` listing returned 0 rows,
+  plus ~13 at companies with only 2 rows there: almost all **recent NSE listings**
+  (HILINFRA 24 events, MBEL, VIKRAN, ARIS, OSWALPUMPS, PROSTARM, ITCHOTELS, PROTEAN...)
+  with fewer than four quarters filed on NSE. Honest nulls under "never guess"; their
+  earlier results, if any, are on BSE only (D26).
+- **13 from a parser defect** (DBL 6, HBLENGINE 4, RAMKY 2, ONEPOINT 1, and wider; below).
+
+**Defect found: some Q2 (Sep 2025) filings lose their discrete quarter.** In 47 XBRL files
+(25 companies) the period ending 30 Sep 2025 has only a 6-month fact and no 3-month one,
+always under context `OneD` (the discrete-quarter context). The stored value is the
+half-year figure: 6m / the Jun quarter is ~1.8-2.6 for every one checked (HILINFRA,
+VIKRAN, SBC, SBGLP, CEIGALL, MAPMYINDIA, PROSTARM, DBL: Q1 2,620.34 + Q2 1,925.89 =
+4,546.23 cr stored under OneD). Likely cause, **not yet confirmed against a file**: these
+filings declare `DateOfStartOfReportingPeriod` = 1 Apr (the half-year) for the quarter's
+context too, so `revenue/xbrl.py`'s "declared dates first" rule labels the quarter and the
+half-year both as 6 months, and the `financials` insert's conflict clause keeps only one.
+So the quarter is missing and TTM is null from the next quarter on (and, for a company with
+another gap, possibly wrong rather than null - unchecked). Also seen: 32 March period ends
+(18 companies) carry a 6-month fact, AVANTEL's mislabelled-quarter pattern from the trial;
+there Q4 = FY - 9M fills the quarter. **Next step, Sravanth's call**: download one affected
+file (DBL's `ING_INDAS_1574277_13112025082832_WEB.xml`, 1-2 requests) to confirm the
+cause, then fix the parser's period rule (e.g. prefer the context's own dates when the
+declared span is not a 3/6/9/12-month period consistent with the value, or derive Q2 = H1 -
+Q1 as Q4 = FY - 9M is derived) and re-parse. The stored `source_url` lets affected files be
+re-fetched without re-running the listings.

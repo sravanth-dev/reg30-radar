@@ -16,107 +16,58 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 27 Sep 2026 (night)*
+*Last updated: 20 Oct 2026 (GATE 1). The live checklist is [STATUS.md](STATUS.md); the
+20 Oct snapshot with file:line evidence is [AUDIT.md](AUDIT.md).*
 
 **What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are: every slice in ARCHITECTURE §10 has code, most of it run for real; the
-12-month backfill has not completed a full pass yet.** Today (27 Sep) built the entire
-measure-and-verdict half in one session: market data, the frozen company universe, the
-company-wise announcement fetch, the full category map, the document/Batch-extraction
-pipeline reused for the backfill, event merging, the §6 state machine and recheck,
-point-in-time TTM (with a real XBRL defect found and fixed), the calculator, the event
-study, and the report writer with D22's verdict. 353 tests pass.
+**Where we are.** Sravanth's 20 Oct brief sets two gates. GATE 1 (audit) is passed; the
+plan he approved runs Phase 1 fixes, then the backfill to a verdict, then GATE 2, where he
+picks hosting. Decisions from the gate (ARCHITECTURE D28-D32):
+- The VPS is cancelled.
+- The LLM stays on OpenAI under the existing caps.
+- Live collection restarts only as one process behind an NSE lock.
+- The third documents tier is skipped.
+- "over ₹X" counts as a flagged lower bound.
 
-**Right now: no backfill stage is running. The first `documents` tier is complete**
-(28 Sep, ~12:20): all 2,138 order-category and headline-hit filings of Sravanth's "option
-B" are downloaded, extracted and T0-parsed. The last run (12:01, 240 filings) had 0
-download failures. The 10:06 run crashed at 11:45 on a Windows-only bug in
-`documents/fetch.py`, now fixed (see the 11:45 entry). **The first Batch was rejected whole by OpenAI** (`token_limit_exceeded`: the
-organisation may queue at most 2,000,000 tokens per model; our 1,415 requests were ~3.07M
-by our estimate), so no filing was read and nothing was charged. Fixed 29 Sep: batches are
-now sized to 80% of that limit, one per model in the queue at a time. **Both batches
-are collected** (1,423 answers, $0.236; with OCR the backfill has spent $0.45 of $3). On
-30 Sep Sravanth's three review-rule decisions were applied and `rejudge` re-applied them to
-the stored answers with no model call: **1,444 verified, 355 needs_review, 326 not an
-order, 13 `pending_llm`** (invalid answers owed one retry: next `batch-submit` +
-`batch-collect`). The review queue is now almost all genuine: 247 filings state no value,
-80 give a non-money figure, 19 a non-USD currency, 7 a quote that does not back the value.
-The live collector and `sheets` are running again
-(Sravanth restarted them at 10:11 and 10:16); `orders --follow` can now be restarted and
-caught up from 27 Sep, since `documents` is done for this tier. The remaining
-24,425 catch-all filings (~24 GB over the hotspot) go on later nights with
-`python -m tradebot.backfill documents --max-requests N`; 7,221 control-group catch-all
-filings are left out by `config/backfill.yaml`'s `documents` section. The company-wise
-announcements fetch (1,583 companies, 162,251 filings) and band history are complete.
-The collector and `sheets` can be restarted any time (the collector uses www.nseindia.com,
-`documents` uses nsearchives); keep `orders --follow` stopped while `documents` runs, as
-both download from nsearchives, and catch it up afterwards with
-`python -m tradebot.orders --from ... --to ...`.
+**Backfill database** (`tradebot_backfill`, laptop):
+- Universe (1,583 companies), announcements (162,251), market data (388 trading days to
+  25 Sep 2026), band history, reconcile (96.6%): all done.
+- Documents tier one (2,120) and Batch extraction (1,444 verified / 355 review / 13 owed a
+  retry): done.
+- `events`: 1,286, all `extracted`.
+- `revenue`: 223 of 231 companies.
+- **Not yet run:** `calculate`, `recheck`, `study`.
+- Defects found in verified values must be fixed and re-applied first (AUDIT §3): 20
+  values below ₹1 lakh from ranges and band legends, 22 with no currency marker, 42
+  vision-read values with no second read, and the Sep-2025 half-year defect in revenue.
 
-**Blocking a real verdict, in order:**
-1. ~~**The announcements fetch finishing.**~~ **Done, 22:12.** `reconcile` has run with
-   the corrected window: 96.6% of order filers covered, 3 of 1,347 unexplained (see the
-   "ISIN reissues handled" entry). **Tier one of `documents` is done, `batch-submit` has
-   run** (see above; the first attempt was rejected and resent in two rounds). Waiting
-on: the 13 retries (`batch-submit` + `batch-collect`), then
-   `events`, `revenue` (event companies only), `calculate`, `recheck-submit` /
-   `recheck-collect`. **`study` only after every documents tier is done**, or orders found
-   only in a PDF body are missing from the verdict.
-1a. ~~**38 universe companies got a new ISIN during the window.**~~ **Fixed 27 Sep night**
-   (Sravanth approved): the study joins prices across a company's reissued ISINs and
-   treats the switch day as a capital action.
-2. **`config/backfill.yaml`'s universe is frozen** (`frozen_on: 2026-09-27`, ≥₹500 cr
-   collected with no ceiling, primary band ₹500–20,000 cr per the revised D22) — done,
-   1,583 companies, but re-freezing after any return is computed would make the result
-   exploratory, so don't edit it further without asking.
-3. **`config/category_map.yaml` is approved and in force** (146 categories, 8 buckets
-   including a new `leadership` confounder class) — done.
-4. ~~**The post-April-2025 "Integrated Filing" results API is still unknown.**~~ **Found and
-   verified (Spike C2, 27 Sep night)** from Sravanth's capture: `api/integrated-filing-results`,
-   back to the quarter ended 31-Mar-2025, parsed unchanged by `revenue/xbrl.py`.
-   `revenue/load.py` now reads both results listings (ARCHITECTURE §5.8). Not yet run: it
-   fetches event companies only, so it runs after the `events` stage. **Sized 4 Oct:**
-   about 18 requests a company (2 listings + ~16 XBRL files), ~80 s each at backfill
-   pace; 231 companies have a verified order, so ~4,200 requests, **~5 hours**, ~70 MB.
-   Not alongside a `documents` night (both use nsearchives). Market caps need nothing
-   more: all 388 trading days are already loaded. No LLM in either. **`events` built and
-   the full `revenue` run started 4 Oct, 11:38**, interrupted by a hotspot drop and
-   relaunched detached at 12:19 (PID 7024); log in `data/revenue_resume.log`.
-5. **`config/llm.yaml`'s `batch_prices`** are filled in for `gpt-6-luna`
-   ($0.05/$0.25 per million tokens); `tier2_model` is `gpt-6-luna` "for now" (Sravanth will
-   name a stronger model later). Both usable as they stand.
-6. **Not yet run for real**: `documents`, `batch-submit`/`batch-collect`, `events`,
-   `revenue`, `calculate`, `recheck-submit`/`recheck-collect`, `study`. Each is built,
-   unit-tested (several against real SQL in a scratch schema), and waits on the
-   announcements fetch finishing first.
+**Live database** (`tradebot`): the collector last polled on **1 Oct 09:31**. The
+`first_seen_at` hole since then is permanent. Live restarts only through the planned
+`python -m tradebot.live` (D30).
 
-**Six real bugs were found and fixed today by re-reading code against real data or real
-APIs before trusting it** - worth knowing about even after they're fixed, because each one
-would otherwise have silently changed the verdict's numbers: two live-path bugs in the
-order pipeline (VASCONEQ/LCCPROJECT's scale, BDL's "amendment" stage); a genuine defect in
-NSE's own filed XBRL that made the point-in-time TTM parser collide two different figures
-under one key; a contamination-detection gap that would have understated contamination
-(making the study look artificially cleaner); and two bugs in the backfill CLI's own
-dispatch (a window-filter operator-precedence mistake, and a missing §5.4 gate-audit
-check) caught by a deliberate review pass during the fetch's idle time, not by a test
-failing. Full detail in the 27 Sep entries below.
+**Spend:** backfill $0.45 of $3, live $0.11 (OpenAI).
 
-**Live order ratios are deferred until after the verdict** (Sravanth, 4 Oct). Live orders
-get no revenue or market-cap ratios for now: the live database has neither table filled,
-and nothing fetches them. See the 4 Oct entry for what building it would cost.
+**Backups:** `python -m tradebot.common.backup` (first run 20 Oct). There is no
+off-machine copy until rclone is installed.
+
+**Live order ratios are deferred until after the verdict** (Sravanth, 4 Oct). The live
+database holds no revenue or market caps.
 
 **Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
 `raw_announcements` and `order_extractions` into two tabs of one Google Sheet, view-only.
-Stopped along with the collector for tonight's fetch; restart together.
+It talks only to Google, not NSE.
 
-**How Sravanth works.** One step at a time. Finish a step, report plainly, **stop and wait**.
-Do not start the next step unsolicited. He reviews every change and must be able to explain
-it, so prefer plain code and say why, not what. He pushes back hard and specifically, and he
-is usually right — several of his corrections are recorded below.
+**How Sravanth works.** He reviews every change and must be able to explain it, so prefer
+plain code and say why, not what. He pushes back hard and specifically, and he is usually
+right; several of his corrections are recorded below.
+- Before the 20 Oct brief he wanted one step at a time, then stop and wait.
+- The brief sets the stops at GATE 1 and GATE 2. Between them, work proceeds item by item,
+  committing and pushing after each, with STATUS.md kept current.
+- Stop early for a surprise, a blocker, or money beyond the caps.
 
 ---
 
@@ -2739,3 +2690,68 @@ cause, then fix the parser's period rule (e.g. prefer the context's own dates wh
 declared span is not a 3/6/9/12-month period consistent with the value, or derive Q2 = H1 -
 Q1 as Q4 = FY - 9M is derived) and re-parse. The stored `source_url` lets affected files be
 re-fetched without re-running the listings.
+
+### 20 Oct 2026 — new brief; GATE 1 audit; decisions D28-D32; first backup
+
+**The brief.** Sravanth asked for five things: an evidence-based audit of how far the
+build got, the missing Phase 1 pieces, the backfill finished with a reliable ETA, a
+deploy-agnostic setup (the VPS was cancelled in October), and measured results. It has two
+gates and strict rules:
+- Never open `.env`.
+- One NSE process at a time, and a hard stop after 5 consecutive failures.
+- Approved dependencies only.
+
+It names an INSTRUCTIONS.md, which does not exist; its rules are applied as written.
+
+**Audit, all read-only** (AUDIT.md). The method:
+- Processes and scheduled tasks.
+- Both databases through `tradebot.common.db.connect`, sessions set read-only.
+- `pytest` with the backfill-DB tests skipped and OpenAI/Google set to placeholders: 337
+  passed, 25 skipped.
+- The T0 eval: 8/18 (44%, unchanged).
+- OpenRouter's public model list.
+- Three read-only code-audit agents.
+
+What it found:
+- Nothing was running, and no backup had ever been made.
+- The live collector had stopped on 1 Oct.
+- The backfill sits at `events` (all `extracted`) with revenue at 223/231.
+- **Full-chain accuracy for free**: 8 labelled PDFs were also processed by the backfill
+  (matched by SHA-256), and 7 of 8 are correct. The eighth is BEML's "over ₹5,400 cr".
+- **Defects in verified data:**
+  - L&T band disclosures were stored as ₹2,500 in rupees, and two legends gave ₹100 and
+    ₹0. Root cause: `parse_money`'s range branch skips the under-₹1-lakh suspect check.
+  - Ringgit and dinar amounts were stored as rupees.
+  - §5.5 Part C is enforced nowhere: 42 vision-read values had no second read.
+  - Provenance passes a dropped digit.
+  - CORP_IND is read only for `MKT=N` rows, which affects 45 BE-series events.
+- **NSE politeness:**
+  - No 5-failure stop exists anywhere. The backfill's 401/403 breaker is dead code: it
+    looks for "401" in text that never contains it.
+  - There is no process lock, and no 429 backoff outside the live collector.
+- One measurement error of mine, corrected before the plan was approved: I first counted
+  9 overlapping labelled PDFs; it is 8.
+
+**Decisions at the gate (Sravanth):**
+- **D29**: keep OpenAI under the caps. The brief's "free OpenRouter only" line described
+  v0.1.
+- **D30**: live collection restarts only as one process behind an NSE lock, not the old
+  collector + `orders --follow` pair.
+- **D31**: skip the third documents tier (24,425 PDFs, ~24 GB, ~37 h). The verdict uses
+  tier one and states the undercount.
+- **D32**: "over ₹X" gives X plus `lower_bound`; a range gives its low end plus `range`;
+  a band-only disclosure gives null plus `band_only`.
+- **D28** records the VPS cancellation itself.
+
+**Done today:**
+- Committed the pending 4 Oct entry.
+- Wrote `common/backup.py`. It runs pg_dump with the password in `PGPASSWORD`, never on the
+  command line (unlike `ops/backup.sh`), and prunes per database without the old
+  `tradebot_*` / `tradebot_backfill_*` overlap. 5 tests.
+- **First backup**: live 5.5 MB, backfill 104 MB in `backups/`.
+- ARCHITECTURE v1.6: D28-D32, plus three stale lines fixed.
+- AUDIT.md, STATUS.md, FILES.md entries.
+
+**One stray query**: a slow read-only audit query of mine (PID 20092 on
+`tradebot_backfill`) kept running after its client was stopped. Cancelling it was not
+permitted. It holds only a shared lock and blocks nothing; Sravanth may cancel it.

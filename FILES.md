@@ -19,10 +19,12 @@ empty too; they exist so git keeps a folder before it has real files.
   the data rules (append-only raw data, `Decimal` money, IST timestamps, never guess a
   number), the LLM and scraping rules, and the command list. Claude Code loads it
   automatically at the start of every session.
-- **`ARCHITECTURE.md`** — The specification: the goal, every decision (D1–D27) and its
+- **`ARCHITECTURE.md`** — The specification: the goal, every decision (D1–D32) and its
   status, each component's design, the data model, deployment and build order. Spike
   results are written back into it, so it records what was verified, not only what was
   planned.
+- **`AUDIT.md`** — The GATE 1 audit (20 Oct 2026): what was built, what runs, and every gap found, with file:line evidence. A snapshot; STATUS.md and WORKLOG.md move on.
+- **`STATUS.md`** — The short resume card: done, in progress, next, blockers, and the exact commands to pick the work up again after an interruption.
 - **`WORKLOG.md`** — The running history and handover note. A "Current state" section at
   the top is kept true, followed by one entry per event: what was done, what broke, and
   what was decided. A new session reads it first.
@@ -174,6 +176,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   database. No ORM, no connection pool.
 - **`migrate.py`** — Applies `migrations/*.sql` in filename order, skipping any already
   recorded in `schema_migrations`. `--backfill` targets the laptop's backfill database.
+- **`backup.py`** — `python -m tradebot.common.backup`: pg_dump of both databases into `backups/`, newest 7 kept. The password goes to pg_dump through PGPASSWORD, never the command line.
 - **`calendar.py`** — Decides whether a future date is a trading day from the hand-kept
   holiday file, and which polling band applies at a given IST time. It raises rather than
   guessing when the file is missing or out of range.
@@ -462,6 +465,7 @@ is not reachable. The rest use fakes.
   database with every migration applied, dropped after each test.
 - **`test_scaffold.py`** — The package imports, the repo layout matches ARCHITECTURE, the
   dependencies equal the approved list, and `.env.example` holds no real secret.
+- **`test_backup.py`** — The backup's pg_dump command line never carries the password, and pruning never confuses `tradebot_` with `tradebot_backfill_` dumps.
 - **`test_collector_records.py`** — The identity key, payload-hash stability and timestamp
   parsing for API records.
 - **`test_collector_gap.py`** — When a poll's page is entirely new, the date-range query

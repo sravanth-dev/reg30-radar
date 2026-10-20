@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 18:15 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 20 Oct 2026, 18:20 IST (session cut off by the usage limit). The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -37,7 +37,17 @@ Decisions from the gate (ARCHITECTURE D28-D32):
 - [x] Step 1.3 §5.5 Part C: enforced on every path; second read run on the backfill: 38
       confirmed, 1 unavailable, 3 not vision-sourced (39 downloads, 43 OCR pages, ~$0.04)
 
+- [x] Step 1.6 study/report to spec: Muhurat day 0 out of the primary cell; undercount (D31),
+      coverage series + CSV, TTM/mcap drop counts, lower-bound count, clean vs
+      contaminated and tradeable tables, full-universe line; CSV has ttm_basis/value_flags
+
 ## In progress
+- [ ] **A detached NSE sequence was started 18:11 (PowerShell PID 6004)**: revenue retry ->
+      market tail 26 Sep-9 Oct -> CORP_IND re-read. Do not start another NSE command until
+      `data/nse_runs.out` says `done`. Logs (UTF-16): data/revenue_retry.log,
+      data/market_tail.log, data/corp_ind_refresh.log. INE018A01030 failed again (2 XBRL
+      downloads); check the reason in the log.
+- [ ] Step 1.7: gated T0 score + `eval --stored` NOT built yet (patch attempt failed, reverted)
 - [ ] Step 1.4 revenue: code done (Q2 = H1 − Q1 Proposed, basis, pages, conflicts, FY
       check); NSE run pending: 8 failed companies + truncated listings
 - [ ] Step 1.5 market: code done (CORP_IND on every row); NSE runs pending: tail

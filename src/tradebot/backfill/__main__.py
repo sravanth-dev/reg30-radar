@@ -128,6 +128,8 @@ def study(conn, cfg) -> dict:
         "primary_band": band,
         "universe_band": tuple(cfg["analysis"]["universe_mcap_crore"]),
         "funnel": status(conn),
+        "coverage": conn.execute("select report_date, coverage from reconcile_days"
+                                 " order by report_date").fetchall(),
         "data": {"halves split at": split.isoformat(),
                  "window": f"{since} to {until}"},
     }
@@ -149,7 +151,14 @@ def status(conn) -> dict:
         "verified extractions": q("select count(*) from order_extractions"
                                   " where order_related and review_status = 'verified'"),
         "waiting on Batch": q("select count(*) from order_extractions where review_status = 'pending_llm'"),
+        "revenue: event companies fetched": q(
+            "select count(*) from backfill_checkpoints where job = 'revenue'"),
+        "revenue: event companies": q("select count(distinct isin) from backfill_events"),
         "events": q("select count(*) from backfill_events"),
+        "events with TTM (after calculate)": q(
+            "select count(*) from backfill_events where ttm_revenue_inr is not null"),
+        "values waiting for a second read (§5.5 Part C)": q(
+            "select count(*) from order_extractions where second_read = 'pending'"),
         "events verified": q("select count(*) from backfill_events where state = 'verified'"),
         "events in recheck": q("select count(*) from backfill_events where state = 'recheck_pending'"),
         "events needing review": q("select count(*) from backfill_events where state = 'needs_review'"),

@@ -201,3 +201,32 @@ def test_opposite_signs_in_the_two_halves_is_no_go():
         r.day0 = DAYS[50]
     v = verdict(early + late, split=DAYS[100])
     assert not v.checks["same sign in both halves"] and v.decision == "NO-GO"
+
+
+def test_a_muhurat_day0_event_is_reported_apart_not_in_the_primary_cell():
+    # D27, §5.11: a filing that can only be acted on inside a one-hour session is not
+    # tradeable in the sense the study measures (audit, 20 Oct 2026: it used to stay in).
+    r = measure(event(at(D0, 11)), market())
+    assert primary([r], (500, 20000)) == [r]
+    r.muhurat_day0 = True
+    assert primary([r], (500, 20000)) == []
+
+
+def test_the_report_states_the_undercount_coverage_and_what_dropped_out(tmp_path):
+    from tradebot.backfill import report
+    rs = _both_halves(30, "0.02")
+    rs[0].value_flags = ["lower_bound"]
+    rs[1].ttm_basis = "standalone"
+    v = verdict(primary(rs, (500, 20000)), DAYS[100])
+    ctx = {"run_date": "2026-10-20", "primary_band": (500, 20000),
+           "universe_band": (500, 50000),
+           "coverage": [(date(2026, 1, 5), Decimal("1")), (date(2026, 1, 6), Decimal("0.9"))]}
+    text = report.render(rs, v, ctx)
+    assert "Known undercount (D31" in text
+    assert "below 95%: 1" in text and "2026-01-06 90.00%" in text
+    assert "stated lower bound (D32): 1" in text
+    assert "full collected universe" in text and "Clean against contaminated" in text
+    md, csv_path = report.write(rs, v, ctx, out_dir=tmp_path)
+    header = csv_path.read_text(encoding="utf-8").splitlines()[0]
+    assert "value_flags" in header and "ttm_basis" in header
+    assert (tmp_path / "backfill_2026-10-20_coverage.csv").exists()

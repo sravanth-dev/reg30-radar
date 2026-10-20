@@ -77,14 +77,14 @@ def load_events(conn, states: tuple[str, ...] = ("verified",)) -> list[EventIn]:
     other filings within 10 calendar days either side (enough for ±3 trading days)."""
     rows = conn.execute(
         "select id, isin, symbol, event_ts, raw_ids, value_inr, currency,"
-        " execution_period_raw, company_is_recipient from backfill_events"
+        " execution_period_raw, company_is_recipient, value_flags from backfill_events"
         " where state = any(%s) order by event_ts", (list(states),)).fetchall()
     all_events = conn.execute(
         "select isin, event_ts from backfill_events where company_is_recipient is not false"
         " order by event_ts").fetchall()
     out, periods_cache = [], {}
     now = datetime.now(timezone.utc)
-    for (eid, isin, symbol, ts, raw_ids, value, currency, period_raw, won) in rows:
+    for (eid, isin, symbol, ts, raw_ids, value, currency, period_raw, won, flags) in rows:
         if isin not in periods_cache:
             periods_cache[isin] = _periods(conn, isin)
         ttm, basis = ttm_as_of(periods_cache[isin], ts)
@@ -111,6 +111,7 @@ def load_events(conn, states: tuple[str, ...] = ("verified",)) -> list[EventIn]:
         out.append(EventIn(
             event_id=eid, isin=isin, symbol=symbol, event_ts=ts, value_inr=value,
             currency=currency or "INR", ttm_revenue_inr=ttm, ttm_basis=basis,
+            value_flags=flags,
             execution_months=execution_months(period_raw, ts.astimezone(IST).date()),
             other_filings=others, previous_order_ts=previous, company_is_recipient=won))
     conn.commit()

@@ -43,6 +43,8 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
         "",
         f"## VERDICT: {v.decision}",
         "",
+        UNDERCOUNT,
+        "",
         "Pre-registered rule (D22, primary band revised 27 Sep 2026 before any return was "
         "computed): verified order **wins** with value >= 15% of point-in-time TTM revenue, "
         f"market cap Rs {band[0]:,}-{band[1]:,} cr on the valuation date, clean events only, "
@@ -73,6 +75,10 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
         _cell_line(f"study universe Rs {universe_band[0]:,}-{universe_band[1]:,} cr",
                    primary(results, universe_band)),
         _cell_line("control: above Rs 50,000 cr", primary(results, (50000, 10 ** 9))),
+        _cell_line("full collected universe (Rs 500 cr and up, no ceiling)",
+                   primary(results, (500, 10 ** 9))),
+        _cell_line("primary without values that are stated lower bounds (D32)",
+                   [r for r in cell if "lower_bound" not in r.value_flags]),
         _cell_line("primary, contaminated events instead of clean",
                    [r for r in results if r.usable and not r.clean and r.company_is_recipient
                     and r.materiality and r.materiality.value_to_ttm is not None
@@ -96,6 +102,31 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
                 cells.append(f"{pct(s.median)} ({s.n})")
             lines.append(f"| {tname} | {mname} | " + " | ".join(cells) + " |")
 
+    lines += [
+        "",
+        "## Clean against contaminated, paper against tradeable (exploratory, +5 days)",
+        "",
+        "Order wins in the study universe, by value / TTM. Tradeable means not locked at "
+        "the upper circuit at the day-0 close (D21).",
+        "",
+        "| value / TTM | clean: n, median, mean, hit | clean, tradeable | contaminated |",
+        "|---|---|---|---|",
+    ]
+    wins = [r for r in results if r.usable and r.company_is_recipient is True
+            and r.materiality and r.materiality.value_to_ttm is not None
+            and in_band(r, universe_band) and r.excess.get(PRIMARY_HORIZON) is not None]
+
+    def summary(group):
+        s = stats([r.excess[PRIMARY_HORIZON] for r in group])
+        return f"{s.n}, {pct(s.median)}, {pct(s.mean)}, {pct(s.hit_rate)}"
+
+    for tname, tlo, thi in TTM_BUCKETS:
+        g = [r for r in wins
+             if Decimal(str(tlo)) <= r.materiality.value_to_ttm < Decimal(str(thi))]
+        clean = [r for r in g if r.clean]
+        lines.append(f"| {tname} | {summary(clean)} | {summary([r for r in clean if r.tradeable])}"
+                     f" | {summary([r for r in g if not r.clean])} |")
+
     reasons = Counter(e for r in results for e in r.exclusions)
     lines += [
         "",
@@ -112,8 +143,19 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
         f"{sum(1 for r in results if r.leadership)}",
         f"- company placed the order, or unknown: "
         f"{sum(1 for r in results if r.company_is_recipient is not True)}",
-        f"- day 0 on a Muhurat session (reported separately): "
+        f"- day 0 on a Muhurat session (out of the primary cell, D27): "
         f"{sum(1 for r in results if r.muhurat_day0)}",
+        f"- no point-in-time TTM, so no value / TTM (never in the primary cell): "
+        f"{sum(1 for r in results if r.usable and not (r.materiality and r.materiality.value_to_ttm is not None))}",
+        f"- no market cap on the valuation date: {sum(1 for r in results if r.mcap_inr is None)}",
+        f"- primary-cell events whose value is a stated lower bound (D32): "
+        f"{sum(1 for r in cell if 'lower_bound' in r.value_flags)}",
+        f"- TTM basis used, among events with TTM: "
+        f"{dict(Counter(r.ttm_basis for r in results if r.ttm_basis))}",
+        "",
+        "## Coverage, day by day (§5.11)",
+        "",
+        *coverage_lines(ctx.get("coverage") or []),
         "",
         "## Data behind it",
         "",
@@ -123,8 +165,30 @@ def render(results: list[EventResult], v: Verdict, ctx: dict) -> str:
     return "\n".join(lines)
 
 
+UNDERCOUNT = (
+    "**Known undercount (D31, Sravanth, 20 Oct 2026).** The documents of the third tier - "
+    "24,425 catch-all filings that only a PDF-body check could have turned into orders - were "
+    "not downloaded. Orders announced under a catch-all category without an order word in "
+    "the headline are therefore missing; on the live data about one order in four was "
+    "visible only in the PDF body. The sample leans towards companies that use the order "
+    "categories.")
+
+
+def coverage_lines(days: list[tuple]) -> list[str]:
+    """(report_date, coverage) per reconciled day: how much of the PR bundle's order
+    filers the API served. The full series goes to the coverage CSV."""
+    if not days:
+        return ["- not available"]
+    covs = [c for _, c in days if c is not None]
+    below = [(d, c) for d, c in days if c is not None and c < Decimal("0.95")]
+    return [f"- report dates: {len(days)}; mean coverage of order filers: "
+            f"{pct(sum(covs) / len(covs)) if covs else '-'}; below 95%: {len(below)}",
+            "- lowest: " + ", ".join(f"{d} {pct(c)}" for d, c in sorted(below, key=lambda x: x[1])[:5])]
+
+
 CSV_FIELDS = ["event_id", "symbol", "isin", "event_ts", "day0", "valuation_date", "mcap_cr",
               "value_to_ttm", "next12m_to_ttm", "value_to_mcap", "materiality_flags",
+              "value_flags", "ttm_basis",
               "company_is_recipient", "series", "price_band",
               *[f"excess_{h}" for h in HORIZONS],
               *[f"excess_from_open_{h}" for h in HORIZONS], "pre_5", "pre_20",
@@ -143,6 +207,7 @@ def row(r: EventResult) -> dict:
         "value_to_ttm": m and m.value_to_ttm, "next12m_to_ttm": m and m.next12m_to_ttm,
         "value_to_mcap": m and m.value_to_mcap,
         "materiality_flags": ";".join(sorted(m.flags)) if m else "",
+        "value_flags": ";".join(r.value_flags), "ttm_basis": r.ttm_basis,
         "company_is_recipient": r.company_is_recipient, "series": r.series,
         "price_band": r.price_band,
         **{f"excess_{h}": r.excess.get(h) for h in HORIZONS},
@@ -170,4 +235,9 @@ def write(results: list[EventResult], v: Verdict, ctx: dict,
         w.writeheader()
         for r in results:
             w.writerow(row(r))
+    if ctx.get("coverage"):
+        with (out_dir / f"{stem}_coverage.csv").open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["report_date", "order_filer_coverage"])
+            w.writerows(ctx["coverage"])
     return md, csv_path

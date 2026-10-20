@@ -110,6 +110,7 @@ class EventIn:
     ttm_revenue_inr: Decimal | None          # as filed before event_ts (rule 1, §5.8)
     execution_months: Decimal | None
     ttm_basis: str | None = None              # consolidated | standalone, the one used (§5.8)
+    value_flags: list[str] | None = None      # units/money.py: lower_bound, range, gst_... (D32)
     other_filings: list[tuple[datetime, str]] = field(default_factory=list)  # (ts, bucket)
     previous_order_ts: datetime | None = None
     company_is_recipient: bool | None = True
@@ -147,6 +148,8 @@ class EventResult:
     # pure function of Market, with no database dependency of its own.
     price_band: str | None = None
     company_is_recipient: bool | None = None
+    ttm_basis: str | None = None
+    value_flags: list[str] = field(default_factory=list)
 
     @property
     def usable(self) -> bool:
@@ -176,6 +179,8 @@ def measure(ev: EventIn, market: Market) -> EventResult:
     """Everything the study records about one event."""
     r = EventResult(ev.event_id, ev.isin, ev.symbol, ev.event_ts)
     r.company_is_recipient = ev.company_is_recipient
+    r.ttm_basis = ev.ttm_basis
+    r.value_flags = list(ev.value_flags or [])
     bars = market.bars.get(ev.isin, {})
     local = ev.event_ts.astimezone(IST)
     r.after_hours = not (market.pos(local.date()) is not None and local.time() < CLOSE_TIME)
@@ -303,8 +308,11 @@ def primary(results: list[EventResult], band_crore: tuple[float, float]) -> list
     """D22's primary cell: clean order WINS (the company received the order; one it placed
     never counts), value_to_ttm >= 15%, market cap in the band on the valuation date. Leadership-tagged events are in: rule 4 makes them a separate tag, not
     contamination, and the report shows the cell without them as well."""
+    # An event whose day 0 is a Muhurat session is reported apart (D27, §5.11): a filing
+    # that can only be acted on inside a one-hour ceremonial session is not tradeable in
+    # the sense the study measures.
     return [r for r in results
-            if r.clean and r.company_is_recipient is True
+            if r.clean and r.company_is_recipient is True and not r.muhurat_day0
             and r.materiality and r.materiality.value_to_ttm is not None
             and r.materiality.value_to_ttm >= Decimal("0.15") and in_band(r, band_crore)
             and r.excess.get(PRIMARY_HORIZON) is not None]

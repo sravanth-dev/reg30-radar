@@ -419,8 +419,51 @@ def parse_money(raw: str | None) -> Money:
         value = _check_against_words(text, value, out.flags)
 
     out.currency = _currency_of(text, chosen.start(), chosen.end(), scale_word)
+    if scale_word is not None:
+        value = _exact_restatement(text, numbers, chosen, value, out.currency)
     _set_value(out, value)
     return out
+
+
+def _scale_word_after(text: str, m: re.Match) -> str:
+    """The scale word exactly as printed after a numeral, or "" if there is none."""
+    hit = re.match(r"\s*\+?\s*(?:/-)?\s*(?:\(\s*(?:rs\.?|₹|inr)?\s*in\s+)?([a-z]+)",
+                   text[m.end():m.end() + 30], re.I)
+    return hit.group(1) if hit and hit.group(1).lower() in _SCALE_OF else ""
+
+
+def _exact_restatement(text: str, numbers: list[re.Match], chosen: re.Match, value: Decimal,
+                       currency: str) -> Decimal:
+    """The exact figure, when the string also prints the rounded amount it chose in full:
+    "₹44.60 Lakh (Rs. 44,60,400/-)" is Rs 44,60,400, not 44,60,000 (MCLOUD, eval 20 Oct
+    2026). A bare numeral counts only if it carries no scale word of its own, is in the
+    same currency, and lies within half a unit of the rounded figure's last printed digit,
+    so it is the same amount stated more precisely, never a second amount."""
+    printed = chosen.group(0).replace(",", "")
+    decimals = len(printed.split(".")[1]) if "." in printed else 0
+    unit = value / _to_decimal(chosen.group(0)) if _to_decimal(chosen.group(0)) else None
+    if not unit:
+        return value
+    tolerance = unit * (Decimal(10) ** -decimals) / 2
+    for m in numbers:
+        if m is chosen or m.start() == chosen.start():
+            continue
+        exact = _to_decimal(m.group(0))
+        # The chosen figure's own scale word may sit just before a restatement that follows
+        # it ("Lakh (Rs. 44,60,400/-)"), so only text after that word is checked for one.
+        lead_from = max(m.start() - 24, chosen.end()) if m.start() > chosen.start() else 0
+        lead = text[lead_from:m.start()]
+        if m.start() > chosen.start():
+            lead = re.sub(rf"^\s*\+?\s*(?:/-)?\s*{re.escape(_scale_word_after(text, chosen))}",
+                          "", lead, count=1, flags=re.I)
+        else:
+            lead = text[max(0, m.start() - 24):m.start()]
+        if (exact is None or exact == value or abs(exact - value) > tolerance
+                or _scale_after(text, m.end()) or _SCALE_BEFORE.search(lead)):
+            continue
+        if _currency_of(text, m.start(), m.end(), None) == currency:
+            return exact
+    return value
 
 
 # The spelled-out amount a filing often prints beside the numeral. Only runs containing one

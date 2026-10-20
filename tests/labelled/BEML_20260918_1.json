@@ -14,7 +14,7 @@
   "execution_period_raw": null,
   "execution_months": null,
   "consideration_raw": "over ₹ 5,400/- Crores",
-  "value_inr": null,
+  "value_inr": "54000000000",
   "value_span": null,
   "gst_inclusive": null,
   "currency": "INR",
@@ -28,5 +28,5 @@
   "multiple_orders": false,
   "orders": null,
   "is_scanned": false,
-  "labeller_notes": "Value stated only as a lower bound ('over ₹5,400 Crores'), so value_inr left null pending decision. No annexure: domestic/international, execution period, GST, promoter interest and related-party status not stated. Letter says order is in normal course of business."
+  "labeller_notes": "Value stated only as a lower bound ('over ₹5,400 Crores'), so value_inr left null pending decision. No annexure: domestic/international, execution period, GST, promoter interest and related-party status not stated. Letter says order is in normal course of business. 20 Oct 2026: value_inr set to the stated bound (Rs 5,400 crore) under D32, decided at GATE 1, which settles the pending decision above; production stores it with a lower_bound flag."
 }

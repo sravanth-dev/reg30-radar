@@ -179,12 +179,21 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
                         "before_window": len(usable) - len(in_range), "truncated": truncated}
         filings.extend(in_range)
 
-    stored = failed = unparseable = conflicting = 0
+    stored = failed = not_served = unparseable = conflicting = 0
     for f in filings:
         fetched = fetcher.get(f.xbrl_url)          # market.fetch.ArchiveFetcher: bytes, no disk
         requests += 1
         if not fetched.ok:
-            failed += 1
+            log.warning("%s: %s not fetched: %s", symbol, f.xbrl_url,
+                        fetched.error or f"HTTP {fetched.status}")
+            # A clean 404 for a listed link is an answer: NSE lists the file and does not
+            # serve it, and did so on every retry (7 files, 4 companies, 20 Oct 2026). Its
+            # quarter stays missing, so TTM over it is null, never guessed. Anything else
+            # (a timeout, a reset, a 5xx) may pass, and is retried next run.
+            if fetched.status == 404:
+                not_served += 1
+            else:
+                failed += 1
             continue
         try:
             facts = parse_xbrl(fetched.content)
@@ -209,14 +218,15 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
         stored += len(kept)
 
     summary = (f"{stored} facts from {len(filings)} filings ({failed} failed, "
-               f"{unparseable} unparseable, {conflicting} conflicting)")
+               f"{not_served} not served (404), {unparseable} unparseable, "
+               f"{conflicting} conflicting)")
     if failed or truncated_any:
         # A short listing is retried next run rather than checkpointed as complete: it
         # was checkpointed before, so the missing rows were never fetched (4 Oct 2026).
         conn.commit()
         return False, summary, requests
-    detail.update({"filings": len(filings), "stored": stored, "unparseable": unparseable,
-                   "conflicting": conflicting})
+    detail.update({"filings": len(filings), "stored": stored, "not_served": not_served,
+                   "unparseable": unparseable, "conflicting": conflicting})
     conn.execute("insert into backfill_checkpoints (job, key, done_at, detail) values"
                  " ('revenue', %s, %s, %s)",
                  (isin, datetime.now(timezone.utc), json.dumps(detail)))

@@ -76,15 +76,17 @@ class FakeNseClient:
 
 
 class FakeArchiveFetcher:
-    def __init__(self, xml_by_url: dict[str, bytes]):
+    def __init__(self, xml_by_url: dict[str, bytes], status_for_missing: int | None = 404):
         self.xml_by_url = xml_by_url
+        self.status_for_missing = status_for_missing
         self.calls: list[str] = []
 
     def get(self, url):
         self.calls.append(url)
         content = self.xml_by_url.get(url)
         if content is None:
-            return Archive(404, error="HTTP 404")
+            s = self.status_for_missing
+            return Archive(s, error=f"HTTP {s}" if s else "ConnectionError: reset")
         return Archive(200, content=content)
 
 
@@ -183,10 +185,21 @@ def test_a_failed_download_leaves_the_company_to_be_retried(monkeypatch):
     monkeypatch.setattr(load, "parse_xbrl", lambda content: ONE_FACT)
     conn = FakeConn([])
     client = FakeNseClient({"BEL": [OLD_DEC24]}, {"BEL": [INT_JUN26]})
-    fetcher = FakeArchiveFetcher({"https://x/dec24.xml": b"x"})     # jun26 answers 404
+    fetcher = FakeArchiveFetcher({"https://x/dec24.xml": b"x"}, status_for_missing=None)
     ok, summary, sent = load.fetch_company(conn, client, fetcher, "INE263A01024", "BEL", SINCE)
     assert ok is False and "1 failed" in summary
     assert conn.checkpoints == [] and len(conn.inserted) == 1   # kept, and skipped on retry
+
+
+def test_a_listed_file_nse_does_not_serve_is_an_answer(monkeypatch):
+    # A clean 404 for a listed XBRL link fails the same way on every retry (20 Oct 2026).
+    monkeypatch.setattr(load, "parse_xbrl", lambda content: ONE_FACT)
+    conn = FakeConn([])
+    client = FakeNseClient({"BEL": [OLD_DEC24]}, {"BEL": [INT_JUN26]})
+    fetcher = FakeArchiveFetcher({"https://x/dec24.xml": b"x"})     # jun26 answers 404
+    ok, summary, sent = load.fetch_company(conn, client, fetcher, "INE263A01024", "BEL", SINCE)
+    assert ok is True and "0 failed, 1 not served (404)" in summary
+    assert len(conn.checkpoints) == 1 and len(conn.inserted) == 1
 
 
 INT_MAR26 = {"xbrl": "https://x/mar26.xml", "qe_Date": "31-MAR-2026",

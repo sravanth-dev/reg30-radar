@@ -2838,3 +2838,47 @@ mark a value verified.
   will say.
 
 439 tests pass. Not yet run against NSE: revenue retry, market tail, CORP_IND re-read.
+
+### 20 Oct 2026 (night) — NSE runs, a DNS outage stopped by the guard, eval views, σ measured
+
+**The detached NSE sequence** (18:11-19:02, then resumed 21:30-22:1x).
+- **Revenue retry:** 6 of 10 companies fixed (227/231 now). The other 4 fail on 7 XBRL
+  links that answer a clean **404**, the same on every retry: NSE lists the file and does
+  not serve it. **Proposed:** a listed-file 404 is an answer, so the company is
+  checkpointed with that quarter missing (TTM over it stays null). Every other failure is
+  still retried. 13 FY-vs-four-quarters mismatches are logged (the §5.8 sanity check);
+  they are not acted on.
+- **Market tail:** 26 Sep - 9 Oct loaded, 9 trading days, 23 requests. Prices now run to
+  9 Oct.
+- **CORP_IND re-read:** the laptop lost DNS at 18:54. The guard did what it was built for:
+  4 failed bundles, then the 5th consecutive failure raised `NseHardStop`, exit code 3,
+  lock released. The first stretch covered 301 of 397 days and added 10 flags. Resumed
+  from 25 May once DNS answered again (exit 0).
+
+**Eval: two new views, 0 LLM calls.**
+- **Gated T0** (production's provenance and suspect gate): it found one value production
+  would have *accepted wrong*, MCLOUD's "₹44.60 Lakh (Rs. 44,60,400/-)" read as the
+  rounded ₹44,60,000. **Proposed fix:** an exact restatement in the same string, within
+  half a unit of the rounded figure's last digit, same currency, wins. It changes 0 of the
+  2,237 stored order documents.
+- **Tried and reverted:** joining a scale word that wraps onto the next line (BEML
+  "₹ 5,400/-" / "Crores"). Measured on the stored documents first: 9 new T0 values, and 1
+  is wrong, a cumulative "total export order value to ₹1,226 million" in prose (the order
+  is ₹266 million). Under §6 the parser's verified answer wins, so T0 must stay precise;
+  the LLM already reads all 9 correctly. This is the reason to measure before keeping a
+  parser rule.
+- **BEML's label** was "null pending decision" on lower bounds; D32 decided it, so its
+  value is now ₹5,400 cr, with a note in the label.
+- **Scores:** bare T0 9/18. Gated T0 9/18 correct, 9 held back for the LLM, 0 accepted
+  wrong, 0 invented. `eval --stored`: 8 labelled documents in the backfill, 6/6 exact
+  where the chain answered, plus GREENPOWER as a correct `not_order` (the company placed
+  the order) and ZAGGLE as a correct null.
+
+**σ measured** (`python -m tradebot.backfill.placebo`, `reports/power_analysis_2026-10-20.md`).
+- 54,081 placebo dates in the primary band, away from real events (±10 days).
+- σ is 5.75% raw and 4.43% robust, against the September estimate of 3.7%.
+- The median's MDE at 30 events is 2.50% (bootstrap, fat tails included), close to the
+  2.37% estimated.
+- **Finding for Sravanth:** the ordinary-day median excess is **−0.44%** (−1.07% in the
+  first half). D22 tests against zero, so it is conservative by about that much. Recorded
+  only; D22 is Decided.

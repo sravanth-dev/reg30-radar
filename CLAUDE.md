@@ -74,7 +74,9 @@ pip install -e ".[dev]"
 # tests
 pytest                                  # unit + fixture tests, no network
 pytest -m live                          # hits real exchange sites; run sparingly
-python -m tradebot.eval                 # labelled-set accuracy: parser + LLM
+python -m tradebot.eval                 # labelled-set accuracy: T0 bare and as gated
+python -m tradebot.eval --stored        # the full chain's stored answers, by SHA-256; no LLM
+python -m tradebot.backfill.placebo     # σ from placebo dates -> reports/power_analysis_<date>.md
 
 # database
 python -m tradebot.common.migrate       # apply migrations/*.sql in order

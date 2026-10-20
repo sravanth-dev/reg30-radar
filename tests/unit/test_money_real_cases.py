@@ -154,3 +154,19 @@ def test_a_cut_off_spelled_amount_still_cannot_confirm():
     # value stays out of verified, as before.
     got = parse_money("Rs. 42,68,20,821.94 (Rupees Forty-Two Crore Sixty-Eight Lakh")
     assert is_suspect(got)
+
+
+# --- found by the gated T0 eval (20 Oct 2026) --------------------------------------------
+
+def test_an_exact_restatement_of_the_rounded_figure_wins():
+    got = parse_money("₹44.60 Lakh (Rs. 44,60,400/-)")                      # MCLOUD
+    assert got.value_inr == Decimal("4460400")
+    assert parse_money("Rs. 44,60,400/- (₹44.60 Lakh)").value_inr == Decimal("4460400")
+
+
+def test_a_second_amount_that_is_not_a_restatement_is_ignored():
+    # Outside half a unit of the rounded figure's last digit: a different amount.
+    assert parse_money("Rs. 13.51 Crore (Rs. 1,35,12,345/-)").value_inr == 135100000
+    assert parse_money("₹ 10.5 Crore (Rs 2,50,000 advance)").value_inr == Decimal("105000000")
+    # A different currency is never a restatement.
+    assert parse_money("INR 651 Crores (USD 73.47 million)").value_inr == 651 * CRORE

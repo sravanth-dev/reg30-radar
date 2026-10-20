@@ -350,6 +350,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   through the same checks as a live call, with retries capped at three submissions.
   `rejudge` re-applies the current rules to stored answers without calling the model;
   `reparse` re-applies T0 to stored text and sends a value that no longer verifies to T1.
+- **`placebo.py`** — The study's noise level, measured. Placebo dates on ordinary days,
+  away from real events, go through the study's own `measure`; it reports σ and what n
+  clean events can detect, using the bootstrap. Read-only.
 - **`vision_check.py`** — §5.5 Part C's second read. For each vision-sourced value it
   downloads the PDF again (the SHA-256 must match), re-reads the value's page blind,
   deletes the PDF, and keeps the value only if it verifies against the new transcript.
@@ -418,6 +421,9 @@ which is gitignored.
 
 - **`extraction_baseline_2026-09-24.md`** — The first scoring of the T0 parser on the 18
   labelled PDFs: 44% exact value, with every failure listed.
+- **`power_analysis_2026-10-20.md`** — σ measured from 54,081 placebo dates: 5.75% raw,
+  4.43% robust; 30 events detect a 2.50% median effect. The ordinary-day median excess is
+  -0.44%.
 - **`power_analysis_2026-09-22.md`** — How many clean events the verdict needs to see an
   edge of a given size. 30 events detect only about 2.4% net at 80% power.
 - **`orders_2026-09-23.md`** and **`orders_2026-09-23.csv`** — The order-extraction report
@@ -487,6 +493,9 @@ is not reachable. The rest use fakes.
   pinned by a string that was really stored as verified: L&T's bands, the COCHINSHIP and
   SWANDEF legends, "over Rs 5,400 crore", ringgit and dinar amounts, quantities, a dropped
   digit in provenance.
+- **`test_placebo.py`** — Placebo dates fall every 5 days and never near a real event, a
+  flat market gives zero excess, the robust σ ignores a fat tail, and the median's standard
+  error shrinks with √n.
 - **`test_part_c.py`** — Which values are vision-sourced (a text-layer page, a vision
   page, pages that cannot be told apart), the gate, and the second read on real SQL with a
   real PDF and a fake transcriber: agreement, disagreement, a different file, the cap.

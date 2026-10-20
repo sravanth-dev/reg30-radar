@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 18:20 IST (session cut off by the usage limit). The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 20 Oct 2026, 22:15 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -41,21 +41,21 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       coverage series + CSV, TTM/mcap drop counts, lower-bound count, clean vs
       contaminated and tradeable tables, full-universe line; CSV has ttm_basis/value_flags
 
+- [x] Step 1.4 revenue: 228 of 231 event companies. The last 3 fail only on 7 listed XBRL
+      links NSE answers 404 for (Proposed: a 404 is an answer; their quarters stay null)
+- [x] Step 1.5 market: prices to 9 Oct 2026; CORP_IND re-read on all 397 days, 14 flags
+      added. A DNS outage at 18:54 tripped the 5-failure hard stop (exit 3) as designed;
+      resumed from 25 May
+- [x] Step 1.7 offline measurements: gated T0 eval and `eval --stored` (T0 9/18 gated, 0
+      accepted wrong; stored chain 6/6 where it answered); MCLOUD exact-restatement rule
+      (0 stored values change); line-wrap rule tried and reverted (1 wrong in 9). σ from
+      54,081 placebos: 5.75% raw, 4.43% robust, MDE(median, n=30) 2.50%; ordinary-day
+      median excess -0.44% (`reports/power_analysis_2026-10-20.md`). 448 tests pass
+
 ## In progress
-- [ ] **A detached NSE sequence was started 18:11 (PowerShell PID 6004)**: revenue retry ->
-      market tail 26 Sep-9 Oct -> CORP_IND re-read. Do not start another NSE command until
-      `data/nse_runs.out` says `done`. Logs (UTF-16): data/revenue_retry.log,
-      data/market_tail.log, data/corp_ind_refresh.log. INE018A01030 failed again (2 XBRL
-      downloads); check the reason in the log.
-- [ ] Step 1.7: gated T0 score + `eval --stored` NOT built yet (patch attempt failed, reverted)
-- [ ] Step 1.4 revenue: code done (Q2 = H1 − Q1 Proposed, basis, pages, conflicts, FY
-      check); NSE run pending: 8 failed companies + truncated listings
-- [ ] Step 1.5 market: code done (CORP_IND on every row); NSE runs pending: tail
-      27 Sep - 9 Oct, CORP_IND re-read of 388 days
+- [ ] Nothing running. `data/nse.lock` is free.
 
 ## Next (in order)
-6. Study and report brought to spec
-7. `eval --stored`; σ measured from placebo events
 8. A single live runner (`python -m tradebot.live`) and `catchup`; then start live on the
    laptop and catch up from 1 Oct
 9. Backfill stages: `batch-submit`/`collect` → `events` → `calculate` → `recheck` →
@@ -66,6 +66,9 @@ Decisions from the gate (ARCHITECTURE D28-D32):
 - Off-machine backups: install rclone and run `rclone config` once (D14). Until then the
   dumps live on this laptop only.
 - `config/holidays_2027.yaml`, before 1 Jan 2027, once NSE publishes the list.
+- Note (for the verdict, not a blocker): ordinary days have a median +5-day excess of
+  -0.44%, so D22, which tests against zero, is conservative by about that much. D22 is
+  Decided; it is recorded, not changed.
 - Cancel the stray read-only query PID 20092 on `tradebot_backfill` if it is still running.
   It is harmless: it is a slow audit query of mine, and its client is gone.
 

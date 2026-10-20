@@ -2908,3 +2908,22 @@ health row per request, suspect answers flagged). Migration 0018 adds
 trades" failed for that reason alone. The calendar code was right.
 
 461 tests pass.
+
+### 21 Oct 2026 (early morning) — catch-up drain dropped, batch collected, events, GATE 2 pieces
+
+- **Sravanth: do not process the 1-20 Oct backlog** ("taking too long"). The live runner had
+  already stopped: Windows rebooted at 03:52 and it was not restarted. The 7,806 caught-up
+  rows stay in `raw_announcements` (append-only, `collected_via = 'catchup'`), but their
+  PDFs are not downloaded. If `live` is restarted, its 14-day lookback would pick them up,
+  so set `live_lookback_days` low first or let them age out.
+- Batch `batch_6ad7997...` collected: 30 results, $0.0059. 1,427 verified extractions.
+- `events`: 1,281 events (146 filings merged). `calculate`: 1,024 verified, 257
+  `recheck_pending`. The recheck batch `batch_6ad7f3be...` was submitted at 04:35: 257
+  requests, worst case $0.08.
+- **GATE 2 pieces.** `docker-compose.yml` is now host-agnostic: `live` replaces
+  collector + orders (D30), plus `sheets`, `catchup` and `backup`. Two overrides,
+  `local-db` and `external-db`. Rehearsed locally with Docker Desktop, which was started
+  for this and stopped after: the image builds, 18 migrations apply, and 422 tests pass in
+  the image (the 2 known layout failures, D12). The rehearsal containers and volumes were
+  removed. README.md has been added with the hosting options. DEPLOY.md is marked
+  superseded.

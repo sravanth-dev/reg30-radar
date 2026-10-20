@@ -1,0 +1,42 @@
+# A Postgres container next to the app: for a local rehearsal, or a host that keeps its
+# own data (GATE 2). Its port is not published; only the app containers reach it.
+#
+#   docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.local-db.yml up -d --build
+#
+# The env file (gitignored, from .env.docker.example) sets TRADEBOT_LOCAL_DB_PASSWORD;
+# compose builds DATABASE_URL from it below, so the password is written in one place only.
+
+x-local-db: &local-db
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment:
+    DATABASE_URL: postgresql://tradebot:${TRADEBOT_LOCAL_DB_PASSWORD:?set it in the env file}@postgres:5432/tradebot
+
+services:
+  postgres:
+    image: postgres:${TRADEBOT_PG_MAJOR:-16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tradebot
+      POSTGRES_DB: tradebot
+      POSTGRES_PASSWORD: ${TRADEBOT_LOCAL_DB_PASSWORD:?set it in the env file}
+    volumes:
+      - tradebot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "tradebot", "-d", "tradebot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  live:
+    <<: *local-db
+  sheets:
+    <<: *local-db
+  catchup:
+    <<: *local-db
+  backup:
+    <<: *local-db
+
+volumes:
+  tradebot_pg:

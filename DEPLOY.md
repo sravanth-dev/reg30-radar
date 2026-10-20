@@ -1,5 +1,10 @@
 # DEPLOY.md — running tradebot's live pipeline on the VPS
 
+> **Superseded (21 Oct 2026).** The VPS was cancelled (D28), and the collector + `orders --follow`
+> pair was replaced by one `live` service (D30). Current container instructions and the
+> GATE 2 hosting options are in [README.md](README.md). Kept for the external-database
+> steps, which `docker-compose.external-db.yml` still follows.
+
 The VPS runs three services from one image (D19, widened 27 Sep 2026): `collector`,
 `orders` (`--follow`) and `sheets`. The backfill stays on the laptop. Commands below run
 on the VPS in the repo folder unless marked **laptop**.

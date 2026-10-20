@@ -28,10 +28,10 @@ empty too; they exist so git keeps a folder before it has real files.
 - **`WORKLOG.md`** — The running history and handover note. A "Current state" section at
   the top is kept true, followed by one entry per event: what was done, what broke, and
   what was decided. A new session reads it first.
-- **`DEPLOY.md`** — The runbook for moving the three live services (collector,
-  `orders --follow`, `sheets`) to the VPS with Docker Compose. It covers the one-time
-  database setup, copying the laptop's data across with `pg_dump`/restore, migrating,
-  starting, and health checks.
+- **`README.md`** — The front page: what the project is, setup, the two live entry points,
+  containers, and the GATE 2 hosting options.
+- **`DEPLOY.md`** — The old VPS runbook, superseded (D28, D30). Kept for its
+  external-database steps.
 - **`FILES.md`** — This map.
 - **`pyproject.toml`** — Declares the package (src layout), Python 3.14 and exactly the
   approved dependency list. It also holds the pytest settings, including `-m "not live"`,
@@ -40,10 +40,12 @@ empty too; they exist so git keeps a folder before it has real files.
   that every live process uses. It copies only `src/`, `config/`, `prompts/` and
   `migrations/`, and sets `PYTHONPATH=/app/src` instead of pip-installing, so config paths
   resolve to `/app`.
-- **`docker-compose.yml`** — Defines the three VPS services from that image. Each gets
-  memory and CPU limits, joins the existing Postgres network, and publishes no ports. It
-  also defines the collector's healthcheck, a `tradebot_data` volume for work files, and a
-  `backup` job under the `ops` profile.
+- **`docker-compose.yml`** — Host-agnostic services from that image: `live` (with the
+  health check) and `sheets`, plus `catchup` and `backup` under the `ops` profile. One
+  `tradebot_data` volume holds the NSE lock for every service. No published ports.
+- **`docker-compose.local-db.yml`** — Adds a Postgres container and points the app at it.
+- **`docker-compose.external-db.yml`** — Joins an existing Postgres's Docker network instead.
+- **`.env.docker.example`** — The env file the local-db setup reads (copy to `.env.docker`).
 - **`.env.example`** — The shape of `.env` with placeholders only: the two database URLs,
   the OpenAI key, the Google credentials path and spreadsheet id, and `TZ`. The real
   `.env` holds the secrets and is never committed.

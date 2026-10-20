@@ -1,0 +1,23 @@
+# An existing Postgres reached over its own external Docker network (the old VPS layout,
+# kept for a host that already runs one). DATABASE_URL in the env file names that
+# container as its host. Nothing here touches that container (CLAUDE.md rule 7).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
+
+x-db-net: &db-net
+  networks: [db]
+
+services:
+  live:
+    <<: *db-net
+  sheets:
+    <<: *db-net
+  catchup:
+    <<: *db-net
+  backup:
+    <<: *db-net
+
+networks:
+  db:
+    external: true
+    name: ${TRADEBOT_DB_NETWORK:?set TRADEBOT_DB_NETWORK to the Postgres container's Docker network}

@@ -107,11 +107,10 @@ python -m tradebot.sheets               # run continuously, every 5 min
 # health: exit 1 if the collector has had no successful poll in 30 minutes
 python -m tradebot.common.health
 
-# VPS (runbook: DEPLOY.md). Services: collector, orders, sheets. The backfill stays on the laptop (D19).
-git pull && docker compose build && docker compose run --rm collector python -m tradebot.common.migrate && docker compose up -d
-docker compose logs -f collector
-bash ops/preflight.sh                   # Spike E, read-only
-bash ops/backup.sh vps                  # pg_dump -> rclone (D14); nightly from cron
+# containers (README.md; the VPS is gone, D28). Services: live, sheets; catchup/backup under --profile ops
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.local-db.yml up -d --build
+docker compose logs -f live
+python -m tradebot.common.backup        # laptop: pg_dump of both databases into backups/
 ```
 
 ## Definition of done (every slice)

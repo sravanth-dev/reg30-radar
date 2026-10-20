@@ -244,7 +244,13 @@ class SheetsClient:
         orders tab is rewritten whole each cycle (§ its own docstring), so a day that
         shrinks (a filing reclassified, in the future) must not leave a stale row behind.
         """
-        a1 = self._a1(f"A{row}:Z")
+        # Whole rows, not A:Z, so a tab wider than 26 columns is cleared too; and nothing
+        # to do when the grid ends above `row` (the API refuses such a range with a 400,
+        # 21 Oct 2026, when the backfill tab exactly filled its grid).
+        last = self.row_count()
+        if row > last:
+            return
+        a1 = self._a1(f"{row}:{last}")
         r = self.session.post(self._url(f"/values/{quote(a1, safe='')}:clear"), json={})
         _raise_for_status(r)
 

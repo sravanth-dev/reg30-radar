@@ -15,6 +15,9 @@ sheets:
   # order_extractions rows that are order-related, one per filing, rewritten every cycle -
   # see sheets/orders.py's module docstring for why it isn't append-only like the raw tab.
   orders_tab_name: orders
+  # One row per backfill event, with the latest study run's numbers (sheets/backfill.py).
+  # Read from tradebot_backfill; skipped where BACKFILL_DATABASE_URL is not set.
+  backfill_tab_name: backfill_events
 
   # How often the mirror catches up. Independent of the collector's D6 pacing bands on
   # purpose - this process only ever reads our own database, never NSE, so none of the

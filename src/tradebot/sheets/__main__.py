@@ -29,6 +29,7 @@ from tradebot.common.config import env
 from tradebot.common.config import sheets as sheets_config
 from tradebot.common.db import connect
 from tradebot.sheets.client import SheetsClient, authorized_session
+from tradebot.sheets.backfill import sync_backfill
 from tradebot.sheets.orders import sync_orders
 from tradebot.sheets.sync import rebuild, sync_once
 
@@ -41,6 +42,12 @@ def _handle_stop(signum, frame):
     global _stopping
     _stopping = True
     log.info("stop requested; finishing the current sync and exiting")
+
+
+def _backfill_url() -> str | None:
+    """The backfill database, where this machine has one (the laptop); else None."""
+    url = env("BACKFILL_DATABASE_URL", required=False)
+    return url if url and url != "CHANGEME" else None
 
 
 def _build_client(cfg: dict, session, tab_name: str) -> SheetsClient:
@@ -63,12 +70,16 @@ def run(once: bool = False, do_rebuild: bool = False) -> int:
     session = authorized_session(env("GOOGLE_SERVICE_ACCOUNT_FILE"))
     raw_sheet = _build_client(cfg, session, cfg["tab_name"])
     orders_sheet = _build_client(cfg, session, cfg["orders_tab_name"])
+    backfill_url = _backfill_url()
+    backfill_sheet = (_build_client(cfg, session, cfg["backfill_tab_name"])
+                      if backfill_url and cfg.get("backfill_tab_name") else None)
 
     failures = 0
     # order_extractions has no watermark to resume from (sheets/orders.py) - this carries
     # the "did anything change" hash across cycles instead, so an unchanged day costs one
     # cheap read, not a rewrite.
     orders_fingerprint: str | None = None
+    backfill_fingerprint: str | None = None
 
     while not _stopping:
         cycle_ok = True
@@ -97,6 +108,17 @@ def run(once: bool = False, do_rebuild: bool = False) -> int:
         except Exception:
             cycle_ok = False
             log.exception("orders tab sync failed")
+
+        if backfill_sheet is not None:
+            try:
+                with connect(backfill_url) as conn:
+                    backfill_fingerprint, rows_written = sync_backfill(
+                        conn, backfill_sheet, backfill_fingerprint)
+                if rows_written:
+                    log.info("backfill: rewrote %d event row(s)", rows_written)
+            except Exception:
+                cycle_ok = False
+                log.exception("backfill tab sync failed")
 
         do_rebuild = False  # only the first cycle wipes the raw tab
         failures = 0 if cycle_ok else failures + 1

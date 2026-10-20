@@ -2938,3 +2938,9 @@ trades" failed for that reason alone. The calendar code was right.
     to T1.
   - BAJEL's "between INR 100 Cr and INR 200 Cr" is stored as 100 Cr, the D32 low end, but
     without the `range` flag. This is a known flag gap and was left as it is.
+- **Google Sheet** (Sravanth asked whether the data shows there). The mirror had last synced
+  on 1 Oct. The first sync since then wrote the 7,806 caught-up raw rows (14,479 in total)
+  and rewrote the 99 order rows. A new third tab, `backfill_events` (Proposed, D11
+  extension), now holds the 1,281 backfill events, and the study columns fill in after
+  `study`. Two latent bugs in `client.clear_from` were fixed: it sent a 400-raising range
+  when the data filled the grid exactly, and it cleared only columns A-Z.

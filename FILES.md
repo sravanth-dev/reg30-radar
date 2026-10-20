@@ -290,6 +290,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 ## src/tradebot/sheets/ — view-only Google Sheet
 
+- **`backfill.py`** — The `backfill_events` tab: one row per backfill event (value, TTM,
+  ratios, state) plus the latest study run's returns and exclusions, rewritten whole when
+  anything changed. Skipped where there is no backfill database.
 - **`__main__.py`** — `python -m tradebot.sheets` (`--once`, `--rebuild`, or looping every
   5 minutes). It builds one authenticated session and syncs both tabs. It runs apart from
   the collector so a Sheets problem can never stop collection.
@@ -507,6 +510,8 @@ is not reachable. The rest use fakes.
   pinned by a string that was really stored as verified: L&T's bands, the COCHINSHIP and
   SWANDEF legends, "over Rs 5,400 crore", ringgit and dinar amounts, quantities, a dropped
   digit in provenance.
+- **`test_sheets_backfill.py`** — The backfill tab's rows before and after a study run,
+  the skip when nothing changed, and `clear_from` on a full grid and past 26 columns.
 - **`test_live.py`** — The live runner's stop on a missing holidays file, its two warnings
   (said once), one cycle wired with the order budget; catch-up's one request per day, its
   rows marked `catchup`, its health rows and its suspect-answer flags.

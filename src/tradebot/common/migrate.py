@@ -19,7 +19,7 @@ from tradebot.common.db import backfill_url, connect
 MIGRATIONS_DIR = ROOT / "migrations"
 
 
-def pending(conn) -> list[Path]:
+def pending(conn, migrations_dir: Path = MIGRATIONS_DIR) -> list[Path]:
     """Migrations on disk that the database has not recorded as applied."""
     # The very first migration creates schema_migrations, so the table may not exist yet.
     exists = conn.execute(
@@ -29,23 +29,30 @@ def pending(conn) -> list[Path]:
     if exists:
         applied = {row[0] for row in conn.execute("select version from schema_migrations")}
 
-    files = sorted(p for p in MIGRATIONS_DIR.glob("*.sql"))
+    files = sorted(p for p in migrations_dir.glob("*.sql"))
     return [p for p in files if p.stem not in applied]
 
 
-def apply_all(url: str | None = None) -> list[str]:
-    """Apply every pending migration. Each one runs in its own transaction."""
+def apply_all(url: str | None = None, *, conn=None,
+              migrations_dir: Path | None = None) -> list[str]:
+    """Apply every pending migration, each in its own committed transaction, so a
+    failure leaves every earlier file applied and recorded. `conn` and `migrations_dir` are
+    for tests."""
+    if conn is None:
+        with connect(url) as own:
+            return apply_all(conn=own, migrations_dir=migrations_dir)
     done: list[str] = []
-    with connect(url) as conn:
-        for path in pending(conn):
-            sql = path.read_text(encoding="utf-8")
-            with conn.transaction():
-                conn.execute(sql)
-                conn.execute(
-                    "insert into schema_migrations (version) values (%s)", (path.stem,)
-                )
-            done.append(path.stem)
-            print(f"applied {path.stem}")
+    todo = pending(conn, migrations_dir or MIGRATIONS_DIR)
+    # pending()'s reads opened an implicit transaction; end it, or every
+    # `conn.transaction()` below would only be a savepoint inside it.
+    conn.commit()
+    for path in todo:
+        sql = path.read_text(encoding="utf-8")
+        with conn.transaction():
+            conn.execute(sql)
+            conn.execute("insert into schema_migrations (version) values (%s)", (path.stem,))
+        done.append(path.stem)
+        print(f"applied {path.stem}")
     if not done:
         print("nothing to apply; database is up to date")
     return done

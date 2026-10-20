@@ -20,13 +20,11 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
+from tradebot.common.config import nse as nse_config
 from tradebot.market.fetch import ArchiveFetcher
 from tradebot.market.parse import _rows
 
 log = logging.getLogger("backfill")
-
-SEC_LIST_URL = "https://nsearchives.nseindia.com/content/equities/sec_list.csv"
-BAND_CHANGES_URL = "https://nsearchives.nseindia.com/content/equities/eq_band_changes_{ddmmyyyy}.csv"
 
 
 @dataclass(frozen=True)
@@ -138,11 +136,12 @@ def run(conn, since: date, until: date, *, max_requests: int, fetcher=None) -> d
     band changes are exchange notices, not tied to trading days, and D27's own "Muhurat can
     fall on a weekend" lesson argues against assuming otherwise without checking."""
     fetcher = fetcher or ArchiveFetcher()
+    archives = nse_config()["archives"]
     today = datetime.now(timezone.utc).date()
 
     have_snapshot = conn.execute("select count(*) from band_snapshot").fetchone()[0] > 0
     if not have_snapshot:
-        result = fetcher.get(SEC_LIST_URL)
+        result = fetcher.get(archives["sec_list"])
         if not result.ok:
             log.error("sec_list.csv fetch failed: %s - band reconstruction has no anchor", result.error)
             return {"snapshot": "failed", "days_loaded": 0}
@@ -162,7 +161,7 @@ def run(conn, since: date, until: date, *, max_requests: int, fetcher=None) -> d
             break
         # ArchiveFetcher.get() paces itself (min_gap + jitter, idle-reconnect) before every
         # request - no separate sleep needed here, matching market/__main__.py's own loop.
-        url = BAND_CHANGES_URL.format(ddmmyyyy=day.strftime("%d%m%Y"))
+        url = archives["band_changes"].format(ddmmyyyy=day.strftime("%d%m%Y"))
         result = fetcher.get(url)
         if result.status == 404:
             save_day(conn, day, [], status=404)
@@ -201,4 +200,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
-    sys.exit(main())
+
+    from tradebot.common import nse_guard
+    sys.exit(nse_guard.run(main))

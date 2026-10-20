@@ -9,12 +9,12 @@ the warm-ups nobody counted (WORKLOG, 22 Sep).
 
 from __future__ import annotations
 
-import random
 import time
 from dataclasses import dataclass
 
 import requests
 
+from tradebot.common import nse_guard
 from tradebot.common.config import nse as nse_config
 from tradebot.common.http import close_if_idle
 
@@ -47,29 +47,46 @@ class ArchiveFetcher:
         self._last: float | None = None
 
     def _pace(self) -> None:
-        if self._last is not None:
-            wait = self.min_gap + random.uniform(*self.jitter) - (time.monotonic() - self._last)
-            if wait > 0:
-                time.sleep(wait)
+        """The backfill gap, measured against every NSE request in the process
+        (common/nse_guard.py), then idle connections closed."""
+        nse_guard.GUARD.before_request(self.min_gap, self.jitter)
         close_if_idle(self.session, self._last, self.idle_after)
         self._last = time.monotonic()
 
-    def warm_up(self) -> None:
+    def warm_up(self) -> str | None:
+        """Pick up the Akamai cookies. Returns None when warmed up, else why not."""
         self._pace()
         self.requests += 1
-        self.session.get(self.cfg["warmup_url"], timeout=60)
-        self._warm = True
+        error = None
+        try:
+            r = self.session.get(self.cfg["warmup_url"], timeout=60)
+            if r.status_code != 200:
+                error = f"warm-up HTTP {r.status_code}"
+        except Exception as exc:
+            error = f"warm-up failed: {type(exc).__name__}: {exc}"
+        self._last = time.monotonic()
+        self._warm = error is None
+        nse_guard.GUARD.after_request(error is None, error or "warm-up")
+        return error
 
     def get(self, url: str) -> Archive:
         """Returns an Archive rather than raising: every outcome is recorded by the caller,
         and a clean 404 (no file for a non-trading day) is an answer, not an error."""
         if not self._warm:
-            try:
-                self.warm_up()
-            except Exception as exc:
-                return Archive(None, error=f"warm-up failed: {type(exc).__name__}: {exc}")
+            error = self.warm_up()
+            if error:
+                return Archive(None, error=error)
         self._pace()
         self.requests += 1
+        got = self._get(url)
+        self._last = time.monotonic()
+        # A clean 404 is "no file for that day": an answer. Too large is a fact about one
+        # file. Neither counts towards the 5-in-a-row stop.
+        ok = got.ok or got.status == 404 or (got.status == 200 and got.content is None)
+        nse_guard.GUARD.after_request(ok, f"archive {url}: {got.error}")
+        return got
+
+    def _get(self, url: str) -> Archive:
         try:
             with self.session.get(url, timeout=90, stream=True) as r:
                 if r.status_code in (401, 403):

@@ -185,9 +185,11 @@ def run(conn, cfg, *, max_requests: int, client=None, fetcher=None, sleep=time.s
     `backfill/announcements.py` paces its `symbol=` queries.
     """
     from tradebot.collector.nse import NseClient, jittered
+    from tradebot.common.config import nse as cfg_nse
     from tradebot.market.fetch import ArchiveFetcher
 
-    client = client or NseClient()
+    client = client or NseClient(
+        min_gap=float(cfg_nse()["pacing"]["backfill_min_gap_seconds"]))
     fetcher = fetcher or ArchiveFetcher()
     gap = float(client.cfg["pacing"]["backfill_min_gap_seconds"])
     jitter = client.cfg["pacing"]["jitter_seconds"]

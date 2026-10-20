@@ -185,6 +185,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`http.py`** — Closes a session's pooled connections once they have sat idle long enough
   for NSE to have dropped them. This fixed the `ConnectionResetError` failures on the slow
   10-minute polls.
+- **`nse_guard.py`** — The one gate every NSE request passes through: the machine-wide
+  lock (`data/nse.lock`), the gap measured across hosts, backoff after failures, and the
+  hard stop after 5 in a row. `run(main)` wraps every NSE entry point.
 - **`isin.py`** — Defines "same company" as the same ISIN issuer code (its first 7
   characters). NSE's announcements carry a company's original ISIN, while prices carry the
   one reissued after a split.
@@ -465,6 +468,14 @@ is not reachable. The rest use fakes.
   database with every migration applied, dropped after each test.
 - **`test_scaffold.py`** — The package imports, the repo layout matches ARCHITECTURE, the
   dependencies equal the approved list, and `.env.example` holds no real secret.
+- **`test_nse_guard.py`** — The 5th consecutive failure stops the run and gets past
+  `except Exception`; the gap is kept from the end of the last request; backoff never
+  compounds; a live lock refuses a second process; a stale one is replaced.
+- **`test_nse_clients.py`** — The three clients through the gate: an unrecognised JSON
+  shape or a renamed field stops at once, a failed warm-up is reported, archive 404s never
+  count, the gap holds across clients, the PDF client re-warms after a 403.
+- **`test_migrate.py`** — A failing migration leaves the earlier ones applied (one
+  transaction per file); an applied one is not run again.
 - **`test_backup.py`** — The backup's pg_dump command line never carries the password, and pruning never confuses `tradebot_` with `tradebot_backfill_` dumps.
 - **`test_collector_records.py`** — The identity key, payload-hash stability and timestamp
   parsing for API records.

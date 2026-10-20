@@ -47,9 +47,12 @@ blocked is in WORKLOG.md. Read it before starting work in a new session.
 
 ## Scraping rules
 
-- One request at a time per source.
-- Follow the intervals in config: 60 s in the market window, 10 min otherwise, ≥3 s between requests in backfill.
-- On errors, back off with jitter; never retry in a tight loop. The VPS IP is whitelisted with the broker, so don't get it blocked.
+- **One process on this machine talks to NSE at a time**, and it sends one request at a time. `common/nse_guard.py` enforces this with `data/nse.lock`: a second process refuses to start sending (`NseBusy`). Never run two NSE-talking commands together. Agents and subagents never make NSE requests.
+- Every NSE request goes through `nse_guard.GUARD` (the three clients already do). It keeps the gap across hosts: ≥2 s between any two requests in the live path (the warm-up included), ≥3 s in backfill, plus jitter.
+- Follow the polling intervals in config (D6): 60 s in the trading window, 3 min post-close, 10 min otherwise.
+- On errors, back off with jitter (401/403/429/5xx, timeouts); never retry in a tight loop. **A run stops after 5 consecutive failed requests** (`NseHardStop`, exit code 3). A clean 404 for an archive file is an answer, not a failure.
+- **Fail loudly on a structure change**: a response in a shape the code does not recognise stops the run at once (`NseStructureChanged`). Never store it as "0 rows".
+- Every NSE entry point exits through `nse_guard.run(main)`.
 - Endpoints, headers and parameters live in `config/sources.yaml`, never in code.
 
 ## Environment

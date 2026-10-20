@@ -87,7 +87,7 @@ def fetch_company(conn, client, isin: str, symbols: list[str], keep_from: date,
             pause()
         result = client.fetch_symbol(symbol)
         if not result.ok:
-            return False, f"{symbol}: {result.error}"
+            return False, f"{symbol}: status {result.http_status}: {result.error}"
         records = select_records(result.rows, isin, keep_from, keep_to)
         # other_issuer is recorded so a filter that drops a whole company shows up in the
         # checkpoint, rather than having to be inferred from a run of zero-kept companies.
@@ -114,7 +114,8 @@ def fetch_company(conn, client, isin: str, symbols: list[str], keep_from: date,
 
 
 def run(conn, window: dict, *, max_requests: int, client=None, sleep=time.sleep) -> dict:
-    client = client or nse.NseClient()
+    client = client or nse.NseClient(
+        min_gap=float(nse.nse_config()["pacing"]["backfill_min_gap_seconds"]))
     gap = float(client.cfg["pacing"]["backfill_min_gap_seconds"])
     jitter = client.cfg["pacing"]["jitter_seconds"]
     pause = lambda: sleep(nse.jittered(gap, jitter))   # noqa: E731 - one line, used twice
@@ -140,7 +141,8 @@ def run(conn, window: dict, *, max_requests: int, client=None, sleep=time.sleep)
             auth_failures = 0
         else:
             failed += 1
-            auth_failures = auth_failures + 1 if ("401" in summary or "403" in summary) else 0
+            auth_failures = (auth_failures + 1
+                             if ("status 401" in summary or "status 403" in summary) else 0)
             if auth_failures >= 2:
                 log.error("stopping: two consecutive 401/403 answers")
                 break

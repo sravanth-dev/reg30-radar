@@ -16,8 +16,11 @@ from datetime import date
 
 import requests
 
+from tradebot.common import nse_guard
 from tradebot.common.config import nse as nse_config
 from tradebot.common.http import close_if_idle
+# Re-exported: the collector and sheets loops import it from here.
+from tradebot.common.nse_guard import NseStructureChanged, backoff_seconds  # noqa: F401
 
 
 @dataclass
@@ -35,19 +38,35 @@ class NseClient:
     """A single warmed-up session against NSE. Not thread-safe, and intentionally so:
     the scraping rules allow one request at a time per source."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, min_gap: float | None = None) -> None:
+        """`min_gap` is the floor between any two NSE requests this client sends: the
+        live floor by default; the backfill passes its own (>=3 s, CLAUDE.md)."""
         self.cfg = nse_config()
+        pacing = self.cfg["pacing"]
+        self.min_gap = float(min_gap if min_gap is not None else pacing["live_min_gap_seconds"])
+        self.jitter = tuple(float(x) for x in pacing["jitter_seconds"])
         self.session = requests.Session()
         self.session.headers.update({k: str(v) for k, v in self.cfg["headers"].items()})
-        self.idle_after = float(self.cfg["pacing"]["idle_reconnect_seconds"])
+        self.idle_after = float(pacing["idle_reconnect_seconds"])
         self._warm = False
         self._last_request: float | None = None
 
-    def warm_up(self) -> None:
-        """Pick up the Akamai cookies. The API host will not answer a cold session."""
-        self.session.get(self.cfg["warmup_url"], timeout=60)
+    def warm_up(self) -> str | None:
+        """Pick up the Akamai cookies. The API host will not answer a cold session.
+        Returns None when warmed up, else the reason it failed. Paced like any request,
+        so the call that follows still waits its gap."""
+        nse_guard.GUARD.before_request(self.min_gap, self.jitter)
+        error = None
+        try:
+            r = self.session.get(self.cfg["warmup_url"], timeout=60)
+            if r.status_code != 200:
+                error = f"warm-up HTTP {r.status_code}"
+        except Exception as exc:
+            error = f"warm-up {type(exc).__name__}: {exc}"
         self._last_request = time.monotonic()
-        self._warm = True
+        self._warm = error is None
+        nse_guard.GUARD.after_request(error is None, error or "warm-up")
+        return error
 
     def poll_announcements(self) -> PollResult:
         """One GET against the live announcements endpoint: the 20 most recent filings."""
@@ -96,43 +115,75 @@ class NseClient:
         the record of the failure it was reporting.
         """
         if not self._warm:
-            self.warm_up()
+            error = self.warm_up()
+            if error:
+                return PollResult(False, None, 0, error=error)
         # A connection idle this long has usually been closed at NSE's end already.
         close_if_idle(self.session, self._last_request, self.idle_after)
 
         url = self.cfg[endpoint]["url"]
         params = {**self.cfg[endpoint]["params"], **extra_params}
+        nse_guard.GUARD.before_request(self.min_gap, self.jitter)
         started = time.monotonic()
+        body = None
         try:
             r = self.session.get(url, params=params, timeout=45)
             latency = int((time.monotonic() - started) * 1000)
-
             if r.status_code in (401, 403):
-                # The session has gone stale. Refresh it once; the caller applies backoff.
+                # The session has gone stale: warm up again before the next request. The
+                # guard counts the failure and backs off.
                 self._warm = False
-                return PollResult(False, r.status_code, latency,
-                                  error="session rejected; will warm up again")
-            if r.status_code != 200:
-                return PollResult(False, r.status_code, latency,
-                                  error=f"HTTP {r.status_code}")
-
-            body = r.json()
-            rows = body if isinstance(body, list) else body.get("data", [])
-            total = body.get("totalCount") if isinstance(body, dict) else None
-            return PollResult(True, 200, latency, rows=list(rows), total=total)
+                result = PollResult(False, r.status_code, latency,
+                                    error=f"HTTP {r.status_code}: session rejected; will warm up again")
+            elif r.status_code != 200:
+                result = PollResult(False, r.status_code, latency, error=f"HTTP {r.status_code}")
+            else:
+                body = r.json()
+                result = None
         except Exception as exc:
             latency = int((time.monotonic() - started) * 1000)
-            return PollResult(False, None, latency, error=f"{type(exc).__name__}: {exc}")
-        finally:
-            self._last_request = time.monotonic()
+            result = PollResult(False, None, latency, error=f"{type(exc).__name__}: {exc}")
+        self._last_request = time.monotonic()
+        if result is not None:
+            nse_guard.GUARD.after_request(False, f"{endpoint}: {result.error}")
+            return result
+
+        # A 200 with JSON. Only two shapes have ever been seen: a bare list, or an object
+        # holding a `data` list. Anything else means NSE changed the endpoint, and storing it
+        # as "0 rows" would make a dead source look like a quiet day.
+        if isinstance(body, list):
+            rows, total = body, None
+        elif isinstance(body, dict) and isinstance(body.get("data"), list):
+            rows, total = body["data"], body.get("totalCount")
+        else:
+            shape = sorted(body)[:8] if isinstance(body, dict) else type(body).__name__
+            raise NseStructureChanged(f"{endpoint}: unexpected response shape {shape}")
+        if endpoint == "announcements":
+            check_announcement_fields(rows)
+        nse_guard.GUARD.after_request(True, endpoint)
+        return PollResult(True, 200, latency, rows=list(rows), total=total)
 
 
-def backoff_seconds(consecutive_failures: int, *, cap: float = 600.0) -> float:
-    """Exponential backoff with jitter. Never a tight retry loop (CLAUDE.md)."""
-    if consecutive_failures <= 0:
-        return 0.0
-    base = min(cap, 30.0 * (2 ** (consecutive_failures - 1)))
-    return base * random.uniform(0.7, 1.3)
+# Keys collector/records.py reads from an announcement row. A renamed field would otherwise
+# be stored as null for ever, silently. Every row must carry the first group; the second may
+# be missing on a few very old rows, but a response in which no row carries one means the
+# field was renamed.
+EVERY_ROW_KEYS = ("symbol", "an_dt", "desc")
+SOME_ROW_KEYS = ("seq_id", "sm_isin", "attchmntFile", "exchdisstime")
+
+
+def check_announcement_fields(rows: list) -> None:
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NseStructureChanged(f"announcements: a row is a {type(row).__name__}")
+        missing = [k for k in EVERY_ROW_KEYS if k not in row]
+        if missing:
+            raise NseStructureChanged(f"announcements: row without {missing}: keys "
+                                      f"{sorted(row)[:12]}")
+    if rows:
+        gone = [k for k in SOME_ROW_KEYS if not any(k in row for row in rows)]
+        if gone:
+            raise NseStructureChanged(f"announcements: no row carries {gone}")
 
 
 def jittered(seconds: float, jitter: tuple[float, float]) -> float:

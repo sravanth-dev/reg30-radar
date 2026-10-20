@@ -43,3 +43,17 @@ def scratch_conn():
         conn.execute(f"drop schema {schema} cascade")
         conn.commit()
         conn.close()
+
+
+@pytest.fixture(autouse=True)
+def nse_guard_for_tests(tmp_path_factory, monkeypatch):
+    """Every test gets its own NSE guard: a lock file in a temporary directory of its own
+    (not the test's tmp_path, which some tests inspect) and a sleep that returns at once, so
+    no test ever waits on pacing or touches data/nse.lock."""
+    from tradebot.common import nse_guard
+
+    lock = tmp_path_factory.mktemp("nse_guard") / "nse.lock"
+    guard = nse_guard.NseGuard(lock, sleep=lambda seconds: None)
+    monkeypatch.setattr(nse_guard, "GUARD", guard)
+    yield guard
+    guard.release()

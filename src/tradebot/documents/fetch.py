@@ -13,13 +13,13 @@ a cap turns that into a recorded refusal instead.
 from __future__ import annotations
 
 import hashlib
-import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import requests
 
+from tradebot.common import nse_guard
 from tradebot.common.config import nse as nse_config
 from tradebot.common.http import close_if_idle
 
@@ -57,15 +57,26 @@ class PdfFetcher:
         self._warm = False
         self._last = 0.0
 
-    def warm_up(self) -> None:
-        self.session.get(self.cfg["warmup_url"], timeout=60)
-        self._warm = True
+    def warm_up(self) -> str | None:
+        """Pick up the Akamai cookies. Returns None when warmed up, else why not."""
+        nse_guard.GUARD.before_request(self.min_gap, self.jitter)
+        error = None
+        try:
+            r = self.session.get(self.cfg["warmup_url"], timeout=60)
+            if r.status_code != 200:
+                error = f"warm-up HTTP {r.status_code}"
+        except Exception as exc:
+            error = f"warm-up {type(exc).__name__}: {exc}"
+        self._last = time.monotonic()
+        self._warm = error is None
+        nse_guard.GUARD.after_request(error is None, error or "warm-up")
+        return error
 
     def _pace(self) -> None:
-        """Never faster than the backfill gap, and never exactly periodic (Sect.5.1)."""
-        wait = self.min_gap + random.uniform(*self.jitter) - (time.monotonic() - self._last)
-        if self._last and wait > 0:
-            time.sleep(wait)
+        """Never faster than the backfill gap, never exactly periodic (Sect.5.1), and
+        measured against every NSE request in the process, not only this client's
+        (common/nse_guard.py)."""
+        nse_guard.GUARD.before_request(self.min_gap, self.jitter)
         self._last = time.monotonic()
 
     def fetch(self, url: str, dest_dir: Path) -> Fetched:
@@ -79,7 +90,9 @@ class PdfFetcher:
         an exception escaping here would lose the record of what went wrong.
         """
         if not self._warm:
-            self.warm_up()
+            error = self.warm_up()
+            if error:
+                return Fetched(False, error=error)
         dest_dir.mkdir(parents=True, exist_ok=True)
         # Between --follow cycles this session sits idle for minutes, long enough for
         # NSE to close the pooled connection (common/http.py). Checked before _pace()
@@ -87,12 +100,23 @@ class PdfFetcher:
         close_if_idle(self.session, self._last or None, self.idle_after)
         self._pace()
 
+        got = self._download(url, dest_dir)
+        self._last = time.monotonic()
+        # A file over the size cap is a fact about that file, not a sign NSE is failing, so
+        # it does not count towards the 5-in-a-row stop. Every other refusal does.
+        ok = got.ok or (got.error or "").startswith("exceeds max_bytes")
+        nse_guard.GUARD.after_request(ok, f"PDF {url}: {got.error}")
+        return got
+
+    def _download(self, url: str, dest_dir: Path) -> Fetched:
         digest = hashlib.sha256()
         size = 0
         tmp = dest_dir / f"download-{int(time.time() * 1000)}.part"
         try:
             with self.session.get(url, timeout=90, stream=True) as r:
                 if r.status_code != 200:
+                    if r.status_code in (401, 403):
+                        self._warm = False      # warm up again before the next request
                     return Fetched(False, http_status=r.status_code,
                                    error=f"HTTP {r.status_code}")
                 with tmp.open("wb") as fh:

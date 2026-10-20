@@ -80,6 +80,10 @@ nse:
       price_data: pd
       market_cap: mcap
       band_hitters: bh
+    # Price-band history (ARCHITECTURE §11, 27 Sep 2026): the current band per symbol, and
+    # one change log per calendar day (a clean 404 on a day with no change).
+    sec_list: https://nsearchives.nseindia.com/content/equities/sec_list.csv
+    band_changes: https://nsearchives.nseindia.com/content/equities/eq_band_changes_{ddmmyyyy}.csv
 
   documents:
     # Attachment downloads (ARCHITECTURE Sect.5.5). The ceiling is not decoration: the
@@ -108,6 +112,9 @@ nse:
     # Used by the overflow catch-up re-poll as well as the backfill: the fastest rate this
     # project ever asks of NSE.
     backfill_min_gap_seconds: 3.0
+    # The floor between ANY two requests in the live path, warm-up and first call included
+    # (brief, 20 Oct 2026). Enforced across hosts by common/nse_guard.py.
+    live_min_gap_seconds: 2.0
 
     # Pooled connections idle longer than this are closed before the next request.
     # NSE drops idle connections after a few minutes, and reusing a dead one fails

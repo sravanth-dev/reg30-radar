@@ -170,6 +170,16 @@ Purpose: capture every announcement exactly once, with the exchange timestamp an
   - **Next year's file**: from **1 December**, warn once a day until `config/holidays_<year+1>.yaml` exists. The collector would otherwise fail loudly on 1 January, which is correct but late.
 - **Idempotent**: unique on (source, source_id); re-polling never creates duplicates.
 - **Politeness**: one request at a time per source; exponential backoff with jitter on errors; on 401/403, refresh the session once, then back off; consistent User-Agent.
+  **Built 20 Oct 2026 (brief, D30): one gate for every NSE request, `src/tradebot/common/nse_guard.py`.** The audit found that each of the three clients paced only against its own last request, that no loop stopped on repeated failure (a DNS outage on 4 Oct marked 55 companies failed in three minutes, and the backfill's 401/403 stop could never fire), and that nothing kept a second process off NSE. The gate does four things:
+  - It takes `data/nse.lock` on a process's first NSE request (PID, start time, command line). A second live process refuses with `NseBusy`, and a lock left by a dead process is replaced. On Windows, liveness is checked with `OpenProcess`, because `os.kill(pid, 0)` there terminates the process.
+  - It measures the gap from the end of the previous NSE request on any host: `live_min_gap_seconds` (2 s), or the backfill's 3 s, plus jitter.
+  - It sets backoff after a failure (≈30, 60, 120, 240 s with jitter) as a minimum gap rather than an extra sleep, so it never compounds with a caller's own backoff.
+  - The 5th consecutive failed request raises `NseHardStop` (a BaseException, so the clients' `except Exception` cannot swallow it). Entry points end through `nse_guard.run`, which logs one line and exits 3.
+  Warm-ups are paced and status-checked like any request. A JSON body that is neither a list nor an object with a `data` list, or announcement rows missing the keys `collector/records.py` reads, raise `NseStructureChanged` at once.
+  **Proposed** (implementation choices, 20 Oct 2026):
+  - A clean archive 404, and a file over the size cap, do not count as failures.
+  - A PDF that comes back as a non-PDF (an Akamai page) does count.
+  - The live collector now exits after 5 consecutive failed polls instead of backing off for ever. Restarting it is the hosting layer's job (GATE 2).
 - **Health**: update `source_health` on every poll. Log a warning if a source has no successful poll for 10 minutes inside the market window.
 - **Stored** (raw): source, source_id, payload hash, exchange_ts, first_seen_at, symbol, company name, ISIN, raw category string, headline/description, attachment URL, full payload (jsonb). `source` is retained even though D26 leaves only NSE, so adding a second source later needs no migration.
 - **Verified** (Slice 0 Step 0, from `tests/fixtures/an18092026.txt`, 1,265 lines): the PR bundle's announcement file carries **company name, symbol, category and description text — and nothing else**. It has no per-filing timestamp, no attachment URL and no ISIN.

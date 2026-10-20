@@ -10,6 +10,7 @@ Runs on the laptop over the phone hotspot (D19), against BACKFILL_DATABASE_URL o
     python -m tradebot.backfill batch-submit      T1 extraction through the Batch API
     python -m tradebot.backfill batch-collect     apply finished Batch results
     python -m tradebot.backfill rejudge           re-apply changed rules to stored answers
+    python -m tradebot.backfill reparse           re-apply T0 to stored text (no network)
     python -m tradebot.backfill events            merge verified extractions into events
     python -m tradebot.backfill revenue           results XBRL -> financials (Spike C)
     python -m tradebot.backfill calculate         §6: verified | recheck_pending
@@ -156,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tradebot.backfill")
     parser.add_argument("stage", choices=[
         "universe", "expected", "announcements", "reconcile", "documents", "batch-submit",
-        "batch-collect", "rejudge", "events", "revenue", "calculate", "recheck-submit",
+        "batch-collect", "rejudge", "reparse", "events", "revenue", "calculate", "recheck-submit",
         "recheck-collect", "study", "status"])
     parser.add_argument("--max-requests", type=int, default=2000)
     parser.add_argument("--log-level", default="INFO")
@@ -203,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
             out = batch.collect(conn, client())
         elif args.stage == "rejudge":
             out = batch.rejudge(conn)
+        elif args.stage == "reparse":
+            out = batch.reparse(conn)
         elif args.stage == "events":
             out = events.build(conn)
         elif args.stage == "revenue":

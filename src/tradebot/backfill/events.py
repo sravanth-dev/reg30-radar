@@ -36,6 +36,7 @@ class Filing:
     stage: str | None
     awarding_entity: str | None
     execution_period_raw: str | None
+    value_flags: list[str] | None = None
 
 
 def group(filings: list[Filing]) -> list[list[Filing]]:
@@ -89,13 +90,14 @@ def to_event(members: list[Filing]) -> dict:
         "company_is_recipient": won, "recipient_source": source, "stage": first.stage,
         "awarding_entity": first.awarding_entity,
         "execution_period_raw": first.execution_period_raw,
+        "value_flags": first.value_flags,
     }
 
 
 FILINGS_SQL = """
 select ra.id, coalesce(by_issuer.isin, by_symbol.isin), ra.symbol, ra.exchange_ts, oe.bucket,
        d.sha256, oe.value_inr, oe.currency, oe.company_is_recipient, oe.stage,
-       oe.awarding_entity, oe.execution_period_raw
+       oe.awarding_entity, oe.execution_period_raw, oe.value_flags
 from order_extractions oe
 join raw_announcements ra on ra.id = oe.raw_announcement_id
 left join documents d on d.id = oe.document_id
@@ -112,7 +114,10 @@ order by ra.exchange_ts
 
 def build(conn) -> dict:
     """(Re)build `backfill_events` from verified extractions. An event keeps its state and
-    recheck result across rebuilds; an event no longer produced is deleted."""
+    recheck result across rebuilds, unless its value changed: then it starts again at
+    `extracted`, with its ratios and recheck cleared and the reset logged, because a
+    ratio or a recheck of the old value says nothing about the new one (audit, 20 Oct
+    2026). An event no longer produced is deleted."""
     seen, filings = set(), []
     for row in conn.execute(FILINGS_SQL):
         if row[0] in seen or row[1] is None:
@@ -125,12 +130,32 @@ def build(conn) -> dict:
             conn.execute(
                 """insert into backfill_events (isin, symbol, event_ts, raw_ids, primary_raw_id,
                        bucket, value_inr, currency, company_is_recipient, recipient_source, stage,
-                       awarding_entity, execution_period_raw, state, state_log)
+                       awarding_entity, execution_period_raw, value_flags, state, state_log)
                    values (%(isin)s, %(symbol)s, %(event_ts)s, %(raw_ids)s, %(primary_raw_id)s,
                        %(bucket)s, %(value_inr)s, %(currency)s, %(company_is_recipient)s,
                        %(recipient_source)s, %(stage)s, %(awarding_entity)s,
-                       %(execution_period_raw)s, 'extracted', '[]'::jsonb)
+                       %(execution_period_raw)s, %(value_flags)s, 'extracted', '[]'::jsonb)
                    on conflict (primary_raw_id) do update set
+                       state = case when backfill_events.value_inr is distinct from
+                                         excluded.value_inr then 'extracted'
+                                    else backfill_events.state end,
+                       state_log = case when backfill_events.value_inr is distinct from
+                                             excluded.value_inr
+                                        then backfill_events.state_log || jsonb_build_array(
+                                            jsonb_build_object('to', 'extracted', 'trigger',
+                                                'value changed on rebuild', 'at', now()))
+                                        else backfill_events.state_log end,
+                       ttm_revenue_inr = case when backfill_events.value_inr is distinct from
+                                excluded.value_inr then null else backfill_events.ttm_revenue_inr end,
+                       ttm_basis = case when backfill_events.value_inr is distinct from
+                                excluded.value_inr then null else backfill_events.ttm_basis end,
+                       value_to_mcap = case when backfill_events.value_inr is distinct from
+                                excluded.value_inr then null else backfill_events.value_to_mcap end,
+                       recheck_value_inr = case when backfill_events.value_inr is distinct from
+                                excluded.value_inr then null else backfill_events.recheck_value_inr end,
+                       recheck_recipient = case when backfill_events.value_inr is distinct from
+                                excluded.value_inr then null else backfill_events.recheck_recipient end,
+                       value_flags = excluded.value_flags,
                        raw_ids = excluded.raw_ids, event_ts = excluded.event_ts,
                        value_inr = excluded.value_inr, currency = excluded.currency,
                        company_is_recipient = excluded.company_is_recipient,

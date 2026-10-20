@@ -37,14 +37,35 @@ SCALES: list[tuple[str, Decimal]] = [
 # converted only at a fixed rate Sravanth has set in config/fx.yaml (USD at Rs 94, 29 Sep
 # 2026); any other currency is never converted, because inventing a rate would be guessing
 # a number (§11).
-INR_MARKERS = ("₹", "rs.", "rs", "inr", "rupees", "inr.")
-FOREIGN = {
-    "usd": "USD", "us$": "USD", "$": "USD", "dollar": "USD",
-    "eur": "EUR", "€": "EUR", "euro": "EUR",
-    "gbp": "GBP", "£": "GBP",
-    "jpy": "JPY", "¥": "JPY",
-    "aed": "AED", "sgd": "SGD", "chf": "CHF",
-}
+#
+# Regexes, not substrings (audit, 20 Oct 2026): as substrings "rs" matched inside "orders"
+# and "years", and adding "rm" for the Malaysian ringgit would have matched "form" and
+# "term". An alphabetic code must stand alone; a symbol need not. Where one marker contains
+# another, the longer comes first: S$, A$ and US$ before $.
+_ALONE = r"(?<![a-z])"
+FOREIGN_MARKERS: list[tuple[re.Pattern, str]] = [(re.compile(rx, re.I), code) for rx, code in [
+    (_ALONE + r"s\$|\bsgd\b|\bsingapore\s+dollars?\b", "SGD"),
+    (_ALONE + r"a\$|\baud\b|\baustralian\s+dollars?\b", "AUD"),
+    (_ALONE + r"c\$|\bcad\b|\bcanadian\s+dollars?\b", "CAD"),
+    (r"\bhkd\b|\bhk\$|\bhong\s+kong\s+dollars?\b", "HKD"),
+    (r"\bnzd\b|\bnew\s+zealand\s+dollars?\b", "NZD"),
+    (r"us\$|\busd\b|\bu\.s\.\s*dollars?\b|\bdollars?\b|\$", "USD"),
+    (r"€|\beur\b|\beuros?\b", "EUR"),
+    (r"£|\bgbp\b|\bsterling\b", "GBP"),
+    (r"¥|\bjpy\b|\byen\b", "JPY"),
+    (r"\baed\b|\bdirhams?\b", "AED"),
+    (r"\bchf\b|\bswiss\s+francs?\b", "CHF"),
+    (r"\bmyr\b|\brm\b|\bringgit\b", "MYR"),
+    (r"\bkwd\b|\bkuwaiti\s+dinars?\b", "KWD"),
+    (r"\bsar\b|\bsaudi\s+riyals?\b", "SAR"),
+    (r"\bqar\b|\bqatari\s+riyals?\b", "QAR"),
+    (r"\bomr\b|\bomani\s+rials?\b", "OMR"),
+    (r"\bbhd\b|\bbahraini\s+dinars?\b", "BHD"),
+    (r"\bcny\b|\brmb\b|\byuan\b|\brenminbi\b", "CNY"),
+]]
+INR_MARKER = re.compile(r"₹|\brs\b|\binr\b|\brupees?\b", re.I)
+# A crore/lakh word or the "/-" suffix also says rupees, by Indian convention.
+_INDIAN_SCALE_WORD = re.compile(r"\b(?:crores?|crs?|lakhs?|lacs?)\b", re.I)
 
 APPROX = re.compile(r"\b(approx\.?|approximately|about|circa|around)\b", re.I)
 
@@ -79,6 +100,11 @@ WORD_SCALES = {
     "hundred": Decimal(100), "thousand": Decimal(1000),
     "lakh": Decimal(10) ** 5, "lakhs": Decimal(10) ** 5,
     "crore": Decimal(10) ** 7, "crores": Decimal(10) ** 7,
+    # Foreign-currency orders spell their amounts the international way: "USD 3,600,000
+    # (USD Three Million Six Hundred Thousand only)" (RITES). Without these the words could
+    # never confirm such a numeral (audit, 20 Oct 2026).
+    "million": Decimal(10) ** 6, "millions": Decimal(10) ** 6,
+    "billion": Decimal(10) ** 9, "billions": Decimal(10) ** 9,
 }
 
 
@@ -181,13 +207,20 @@ INDIAN_SCALES = {"crores", "crore", "crs", "cr", "lakhs", "lakh", "lacs", "lac"}
 
 
 def _marker_in(window: str) -> str | None:
-    for marker, code in FOREIGN.items():
-        if marker in window:
+    for pattern, code in FOREIGN_MARKERS:
+        if pattern.search(window):
             return code
-    for marker in INR_MARKERS:
-        if marker in window:
-            return "INR"
+    if INR_MARKER.search(window):
+        return "INR"
     return None
+
+
+def has_currency_marker(text: str) -> bool:
+    """Whether the string says what money it is: a currency marker, a crore/lakh word, or
+    the rupee "/-". Without one, a number is as likely a quantity ("2,00,000 Numbers of")
+    as an amount, and is never verified (Proposed, 20 Oct 2026)."""
+    return (_marker_in(text) is not None or bool(_INDIAN_SCALE_WORD.search(text))
+            or "/-" in text)
 
 
 def _currency_of(text: str, start: int, end: int, scale_word: str | None) -> str:
@@ -206,29 +239,81 @@ def _currency_of(text: str, start: int, end: int, scale_word: str | None) -> str
 
 
 def detect_currency(text: str) -> str:
-    low = text.lower()
-    # Check foreign first: "USD 5 million" also contains no rupee marker, but "Rs" can
-    # appear in company names, so an explicit foreign marker is the stronger signal.
-    for marker, code in FOREIGN.items():
-        if marker in low:
-            # "$" is inside "US$", already handled; guard against matching a bare "$" that
-            # is really part of a longer token we already matched.
-            return code
-    for marker in INR_MARKERS:
-        if marker in low:
-            return "INR"
-    return "INR"
+    """The string's currency when nothing sits beside the number. Foreign first: "Rs" can
+    appear in a company name, so an explicit foreign marker is the stronger signal."""
+    return _marker_in(text) or "INR"
+
+
+_SCALE_OF = {word: mult for word, mult in SCALES}
+_SCALE_BEFORE = re.compile(
+    r"\b(crores|crore|crs|cr|lakhs|lakh|lacs|lac|billion|bn|million|mn)\b"
+    r"[\s.:()]*(?:₹|rs\.?|inr)?[\s.:()]*$", re.I)
+
+
+def _scale_before(text: str, start: int) -> tuple[Decimal, str] | None:
+    """A scale word written just before the numeral, as tables print it: "₹ Cr 1,000 to
+    2,500" (L&T), "in Rs. Crore 100 to 250" (a size legend). Without this L&T's band was
+    read as ₹1,000 in rupees (audit, 20 Oct 2026)."""
+    m = _SCALE_BEFORE.search(text[max(0, start - 24):start])
+    if not m:
+        return None
+    word = m.group(1).lower()
+    return _SCALE_OF[word], word
 
 
 def _scale_after(text: str, end: int) -> tuple[Decimal, str] | None:
     """Find the scale word immediately following a numeral, if any."""
-    tail = text[end:end + 24].lower()
+    tail = text[end:end + 30].lower()
     for word, mult in SCALES:
         # "/-" may sit between the numeral and its scale word: LCCPROJECT printed
-        # "₹58.53/- Crore", read as ₹58.53 until 27 Sep 2026.
-        if re.match(rf"\s*(?:/-)?\s*{re.escape(word)}\b", tail):
+        # "₹58.53/- Crore", read as ₹58.53 until 27 Sep 2026. So may a "+" ("₹100+
+        # Crores", a lower bound), or a table's "(Rs. in crore)" (CEIGALL).
+        if re.match(rf"\s*\+?\s*(?:/-)?\s*(?:\(\s*(?:rs\.?|₹|inr)?\s*in\s+)?"
+                    rf"{re.escape(word)}\b", tail):
             return mult, word
     return None
+
+
+# Two numerals joined by a dash or "to". Not a date: neither numeral may sit inside a
+# longer dash/slash run ("dated 01-02-2026" once read as the range 1-2, giving Rs 1).
+_RANGE = re.compile(
+    r"(?<![\d.,])(?<!\d[-–/])(\d[\d,]*(?:\.\d+)?)\s*(?:-|–|—|\bto\b)\s*"
+    r"(\d[\d,]*(?:\.\d+)?)(?!\s*[-–/]\s*\d)")
+_YEAR = re.compile(r"(19|20)\d\d")
+_ABOVE_N = re.compile(r"\b(?:above|more\s+than|greater\s+than)\s*\d|>\s*\d", re.I)
+
+
+def _ranges(text: str) -> list[tuple[re.Match, Decimal, Decimal]]:
+    """Every real range in the text: low below high, and not a span of years (2024-2025)."""
+    out = []
+    for m in _RANGE.finditer(text):
+        lo, hi = _to_decimal(m.group(1)), _to_decimal(m.group(2))
+        if lo is None or hi is None or not hi > lo:
+            continue
+        if _YEAR.fullmatch(m.group(1)) and _YEAR.fullmatch(m.group(2)):
+            continue
+        out.append((m, lo, hi))
+    return out
+
+
+# D32 (20 Oct 2026). Checked on the words just before the number. Upper first, because
+# "not exceeding" contains "exceeding" and "not more than" contains "more than".
+_UPPER = re.compile(r"\b(?:up\s*to|upto|not\s+exceeding|maximum(?:\s+of)?|ceiling(?:\s+of)?"
+                    r"|not\s+more\s+than|capped\s+at)\b[^\d]{0,25}$", re.I)
+_LOWER = re.compile(r"\b(?:over|above|more\s+than|exceed(?:s|ing)?|in\s+excess\s+of"
+                    r"|at\s+least|minimum(?:\s+of)?|upwards\s+of|not\s+less\s+than)\b"
+                    r"[^\d]{0,25}$", re.I)
+
+
+def _bound_flags(text: str, start: int, flags: set[str]) -> None:
+    """"over ₹ 5,400 Crores" is a lower bound: the value counts, flagged `lower_bound`,
+    because the true value is at least that (D32). "up to ₹12 crore" is a ceiling, not a
+    value: flagged `upper_bound`, which is never verified (Proposed, 20 Oct 2026)."""
+    before = text[max(0, start - 45):start]
+    if _UPPER.search(before):
+        flags.add("upper_bound")
+    elif _LOWER.search(before):
+        flags.add("lower_bound")
 
 
 def parse_money(raw: str | None) -> Money:
@@ -259,33 +344,47 @@ def parse_money(raw: str | None) -> Money:
         out.flags.add("no_number_found")
         return out
 
-    # A range: two numerals joined by a dash or "to", both taking the same scale.
-    range_match = re.search(
-        r"(\d[\d,]*(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d[\d,]*(?:\.\d+)?)", text)
-    if range_match:
-        lo = _to_decimal(range_match.group(1))
-        hi = _to_decimal(range_match.group(2))
-        scale = _scale_after(text, range_match.end())
-        mult = scale[0] if scale else Decimal(1)
-        if lo is not None and hi is not None and hi > lo:
-            out.flags.add("range")
-            out.currency = _currency_of(text, range_match.start(), range_match.end(),
-                                        scale[1] if scale else None)
-            rate = _rate_to_inr(out.currency)
-            if rate is None:
-                out.flags.add("foreign_currency_not_converted")
-                return out
-            if out.currency != "INR":
-                out.flags.add("fx_converted")
-                mult = mult * rate
-            out.low_inr = lo * mult
-            out.high_inr = hi * mult
-            # §5.7 leaves which end to use to the caller; the low end is the conservative
-            # choice and is what the calculator should see.
-            out.value_inr = out.low_inr
-            return out
+    if not has_currency_marker(text):
+        out.flags.add("no_currency_marker")
 
-    # Otherwise: take the numeral that carries a scale word, else the largest numeral.
+    ranges = _ranges(text)
+    if len(ranges) >= 2 or (ranges and _ABOVE_N.search(text)):
+        # A size legend ("100 to 250 / 250 to 500 / ... / Above 2000"), printed so the
+        # reader can place an order in a band, not the order's own value (COCHINSHIP,
+        # SWANDEF; audit, 20 Oct 2026). There is no figure to take (D32).
+        out.flags.add("band_only")
+        return out
+    if ranges:
+        range_match, lo, hi = ranges[0]
+        scale = (_scale_after(text, range_match.end())
+                 or _scale_before(text, range_match.start()))
+        mult = scale[0] if scale else Decimal(1)
+        out.flags.add("range")
+        _bound_flags(text, range_match.start(), out.flags)
+        out.currency = _currency_of(text, range_match.start(), range_match.end(),
+                                    scale[1] if scale else None)
+        rate = _rate_to_inr(out.currency)
+        if rate is None:
+            out.flags.add("foreign_currency_not_converted")
+            return out
+        if out.currency != "INR":
+            out.flags.add("fx_converted")
+            mult = mult * rate
+        out.low_inr = lo * mult
+        out.high_inr = hi * mult
+        # D32 (20 Oct 2026): the low end is the value, flagged `range`. It is the
+        # conservative choice for D22's >=15% test, and what the calculator should see.
+        out.value_inr = out.low_inr
+        if scale is None:
+            out.flags.add("no_scale_word")
+        if out.value_inr < _ONE_LAKH:
+            # The range path used to return before this check, which is how "2,500 to
+            # 5,000" (a crore band) was verified as Rs 2,500 (audit, 20 Oct 2026).
+            out.flags.add("suspect_scale")
+        return out
+
+    # Otherwise: take the numeral that carries a scale word after it; failing that, one
+    # with a scale word just before it ("Rs. in Crore: 450.5"); else the largest numeral.
     best: tuple[Decimal, str | None, re.Match] | None = None
     for m in numbers:
         val = _to_decimal(m.group(0))
@@ -297,12 +396,22 @@ def parse_money(raw: str | None) -> Money:
             break
         if best is None or val > best[0]:
             best = (val, None, m)
+    if best is not None and best[1] is None:
+        for m in numbers:
+            val = _to_decimal(m.group(0))
+            scale = _scale_before(text, m.start()) if val is not None else None
+            if scale is not None:
+                best = (val * scale[0], scale[1], m)
+                break
 
     if best is None:
         out.flags.add("no_number_found")
         return out
 
     value, scale_word, chosen = best
+    _bound_flags(text, chosen.start(), out.flags)
+    if text[chosen.end():chosen.end() + 2].lstrip().startswith("+"):
+        out.flags.add("lower_bound")          # "₹400+ Crores" means at least 400 (D32)
     if scale_word is None:
         # A bare numeral with no scale word is taken as rupees, which is what filings mean
         # when they print "INR 65,02,160.50/-".
@@ -316,7 +425,8 @@ def parse_money(raw: str | None) -> Money:
 
 # The spelled-out amount a filing often prints beside the numeral. Only runs containing one
 # of these count, so a stray "one" or "two" in the text is never read as an amount.
-_AMOUNT_SCALE_WORDS = {"thousand", "lakh", "lakhs", "crore", "crores"}
+_AMOUNT_SCALE_WORDS = {"thousand", "lakh", "lakhs", "crore", "crores", "million",
+                       "millions", "billion", "billions"}
 _WORD_TOKEN = re.compile(r"[A-Za-z]+")
 # What may sit between two words of one spelled-out amount: "Six Hundred & Sixty",
 # "Seventy-Nine", "Crore, Fifty".
@@ -390,11 +500,23 @@ def _check_against_words(text: str, value: Decimal, flags: set[str]) -> Decimal:
     return value
 
 
+# Flags that keep a value out of `verified` whatever provenance says.
+BLOCKING_FLAGS = frozenset({"suspect_scale", "no_currency_marker", "upper_bound", "band_only"})
+
+
 def is_suspect(money: Money) -> bool:
     """Whether a parsed value must not be marked verified however well its span checks
-    out: provenance proves the value came from the document, not that the scale was read
-    right (see `_check_against_words`)."""
-    return "suspect_scale" in money.flags
+    out: provenance proves the number came from the document, not that it is the order's
+    value in rupees. Every judge calls this (orders/run.py for T0, extractor/llm_extract.py
+    for the model and the backfill's Batch answers), so these rules hold on every path:
+    - the scale could not be confirmed (`_check_against_words`, the range path);
+    - nothing in the string says it is money (`no_currency_marker`);
+    - it is a ceiling ("up to"), or a size legend with no figure;
+    - it is below Rs 1 lakh, too small to be an order value (§5.10's suspect_parse).
+    """
+    if BLOCKING_FLAGS & money.flags:
+        return True
+    return money.value_inr is not None and money.value_inr < _ONE_LAKH
 
 
 MONTH_PATTERNS = [

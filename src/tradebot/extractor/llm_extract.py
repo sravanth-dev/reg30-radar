@@ -77,6 +77,9 @@ class ExtractResult:
     value_inr: Decimal | None = None
     provenance_ok: bool = False
     currency: str | None = None   # as stated; non-INR with a value_inr means converted
+    value_flags: list[str] | None = None    # units/money.py's flags, e.g. lower_bound (D32)
+    value_high_inr: Decimal | None = None   # the high end of a range
+    gst_inclusive: bool | None = None
     cost_usd: Decimal = Decimal("0")
     attempts: int = 0
     error: str | None = None
@@ -100,6 +103,15 @@ def interpret(document_text: str, raw_text: str) -> ExtractResult:
     return judge(document_text, _parse_and_validate(raw_text))
 
 
+def gst_of(money) -> bool | None:
+    """True/False when the consideration says GST is in or out, None when it is silent."""
+    if "gst_inclusive" in money.flags:
+        return True
+    if "gst_exclusive" in money.flags:
+        return False
+    return None
+
+
 def judge(document_text: str, fields: OrderFields) -> ExtractResult:
     """The verification rules for one set of extracted fields. Separate from `interpret`
     so `backfill.batch.rejudge` can re-apply them to answers already stored, when a rule
@@ -119,7 +131,9 @@ def judge(document_text: str, fields: OrderFields) -> ExtractResult:
         status = "needs_review"
     return ExtractResult(review_status=status, fields=fields, value_inr=money.value_inr,
                          provenance_ok=provenance_ok,
-                         currency=money.currency if fields.consideration_raw else None)
+                         currency=money.currency if fields.consideration_raw else None,
+                         value_flags=sorted(money.flags) or None,
+                         value_high_inr=money.high_inr, gst_inclusive=gst_of(money))
 
 
 RETRY_NOTE = ("Your previous response was invalid and could not be used: {error}. Return a "

@@ -26,6 +26,16 @@ def _collapse(text: str) -> str:
     return _WS.sub(" ", text or "").strip()
 
 
+def _occurs(piece: str, doc: str) -> bool:
+    """`piece` occurs in `doc` as whole tokens. A raw substring test let a quote "13.51 Crs"
+    verify inside "113.51 Crs", a dropped digit (audit, 20 Oct 2026). So a piece that starts
+    with a letter or digit may not continue a word or number on its left, and one that ends
+    with one may not run on into one on its right ("13.51" inside "1,13.51" or "13.515")."""
+    left = r"(?<![0-9A-Za-z])(?<![0-9][.,])" if piece[0].isalnum() else ""
+    right = r"(?![0-9A-Za-z])(?![.,][0-9])" if piece[-1].isalnum() else ""
+    return re.search(left + re.escape(piece) + right, doc) is not None
+
+
 def verify(doc_text: str, value_span: str | None, value_inr: Decimal | None) -> bool:
     """True only if some continuous run of words from `value_span` occurs verbatim
     (whitespace aside) in `doc_text` AND parses, on its own, to exactly `value_inr`.
@@ -46,6 +56,6 @@ def verify(doc_text: str, value_span: str | None, value_inr: Decimal | None) -> 
     for size in range(len(words), 0, -1):            # longest first: the whole span
         for start in range(len(words) - size + 1):
             piece = " ".join(words[start:start + size])
-            if piece in doc and parse_money(piece).value_inr == value_inr:
+            if _occurs(piece, doc) and parse_money(piece).value_inr == value_inr:
                 return True
     return False

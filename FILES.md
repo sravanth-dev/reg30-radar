@@ -128,6 +128,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   reconstructing a stock's price band on a past date.
 - **`0014_reconcile_window.sql`** — Adds each reconcile day's window start, and the list of
   order filers the API holds only under a catch-all category.
+- **`0015_value_flags.sql`** — Keeps what a value is, not only what it is: the parser's
+  flags (`lower_bound`, `range`, `fx_converted`, ...) and a range's high end, on extractions
+  and events (D32).
 
 ## prompts/ — instructions sent to the model, versioned
 
@@ -319,7 +322,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 - **`__main__.py`** — `python -m tradebot.backfill <stage>`. Each stage runs one pass
   against the backfill database: universe, expected, announcements, reconcile, documents,
-  batch-submit/collect, rejudge, events, revenue, calculate, recheck-submit/collect, study
+  batch-submit/collect, rejudge, reparse, events, revenue, calculate, recheck-submit/collect, study
   and status.
 - **`universe.py`** — Builds the frozen company list from the criteria as of 22 Sep 2025,
   and refuses if the criteria are not frozen. It applies hand and industry exclusions from
@@ -337,7 +340,8 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`batch.py`** — Sends `pending_llm` filings to OpenAI's Batch API after a worst-case cost
   check, one batch per model sized to OpenAI's queue limit. Later it reads the results back
   through the same checks as a live call, with retries capped at three submissions.
-  `rejudge` re-applies the current rules to stored answers without calling the model.
+  `rejudge` re-applies the current rules to stored answers without calling the model;
+  `reparse` re-applies T0 to stored text and sends a value that no longer verifies to T1.
 - **`events.py`** — Merges verified extractions into events on exact keys only (the same
   PDF hash, or the same company and value). It implements §6's state machine: extracted,
   then calculated, then verified or recheck.
@@ -468,6 +472,13 @@ is not reachable. The rest use fakes.
   database with every migration applied, dropped after each test.
 - **`test_scaffold.py`** — The package imports, the repo layout matches ARCHITECTURE, the
   dependencies equal the approved list, and `.env.example` holds no real secret.
+- **`test_money_real_cases.py`** — The 20 Oct 2026 value rules (D32 and the audit), each
+  pinned by a string that was really stored as verified: L&T's bands, the COCHINSHIP and
+  SWANDEF legends, "over Rs 5,400 crore", ringgit and dinar amounts, quantities, a dropped
+  digit in provenance.
+- **`test_value_rules_db.py`** — Real SQL: `reparse` sends a legend value back to the
+  model and keeps good ones, `rejudge` keeps the flags, a rebuilt event whose value changed
+  starts again at `extracted`.
 - **`test_nse_guard.py`** — The 5th consecutive failure stops the run and gets past
   `except Exception`; the gap is kept from the end of the last request; backoff never
   compounds; a live lock refuses a second process; a stale one is replaced.

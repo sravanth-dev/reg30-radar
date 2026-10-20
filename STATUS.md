@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 18:45 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 20 Oct 2026, 20:30 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -27,12 +27,17 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       after 5 failures, exit code 3), structure checks, `bands.py` URLs to config,
       migrations one transaction per file. 390 tests pass
 
+- [x] Step 1.2 value correctness: range/legend/bound/currency rules (D32 + Proposed),
+      token-bounded provenance, flags stored (migration 0015, both DBs), `reparse` stage.
+      Applied to the backfill DB with no network or model: 1,420 verified (0 below Rs 1
+      lakh, 0 without a currency marker; 24 lower bounds, 8 ranges), 30 queued for T1
+      (13 old retries + 17 T0 values that no longer verify). T0 eval unchanged at 8/18.
+      416 tests pass
+
 ## In progress
-- [ ] Step 1.2 value correctness
+- [ ] Step 1.3 §5.5 Part C (second read for vision-sourced values)
 
 ## Next (in order)
-2. Value correctness: range suspect check, band legends, bounds (D32), currencies,
-   token-bounded provenance, a judge guard below ₹1 lakh; then `rejudge` and a T0 re-parse
 3. §5.5 Part C: a second read for the 42 vision-sourced values
 4. Revenue: the Q2 defect (H1 − Q1, Proposed), basis recorded, the 8 failed companies,
    truncated listings

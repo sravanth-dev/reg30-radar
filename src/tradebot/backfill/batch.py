@@ -186,7 +186,8 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
     conn.execute(
         """update order_extractions set
                path = 'llm', review_status = %(status)s, value_inr = %(value)s,
-               currency = %(currency)s,
+               currency = %(currency)s, value_flags = %(flags)s, value_high_inr = %(high)s,
+               gst_inclusive = %(gst)s,
                provenance_ok = %(prov)s, consideration_raw = %(cons)s, value_span = %(span)s,
                execution_period_raw = %(period)s, awarding_entity = %(awarder)s,
                company_is_recipient = %(recipient)s, stage = %(stage)s,
@@ -194,7 +195,8 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
                processed_at = now()
            where raw_announcement_id = %(raw_id)s""",
         {"status": result.review_status, "value": result.value_inr,
-         "currency": result.currency,
+         "currency": result.currency, "flags": result.value_flags,
+         "high": result.value_high_inr, "gst": result.gst_inclusive,
          "prov": result.provenance_ok, "cons": f.consideration_raw, "span": f.value_span,
          "period": f.execution_period_raw, "awarder": f.awarding_entity,
          "recipient": f.company_is_recipient_bool, "stage": f.stage, "cost": cost,
@@ -207,6 +209,45 @@ def _set_review(conn, raw_id, reason, cost=Decimal("0")):
     conn.execute("update order_extractions set review_status = 'needs_review', last_error = %s,"
                  " llm_cost_usd = llm_cost_usd + %s where raw_announcement_id = %s",
                  (reason, cost, raw_id))
+
+
+def reparse(conn) -> dict:
+    """Re-apply the deterministic parser (T0) to stored document text, for when a value
+    rule changes after the documents were processed (20 Oct 2026: ranges, size legends,
+    bounds, currencies; AUDIT.md §3). No download and no model call.
+
+    Touches only filings T0 itself verified. One that still verifies is updated in place.
+    One that no longer does becomes `pending_llm`, exactly as a T0 miss would have when it
+    was first processed, so the next `batch-submit` sends it to T1. Returns the moves."""
+    from tradebot.extractor.llm_extract import gst_of
+    from tradebot.orders.run import t0_value
+
+    rows = conn.execute("""
+        select oe.raw_announcement_id, d.text, oe.value_inr
+        from order_extractions oe join documents d on d.id = oe.document_id
+        where oe.path = 't0' and oe.review_status = 'verified'""").fetchall()
+    moved = Counter()
+    for raw_id, text, before in rows:
+        ann, money, span, provenance_ok, ok = t0_value(text)
+        if ok:
+            conn.execute(
+                "update order_extractions set value_inr = %s, value_flags = %s,"
+                " value_high_inr = %s, currency = %s, gst_inclusive = %s, provenance_ok = %s,"
+                " consideration_raw = %s, value_span = %s where raw_announcement_id = %s",
+                (money.value_inr, sorted(money.flags) or None, money.high_inr, money.currency,
+                 gst_of(money), provenance_ok, ann.raw("consideration_raw"), span, raw_id))
+            moved["verified -> verified" + (" (value changed)" if money.value_inr != before
+                                             else "")] += 1
+        else:
+            conn.execute(
+                "update order_extractions set path = 'llm', review_status = 'pending_llm',"
+                " value_inr = null, value_flags = %s, last_error = %s"
+                " where raw_announcement_id = %s",
+                (sorted(money.flags) or None,
+                 "T0 value no longer verifies under the 20 Oct 2026 rules; sent to T1", raw_id))
+            moved["verified -> pending_llm"] += 1
+    conn.commit()
+    return dict(moved)
 
 
 _RECIPIENT = {True: "true", False: "false", None: "unknown"}
@@ -238,9 +279,10 @@ def rejudge(conn) -> dict:
         result = judge(text, fields)
         conn.execute(
             "update order_extractions set review_status = %s, value_inr = %s,"
-            " provenance_ok = %s, currency = %s where raw_announcement_id = %s",
+            " provenance_ok = %s, currency = %s, value_flags = %s, value_high_inr = %s,"
+            " gst_inclusive = %s where raw_announcement_id = %s",
             (result.review_status, result.value_inr, result.provenance_ok, result.currency,
-             raw_id))
+             result.value_flags, result.value_high_inr, result.gst_inclusive, raw_id))
         moved[f"{before} -> {result.review_status}"] += 1
     conn.commit()
     return dict(moved)

@@ -37,6 +37,8 @@ class ExtractionRow:
     provenance_ok: bool | None = None
     currency: str | None = None
     gst_inclusive: bool | None = None
+    value_flags: list[str] | None = None
+    value_high_inr: Decimal | None = None
     execution_period_raw: str | None = None
     awarding_entity: str | None = None
     company_is_recipient: bool | None = None
@@ -50,12 +52,14 @@ UPSERT = """
 insert into order_extractions (
     raw_announcement_id, document_id, bucket, order_related, relevance_reason, path,
     consideration_raw, value_span, value_inr, provenance_ok, currency, gst_inclusive,
+    value_flags, value_high_inr,
     execution_period_raw, awarding_entity, company_is_recipient, stage, review_status,
     llm_cost_usd, attempts, last_error, processed_at
 ) values (
     %(raw_announcement_id)s, %(document_id)s, %(bucket)s, %(order_related)s,
     %(relevance_reason)s, %(path)s, %(consideration_raw)s, %(value_span)s, %(value_inr)s,
-    %(provenance_ok)s, %(currency)s, %(gst_inclusive)s, %(execution_period_raw)s,
+    %(provenance_ok)s, %(currency)s, %(gst_inclusive)s, %(value_flags)s,
+    %(value_high_inr)s, %(execution_period_raw)s,
     %(awarding_entity)s, %(company_is_recipient)s, %(stage)s, %(review_status)s,
     %(llm_cost_usd)s, %(attempts)s, %(last_error)s, %(processed_at)s
 )
@@ -65,7 +69,8 @@ on conflict (raw_announcement_id) do update set
     path = excluded.path, consideration_raw = excluded.consideration_raw,
     value_span = excluded.value_span, value_inr = excluded.value_inr,
     provenance_ok = excluded.provenance_ok, currency = excluded.currency,
-    gst_inclusive = excluded.gst_inclusive,
+    gst_inclusive = excluded.gst_inclusive, value_flags = excluded.value_flags,
+    value_high_inr = excluded.value_high_inr,
     execution_period_raw = excluded.execution_period_raw,
     awarding_entity = excluded.awarding_entity,
     company_is_recipient = excluded.company_is_recipient, stage = excluded.stage,

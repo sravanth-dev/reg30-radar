@@ -113,18 +113,26 @@ def _gst_flag(money) -> bool | None:
     return None
 
 
+def t0_value(doc_text: str):
+    """The deterministic parser's value for one document (§5.6 steps 1-3): (annexure,
+    money, span, provenance_ok, ok). One function for the live path and for the backfill's
+    `reparse`, so a rule change re-applied to stored text is judged exactly as new text is."""
+    ann = parse_annexure(doc_text)
+    money = parse_money(ann.raw("consideration_raw"))
+    span = ann.span("consideration_raw")
+    provenance_ok = verify_provenance(doc_text, span, money.value_inr)
+    # Provenance proves the number came from the document, not that it is the order's value
+    # in rupees: VASCONEQ's ₹660.79 crore passed as ₹660.79, and a size legend gave ₹100
+    # (units/money.py). Such a value is not verified, so the filing escalates to T1 like any
+    # other T0 miss.
+    return ann, money, span, provenance_ok, provenance_ok and not is_suspect(money)
+
+
 def _t0_row(row, relevance: Relevance, *, document_id: int, doc_text: str,
             processed_at: datetime, attempts: int) -> tuple[orders_store.ExtractionRow, bool]:
     """Try the deterministic parser first (§5.6 step 1-3). Returns (row, verified)."""
-    ann = parse_annexure(doc_text)
+    ann, money, span, provenance_ok, ok = t0_value(doc_text)
     consideration = ann.raw("consideration_raw")
-    money = parse_money(consideration)
-    span = ann.span("consideration_raw")
-    provenance_ok = verify_provenance(doc_text, span, money.value_inr)
-    # Provenance proves the number came from the document, not that its scale was read
-    # right: VASCONEQ's ₹660.79 crore passed as ₹660.79 (units/money.py). A suspect scale
-    # is not verified here, so the filing escalates to T1 like any other T0 miss.
-    ok = provenance_ok and not is_suspect(money)
     # company_is_recipient and stage read the whole document, not just the labelled
     # consideration row - already built in extractor/annexure.py (the same functions
     # eval/__main__.py's predict() uses) and simply not wired in here until now. Without
@@ -136,7 +144,8 @@ def _t0_row(row, relevance: Relevance, *, document_id: int, doc_text: str,
         order_related=True, relevance_reason=relevance.reason,
         path="t0", consideration_raw=consideration, value_span=span,
         value_inr=money.value_inr, provenance_ok=provenance_ok, currency=money.currency,
-        gst_inclusive=_gst_flag(money),
+        gst_inclusive=_gst_flag(money), value_flags=sorted(money.flags) or None,
+        value_high_inr=money.high_inr,
         execution_period_raw=ann.raw("execution_period_raw"),
         awarding_entity=ann.raw("awarding_entity"),
         company_is_recipient=parse_company_is_recipient(doc_text),
@@ -160,7 +169,8 @@ def _llm_row(row, relevance: Relevance, *, document_id: int, doc_text: str, clie
         consideration_raw=fields.consideration_raw if fields else None,
         value_span=fields.value_span if fields else None,
         value_inr=result.value_inr, provenance_ok=result.provenance_ok,
-        currency=result.currency,
+        currency=result.currency, gst_inclusive=result.gst_inclusive,
+        value_flags=result.value_flags, value_high_inr=result.value_high_inr,
         execution_period_raw=fields.execution_period_raw if fields else None,
         awarding_entity=fields.awarding_entity if fields else None,
         company_is_recipient=fields.company_is_recipient_bool if fields else None,

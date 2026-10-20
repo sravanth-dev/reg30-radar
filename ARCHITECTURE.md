@@ -424,6 +424,7 @@ Order of operations:
 2. **LLM fallback** (§6), only for required fields the parser couldn't fill.
 3. **Verify by provenance** (Decided). Substring presence is not provenance: a document containing "13.51" anywhere would "verify" a value the model lifted from a date or an unrelated line item. So **both the parser and the model return the exact quoted span** they took the value from, and code checks two things — the span occurs verbatim in the document text, and the span contains the value. A field failing either check is rejected and `review_status = needs_review`.
    **CHANGED 29 Sep 2026 (Sravanth): a verbatim part of the quote is enough.** The check now accepts any continuous run of words from the quote that appears verbatim (whitespace aside) in the text **and** parses to exactly the reported value; the whole quote is tried first. The reason is measured: PDF tables come out with their columns interleaved, so RAILTEL's text reads `Rs.\n(in INR); 38,59,27,045/-`, the label column inside the value, and a model quoting the value as a reader sees it produces a quote that is not one piece of the text. That failed 54 correct answers in the first backfill batch; 51 pass the new rule. The property that matters is kept: the number must come verbatim from the document and parse to the same value, and a real passage that parses to a different number still fails (`extractor/provenance.py`).
+   **Tightened 20 Oct 2026:** a part of the quote must occur as whole tokens, so "13.51 Crs" no longer verifies inside "113.51 Crs" (`extractor/provenance.py`).
    On a page whose text came from this project's own vision OCR (§5.5 Part C, `source = vision`), the span check alone is circular — it proves the extractor copied the transcript, not that the transcript matches the image — so a value from such a page needs a second, independent read agreeing on it before it can be `verified`.
 4. **Normalize** with the unit normalizer (§5.7).
 
@@ -441,6 +442,21 @@ Order of operations:
   - "incl./including GST" → `gst_inclusive`;
   - ranges → low/high values plus a flag;
   - foreign currency → **USD converted at a fixed ₹94** (Sravanth, 29 Sep 2026, "for now", so a USD order's ratios can be computed; `config/fx.yaml`), flagged `fx_converted`, with the original currency kept in `order_extractions.currency`; **every other currency flagged and not converted**, and sent to review. Each amount's currency is read **beside the number that was chosen**, not from anywhere in the string, and a crore/lakh amount is rupees: otherwise "INR 651 Crores (USD 73.47 million)" would have its crore figure multiplied by the dollar rate;
+  - **Built 20 Oct 2026 (D32 and the GATE 1 audit, AUDIT.md §3).** Twenty values had been verified below ₹1 lakh: 15 L&T band disclosures read as rupees, and two size legends read as ₹100 and ₹0. The cause was that the range branch returned before the under-₹1-lakh suspect check. Now:
+    - A range gives low/high with value = low and `range`.
+    - A scale printed before the number counts ("₹ Cr 1,000 to 2,500").
+    - A size legend (several ranges, or one plus "Above N") gives `band_only` with no value.
+    - "over / above / more than / exceeding / at least / N+" gives `lower_bound`, and the value counts (D32).
+    - Dates and spans of years are never ranges.
+    - "Three Million Six Hundred Thousand" confirms a numeral like the Indian words do.
+    - "(Rs. in crore)" after a number gives its scale.
+    - Currency markers are word-bounded regexes: "rs" no longer matches inside "orders".
+    - Ringgit, dinar, riyal and other currencies are recognised as foreign and left unconverted.
+    The flags are stored (`order_extractions.value_flags`, `value_high_inr`, `backfill_events.value_flags`; migration 0015).
+    **Proposed:**
+    - "up to / not exceeding ₹X" gives `upper_bound`, never verified.
+    - A string with no currency marker, crore/lakh word or "/-" gives `no_currency_marker`, never verified.
+    - A value below ₹1 lakh is never verified, on any path: `money.is_suspect` is the one gate both judges apply.
   - **Indian number words** (Decided): "Rupees Thirteen Crore Fifty One Lakh only" and similar must parse in code. Filings write values in words often enough that a digits-only parser would reject correct answers and fill the review queue with them.
 - Execution period → months. Examples: "10 Months from Work Order", "2 Years", "Within 6 months", "60 days", "Delivery Completion is November, 2026" (absolute dates use the filing date as reference). Anything unclear → null.
 - Test vectors, taken from real filings:

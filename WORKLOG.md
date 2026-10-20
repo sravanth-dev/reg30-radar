@@ -2755,3 +2755,47 @@ What it found:
 **One stray query**: a slow read-only audit query of mine (PID 20092 on
 `tradebot_backfill`) kept running after its client was stopped. Cancelling it was not
 permitted. It holds only a shared lock and blocks nothing; Sravanth may cancel it.
+
+### 20 Oct 2026 (evening) — Phase 1: NSE guardrails; value rules re-applied to the backfill
+
+**NSE guardrails (commit eaaeae7).** `common/nse_guard.py` is one gate for every NSE
+request: `data/nse.lock` (a second process refuses), the gap measured from the end of the
+last request on any host (2 s live, 3 s backfill), backoff as a minimum gap that never
+compounds a caller's own, and `NseHardStop` on the 5th consecutive failure (a
+BaseException, so the clients' `except Exception` cannot swallow it; entry points exit 3
+through `nse_guard.run`). Also:
+- Warm-ups are paced and checked.
+- An unrecognised JSON shape or a renamed announcement field stops at once.
+- The backfill's dead 401/403 check now sees the status.
+- `bands.py` URLs moved to config.
+- Migrations get one transaction per file.
+- One Windows trap avoided: `os.kill(pid, 0)` terminates a process there, so the stale-lock
+  check uses `OpenProcess`.
+- **Proposed:** the live collector now exits after 5 failed polls instead of backing off
+  for ever; restarting it is the hosting layer's job.
+
+**Value rules (D32 + Proposed), and the parser change applied to stored data.**
+- Root cause of the 20 garbage values: `parse_money`'s range branch returned before the
+  under-₹1-lakh check.
+- Fixed with: scale-before-number, size legends (`band_only`), lower/upper bounds,
+  word-bounded currency markers ("rs" no longer matches inside "orders"; ringgit, dinar
+  and riyal are foreign), `no_currency_marker`, and dates/year spans not read as ranges.
+- Provenance now matches whole tokens only.
+- `is_suspect` is the one gate both judges apply, below ₹1 lakh included.
+- Flags are now stored (migration 0015, applied to both databases).
+- Reading the full review queue found three general formats that held correct values:
+  "Three Million Six Hundred Thousand", "₹400+ Crores" (a lower bound), and
+  "12.185 (Rs. In crore)". All added.
+- New stage `reparse` re-applies T0 to stored text.
+
+**Run on the backfill database (backup taken first; no network, no model):**
+- `reparse` moved 17 T0 values to `pending_llm`: the COCHINSHIP and SWANDEF legends,
+  ringgit/dinar/riyal/omani amounts, two ceilings, three quantities or unmarked numbers,
+  and one cut-off spelled amount.
+- `rejudge` moved 15 LLM values to review (L&T's unscaled bands and the like) and 8 back to
+  verified (RITES, ZODIAC and NEWGEN USD amounts confirmed by their words; ARIS, BAJEL "+").
+- **Result: 1,420 verified, 0 below ₹1 lakh, 0 without a currency marker; 24 lower
+  bounds, 8 ranges, 107 USD-converted; 30 queued for T1 (13 + 17).**
+- T0 eval: 8/18 before and after. It scores the raw parser and skips the gates, and
+  nothing was tuned to the labels.
+- 416 tests pass.

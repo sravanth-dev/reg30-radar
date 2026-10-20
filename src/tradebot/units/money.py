@@ -409,6 +409,13 @@ def parse_money(raw: str | None) -> Money:
         return out
 
     value, scale_word, chosen = best
+    if re.search(r"\d\.$", text[:chosen.start()]) or re.match(r"\.\d", text[chosen.end():]):
+        # The chosen numeral is a piece of a longer dotted run, "~2.917.6 crore" (HCC, dots
+        # as thousands separators): read naively it gave Rs 6 crore for a Rs 2,917 crore
+        # order. Which dot is the decimal point cannot be known, so no value (spot check,
+        # 21 Oct 2026; never guess a number).
+        out.flags.add("malformed_number")
+        return out
     _bound_flags(text, chosen.start(), out.flags)
     if text[chosen.end():chosen.end() + 2].lstrip().startswith("+"):
         out.flags.add("lower_bound")          # "₹400+ Crores" means at least 400 (D32)

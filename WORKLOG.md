@@ -2927,3 +2927,14 @@ trades" failed for that reason alone. The calendar code was right.
   the image (the 2 known layout failures, D12). The rehearsal containers and volumes were
   removed. README.md has been added with the hosting options. DEPLOY.md is marked
   superseded.
+- **Validation before the study (no returns read).**
+  - 0 duplicate events, 0 raw filings in two events, 0 same-value repeats within 3 days.
+  - 14 unknown categories (166 filings).
+  - Reconcile at 96.6% (35 of 246 days below 95%), and prices on all 246 trading days of
+    the window.
+  - **Spot check, 30 values stratified** (T0, LLM, USD, bounds, high stakes). All 30 pass
+    provenance, but reading them found HCC stored as ₹6 crore for "~2.917.6 crore". It is
+    now `malformed_number`, no value (1 stored document changed), and is waiting to be sent
+    to T1.
+  - BAJEL's "between INR 100 Cr and INR 200 Cr" is stored as 100 Cr, the D32 low end, but
+    without the `range` flag. This is a known flag gap and was left as it is.

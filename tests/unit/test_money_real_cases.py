@@ -170,3 +170,11 @@ def test_a_second_amount_that_is_not_a_restatement_is_ignored():
     assert parse_money("₹ 10.5 Crore (Rs 2,50,000 advance)").value_inr == Decimal("105000000")
     # A different currency is never a restatement.
     assert parse_money("INR 651 Crores (USD 73.47 million)").value_inr == 651 * CRORE
+
+
+def test_a_numeral_with_two_dots_gives_no_value():
+    # HCC: "~2.917.6 crore" (dots as thousands separators) was read as Rs 6 crore.
+    got = parse_money("d at approximately ~2.917.6 crore from City and")
+    assert got.value_inr is None and "malformed_number" in got.flags
+    # A dotted date beside a real amount is not the chosen numeral, and still reads.
+    assert parse_money("LoA dated 24.04.2026 for Rs. 50 Crore").value_inr == 50 * CRORE

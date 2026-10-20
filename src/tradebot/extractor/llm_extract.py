@@ -17,7 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from tradebot.extractor.provenance import verify as verify_provenance
-from tradebot.llm.client import LlmClient, LlmRefused, LlmResult
+from tradebot.llm.client import LlmClient, LlmProviderError, LlmRefused, LlmResult
 from tradebot.units.money import is_suspect, parse_money
 
 PROMPT_VERSION = "order_extract_v1"
@@ -168,6 +168,10 @@ def extract_order_fields(document_text: str, *, client: LlmClient) -> ExtractRes
         except LlmRefused as exc:
             return ExtractResult(review_status="pending_llm", cost_usd=total_cost,
                                   attempts=attempt - 1, error=str(exc))
+        except LlmProviderError as exc:
+            # The provider failed, not the document: wait and retry later (GATE 1 audit).
+            return ExtractResult(review_status="pending_llm", cost_usd=total_cost,
+                                  attempts=attempt - 1, error=f"provider error: {exc}")
 
         total_cost += result.cost_usd
         try:

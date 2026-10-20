@@ -100,7 +100,8 @@ def fetch_company(conn, client, isin: str, symbols: list[str], keep_from: date,
         industry = industry or latest_industry(result.rows, isin)
 
     now = datetime.now(timezone.utc)
-    outcome = raw_store.insert_announcements(conn, [to_raw(r) for r in kept], first_seen_at=now)
+    outcome = raw_store.insert_announcements(conn, [to_raw(r) for r in kept], first_seen_at=now,
+                                           collected_via="backfill")
     conn.execute("update backfill_universe set industry = %s where isin = %s", (industry, isin))
     conn.execute("update instruments set industry = %s where isin = %s", (industry, isin))
     conn.execute(

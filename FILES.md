@@ -128,6 +128,8 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   reconstructing a stock's price band on a past date.
 - **`0014_reconcile_window.sql`** — Adds each reconcile day's window start, and the list of
   order filers the API holds only under a catch-all category.
+- **`0018_collected_via.sql`** — How each raw row was collected (live, gap, catchup,
+  backfill), so a row recovered after an outage never passes as a live `first_seen_at`.
 - **`0017_second_read_text.sql`** — Keeps the second read's own transcript beside the first,
   so a disagreement can be reviewed rather than taken on trust.
 - **`0016_second_read.sql`** — §5.5 Part C: whether a vision-read value had its second read,
@@ -156,6 +158,16 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   deploying.
 
 ---
+
+## src/tradebot/live/ and catchup/ — the one live process (D30)
+
+- **`live/__main__.py`** — `python -m tradebot.live`: polls on D6's schedule, then runs the
+  order pipeline on a per-cycle budget, in one loop under the NSE lock. Stops on a missing
+  holidays file (exit 2) or 5 NSE failures in a row (exit 3); warns on a stale poll and on
+  next year's missing holidays file.
+- **`catchup/__main__.py`** — `python -m tradebot.catchup`: one date-range request per day
+  since the last successful poll, rows marked `catchup`, a health row per request, and
+  suspect answers flagged. Collection only; `live` drains the backlog.
 
 ## src/tradebot/collector/ — live NSE announcements
 
@@ -493,6 +505,9 @@ is not reachable. The rest use fakes.
   pinned by a string that was really stored as verified: L&T's bands, the COCHINSHIP and
   SWANDEF legends, "over Rs 5,400 crore", ringgit and dinar amounts, quantities, a dropped
   digit in provenance.
+- **`test_live.py`** — The live runner's stop on a missing holidays file, its two warnings
+  (said once), one cycle wired with the order budget; catch-up's one request per day, its
+  rows marked `catchup`, its health rows and its suspect-answer flags.
 - **`test_placebo.py`** — Placebo dates fall every 5 days and never near a real event, a
   flat market gives zero excess, the robust σ ignores a fat tail, and the median's standard
   error shrinks with √n.

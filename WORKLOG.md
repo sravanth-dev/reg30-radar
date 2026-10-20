@@ -2882,3 +2882,29 @@ mark a value verified.
 - **Finding for Sravanth:** the ordinary-day median excess is **−0.44%** (−1.07% in the
   first half). D22 tests against zero, so it is conservative by about that much. Recorded
   only; D22 is Decided.
+
+### 20 Oct 2026 (late night) — the single live runner (D30), catch-up, order-path retries
+
+**Built:** `python -m tradebot.live` (one process, poll then orders, under the NSE lock, a
+per-cycle budget of 6 filings and a 20 s margin before the next poll) and
+`python -m tradebot.catchup` (one date-range request per day, rows marked `catchup`, a
+health row per request, suspect answers flagged). Migration 0018 adds
+`raw_announcements.collected_via`, applied to both databases.
+
+**Order-path defects from the audit, fixed:**
+- An outage (DNS, reset, timeout) no longer uses up a filing's attempts.
+- An OpenAI failure is now `LlmProviderError`. The filing waits as `pending_llm`, the
+  cycle's order work stops, and on the OCR path the document is no longer marked
+  unreadable for good. The PDF is still deleted on that path (D8).
+- `pending_llm` is never dropped. It is exempt from the 3-attempt cap (15-minute spacing
+  kept), read however old it is, and retried from its stored text with no second download.
+- Unknown categories go to catch_all and are logged once per filing (Proposed; this is
+  what §5.4 already said).
+
+**Also:** 30 `pending_llm` backfill filings submitted to the Batch API at 22:10
+(`batch_6ad799778dc08190a9fbb5d15054aad9`, worst case $0.0092). Collect within 24 h.
+
+**Noticed:** 20 Oct is Dussehra, an NSE holiday. A test fixture that assumed "today
+trades" failed for that reason alone. The calendar code was right.
+
+461 tests pass.

@@ -187,8 +187,12 @@ def test_a_failed_call_is_logged_as_an_error_and_reraised():
     conn = FakeConn()
     client = LlmClient(conn=conn, openai_client=BoomOpenAI(), config=ACTIVE_CONFIG,
                         api_key="sk-test")
-    with pytest.raises(RuntimeError, match="boom"):
+    # Re-raised as the one provider-failure type callers wait on (pending_llm), with the
+    # original kept as the cause (GATE 1 audit, 20 Oct 2026).
+    from tradebot.llm.client import LlmProviderError
+    with pytest.raises(LlmProviderError, match="boom") as raised:
         client.transcribe_image(PNG_BYTES, prompt_version="ocr_transcribe_v1")
+    assert isinstance(raised.value.__cause__, RuntimeError)
     assert len(conn.logged) == 1
     assert conn.logged[0]["status"] == "error"
     assert "boom" in conn.logged[0]["error"]

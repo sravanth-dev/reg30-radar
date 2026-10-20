@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from tradebot.documents import quality
+from tradebot.llm.client import LlmProviderError
 
 # A page's vision transcript is fetched by calling this with rendered PNG bytes. None means
 # Part B is dormant (no OpenAI key/model/cap configured yet) - every page needing OCR then
@@ -170,6 +171,10 @@ def extract(
                 r = _assess_page(page, pypdf_page, ocr=ocr, dpi=dpi, ocr_budget=budget)
                 r.page = i + 1
                 results.append(r)
+    except LlmProviderError:
+        # The OCR provider failed, not the PDF: the caller retries later. Before this, one
+        # OpenAI error marked the whole document unreadable for good (GATE 1 audit).
+        raise
     except Exception as exc:
         return Extracted(
             text="", pages=0, method=f"failed:{type(exc).__name__}", is_scanned=True,

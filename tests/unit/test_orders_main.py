@@ -92,10 +92,17 @@ def test_follow_cycle_reads_only_the_lookback_window_and_reports_outside_git(mon
     monkeypatch.setattr(run_mod, "process_pending", fake_process)
     monkeypatch.setattr(report, "write",
                          lambda conn, day, reports_dir: written.append((day, reports_dir)))
+    # The retry queue is read however old it is (GATE 1 audit): ids 7 and 8 are pending,
+    # outside the window, and are added by id.
+    from tradebot.orders import store as orders_store
+    by_id = []
+    monkeypatch.setattr(orders_store, "pending_ids_any_age", lambda conn: [7, 8])
+    monkeypatch.setattr(run_mod, "select_by_ids", lambda conn, ids: by_id.append(ids) or [])
 
     orders_main.follow_cycle(object(), fetcher=None, client=None, work_dir=None,
                              lookback_days=3, now=now)
 
     assert selected == [{"since": now - timedelta(days=3)}]
+    assert by_id == [[7, 8]]
     assert written == [(date(2026, 9, 27), report.LIVE_REPORTS_DIR)]
     assert report.LIVE_REPORTS_DIR != report.REPORTS_DIR

@@ -112,9 +112,15 @@ def process_url(
 
     docs_cfg = documents_config()["ocr"]
     max_ocr_pages = int(llm_config().get("ocr_max_pages_per_document", 10))
-    doc = extract(
-        got.path, ocr=ocr, dpi=int(docs_cfg["dpi"]), max_ocr_pages=max_ocr_pages,
-    )
+    try:
+        doc = extract(
+            got.path, ocr=ocr, dpi=int(docs_cfg["dpi"]), max_ocr_pages=max_ocr_pages,
+        )
+    except Exception:
+        # D8 holds on the error path too: an OCR provider error propagates (the filing is
+        # retried later), and the PDF must not outlive it.
+        _delete_downloaded(got.path, work_dir)
+        raise
     now = datetime.now(IST)
 
     document_id = None

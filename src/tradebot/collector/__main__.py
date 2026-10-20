@@ -71,7 +71,7 @@ def poll_once(conn, client: nse.NseClient, seen: set[str]) -> tuple[bool, int, b
     # Whether we knew anything before this poll decides whether "all new" means anything.
     cold_start = not seen
 
-    fresh, outcome = _store_new(conn, result.rows, seen, checked_at)
+    fresh, outcome = _store_new(conn, result.rows, seen, checked_at, via="live")
 
     # The page was full and nothing on it overlapped what we already had, so we cannot
     # prove filings did not roll off in between.
@@ -126,7 +126,7 @@ def close_gap(conn, client: nse.NseClient, seen: set[str]) -> bool:
         log.warning("gap query failed, will retry next cycle: %s", result.error)
         return False
 
-    _fresh, outcome = _store_new(conn, result.rows, seen, checked_at)
+    _fresh, outcome = _store_new(conn, result.rows, seen, checked_at, via="gap")
     # Recorded as an ordinary poll row. records_returned well above 20 is what marks it
     # as a gap query rather than a live poll.
     store.record_poll(
@@ -143,11 +143,12 @@ def close_gap(conn, client: nse.NseClient, seen: set[str]) -> bool:
     return True
 
 
-def _store_new(conn, rows: list[dict], seen: set[str], checked_at):
+def _store_new(conn, rows: list[dict], seen: set[str], checked_at, *, via: str):
     """Insert the rows whose payload hash we have not seen, and remember them."""
     raws = [to_raw(r) for r in rows]
     fresh = [r for r in raws if r.payload_sha256 not in seen]
-    outcome = store.insert_announcements(conn, fresh, first_seen_at=checked_at)
+    outcome = store.insert_announcements(conn, fresh, first_seen_at=checked_at,
+                                         collected_via=via)
     for r in fresh:
         seen.add(r.payload_sha256)
     return fresh, outcome
@@ -251,7 +252,8 @@ def catchup(date_from: date, date_to: date) -> int:
 
     with connect() as conn:
         raws = [to_raw(r) for r in result.rows]
-        outcome = store.insert_announcements(conn, raws, first_seen_at=checked_at)
+        outcome = store.insert_announcements(conn, raws, first_seen_at=checked_at,
+                                             collected_via="catchup")
         conn.commit()
 
     log.info(

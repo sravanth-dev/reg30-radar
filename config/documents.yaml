@@ -22,3 +22,8 @@ orders:
                                   # too, even though this polls our own database, not NSE)
   follow_lookback_days: 3        # --follow reads only filings first seen this recently, so
                                   # a cycle's cost stays flat as the table grows
+  # python -m tradebot.live (D30): the order pipeline runs inside the poll loop, so each
+  # cycle has a budget and the next poll is never late.
+  live_filings_per_cycle: 6      # at most this many filings (downloads) per cycle
+  live_poll_margin_seconds: 20   # no filing is started this close to the next poll
+  live_lookback_days: 14         # long enough for a catch-up backlog to drain at this pace

@@ -83,13 +83,30 @@ class Relevance:
     reason: str
 
 
+UNKNOWN_PREFIX = "unknown category"
+
+
+def log_unknown(conn, category: str | None, seen_at) -> None:
+    """One row per category the map does not list, counted per filing, for review
+    (§5.4). Callers log a filing once, when it is first processed."""
+    conn.execute("insert into unknown_categories (category_raw, first_seen, count)"
+                 " values (%s, %s, 1) on conflict (category_raw) do update set"
+                 " count = unknown_categories.count + 1", (category or "", seen_at))
+
+
 def classify(category_raw: str | None, headline: str | None) -> Relevance:
     """Decide relevance before any PDF is downloaded, from category and headline alone -
     this is what decides whether OCR is offered to a page that turns out unreadable
     (§5.5: OCR has to be decided before download, so the PDF still exists to render).
     """
     category = normalize_category(category_raw)
-    bucket = _bucket_lookup().get(category.casefold(), "out_of_scope")
+    bucket = _bucket_lookup().get(category.casefold())
+    prefix = ""
+    if bucket is None:
+        # §5.4: an unknown category is catch_all, the safe default, so an order filed
+        # under a category NSE adds later is still read (Proposed, 20 Oct 2026; before,
+        # it was out of scope and never logged on the live path).
+        bucket, prefix = "catch_all", f"{UNKNOWN_PREFIX} {category!r}; "
 
     if bucket in ("order_win", "order_candidate"):
         return Relevance(bucket, True, f"category is {bucket} ({category!r})")
@@ -101,11 +118,11 @@ def classify(category_raw: str | None, headline: str | None) -> Relevance:
     if bucket == "catch_all":
         headline = headline or ""
         if _HEADLINE_SUPPRESS.search(headline):
-            return Relevance(bucket, False, "catch_all; headline matches a suppress term")
+            return Relevance(bucket, False, prefix + "catch_all; headline matches a suppress term")
         m = _HEADLINE_POSITIVE.search(headline)
         if m:
-            return Relevance(bucket, True, f"catch_all; headline keyword {m.group(0)!r}")
-        return Relevance(bucket, False, "catch_all; no headline keyword match")
+            return Relevance(bucket, True, prefix + f"catch_all; headline keyword {m.group(0)!r}")
+        return Relevance(bucket, False, prefix + "catch_all; no headline keyword match")
 
     return Relevance("out_of_scope", False, f"category {category!r} not in this run's scope")
 

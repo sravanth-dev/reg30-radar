@@ -81,8 +81,10 @@ python -m tradebot.backfill.placebo     # σ from placebo dates -> reports/power
 # database
 python -m tradebot.common.migrate       # apply migrations/*.sql in order
 
-# run locally
-python -m tradebot.collector --once
+# run locally: ONE live process (D30), poll + order pipeline in one loop, under the NSE lock
+python -m tradebot.catchup              # after downtime: one request per day since the last poll
+python -m tradebot.live                 # then this; --once for one cycle. Exit 2: holidays file
+                                        # missing; exit 3: 5 NSE failures in a row
 
 # backfill (laptop only, over the phone hotspot, D19; writes BACKFILL_DATABASE_URL only)
 python -m tradebot.common.migrate --backfill
@@ -95,7 +97,7 @@ python -m tradebot.backfill status     # then, in order: universe, expected, ann
 # order extraction: gate + T0 parser + LLM fallback, only for order-related filings (§5.4-5.6)
 python -m tradebot.orders --date 2026-09-23                     # one already-scraped day
 python -m tradebot.orders --from 2026-09-20 --to 2026-09-24      # a date range
-python -m tradebot.orders --follow                               # live, next to the collector
+python -m tradebot.orders --follow                               # retired by D30: use tradebot.live
 
 # browse raw_announcements + order_extractions as a Google Sheet, view-only (D11, v1.2/v1.5)
 python -m tradebot.sheets --once        # one sync of both tabs, then exit

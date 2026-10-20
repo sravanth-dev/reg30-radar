@@ -15,6 +15,7 @@ from tradebot.collector import nse
 from tradebot.collector.records import IST, payload_hash
 
 NOW = datetime(2026, 9, 26, 17, 5, tzinfo=IST)
+VIA: dict[str, str] = {}      # payload hash -> collected_via, as the fake insert saw it
 
 
 def filing(n: int) -> dict:
@@ -57,11 +58,12 @@ def db(monkeypatch):
     table: dict[str, object] = {}
     polls: list[dict] = []
 
-    def insert(conn, rows, first_seen_at):
+    def insert(conn, rows, first_seen_at, *, collected_via):
         inserted = 0
         for r in rows:
             if r.payload_sha256 not in table:
                 table[r.payload_sha256] = r
+                VIA[r.payload_sha256] = collected_via
                 inserted += 1
         return collector.store.InsertOutcome(inserted, len(rows) - inserted, 0)
 
@@ -111,6 +113,9 @@ def test_gap_query_recovers_every_filing_that_rolled_off(db):
     assert polls[-1]["ok"] is True
     assert polls[-1]["records_returned"] == 55
     assert polls[-1]["new_records"] == 25  # 11-35; 1-10 and 36-55 were already held
+    # Only what the live page showed counts as seen live (migration 0018).
+    assert VIA[payload_hash(filing(55))] == "live"
+    assert VIA[payload_hash(filing(20))] == "gap"
 
 
 def test_gap_query_covers_yesterday_and_today(db):

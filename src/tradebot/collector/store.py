@@ -18,7 +18,8 @@ _INSERT = """
 insert into raw_announcements (
     source, source_id, payload_sha256, revision,
     exchange_ts, disseminated_ts, first_seen_at,
-    symbol, company, isin, industry, category_raw, headline, attachment_url, payload
+    symbol, company, isin, industry, category_raw, headline, attachment_url, payload,
+    collected_via
 )
 values (
     %(source)s, %(source_id)s, %(payload_sha256)s,
@@ -30,7 +31,7 @@ values (
       where source = %(source)s and source_id = %(source_id)s),
     %(exchange_ts)s, %(disseminated_ts)s, %(first_seen_at)s,
     %(symbol)s, %(company)s, %(isin)s, %(industry)s,
-    %(category_raw)s, %(headline)s, %(attachment_url)s, %(payload)s
+    %(category_raw)s, %(headline)s, %(attachment_url)s, %(payload)s, %(collected_via)s
 )
 on conflict (source, source_id, payload_sha256) do nothing
 returning id, revision
@@ -44,15 +45,23 @@ class InsertOutcome:
     revisions: int
 
 
+COLLECTED_VIA = ("live", "gap", "catchup", "backfill")
+
+
 def insert_announcements(
-    conn, rows: list[RawAnnouncement], first_seen_at: datetime
+    conn, rows: list[RawAnnouncement], first_seen_at: datetime, *, collected_via: str
 ) -> InsertOutcome:
     """Insert every row that is not already stored, byte for byte.
+
+    `collected_via` records whether a live poll saw the row (migration 0018): only then is
+    `first_seen_at` a real-time observation.
 
     `first_seen_at` is passed in rather than read from the clock here, so that one poll's
     rows all carry the same value - they were all first seen in the same poll, and giving
     them microsecond-apart timestamps would imply a precision we do not have.
     """
+    if collected_via not in COLLECTED_VIA:
+        raise ValueError(f"collected_via must be one of {COLLECTED_VIA}, got {collected_via!r}")
     inserted = duplicates = revisions = 0
     for row in rows:
         result = conn.execute(
@@ -72,6 +81,7 @@ def insert_announcements(
                 "headline": row.headline,
                 "attachment_url": row.attachment_url,
                 "payload": Jsonb(row.payload),
+                "collected_via": collected_via,
             },
         ).fetchone()
         if result is None:

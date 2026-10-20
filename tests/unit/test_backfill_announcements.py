@@ -80,7 +80,7 @@ class FakeClient:
 def test_a_company_is_checkpointed_only_when_every_symbol_succeeded(monkeypatch):
     inserted = []
     monkeypatch.setattr(ann.raw_store, "insert_announcements",
-                        lambda conn, raws, first_seen_at: inserted.extend(raws)
+                        lambda conn, raws, first_seen_at, collected_via: inserted.extend(raws)
                         or ann.raw_store.InsertOutcome(len(raws), 0, 0))
     conn = FakeConn()
     ok_rows = [rec("18-Sep-2026 10:00:00")]
@@ -101,7 +101,7 @@ def test_a_company_is_checkpointed_only_when_every_symbol_succeeded(monkeypatch)
 
 def test_the_checkpoint_counts_rows_dropped_as_another_issuer(monkeypatch):
     monkeypatch.setattr(ann.raw_store, "insert_announcements",
-                        lambda conn, raws, first_seen_at: ann.raw_store.InsertOutcome(len(raws), 0, 0))
+                        lambda conn, raws, first_seen_at, collected_via: ann.raw_store.InsertOutcome(len(raws), 0, 0))
     conn = FakeConn()
     rows = [rec("18-Sep-2026 10:00:00", seq=1, isin="INE263A01016"),
             rec("18-Sep-2026 11:00:00", seq=2, isin="INE264A01014")]

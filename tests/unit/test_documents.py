@@ -166,3 +166,28 @@ def test_pipeline_runs_without_a_database(tmp_path):
                       fetcher=FakeFetcher(SAMPLE), conn=None)
     assert out.ok
     assert out.document_id is None
+
+
+# --------------------------------------- an OCR provider error (GATE 1 audit, 20 Oct 2026)
+
+HMT = Path(__file__).resolve().parents[1] / "fixtures" / "scans" / "hmt_glyphless.pdf"
+
+
+def _provider_down(png: bytes) -> str:
+    from tradebot.llm.client import LlmProviderError
+    raise LlmProviderError("APIConnectionError: Connection error.")
+
+
+def test_an_ocr_provider_error_is_not_an_unreadable_document():
+    # It used to be caught with everything else and stored as "unreadable" for good.
+    from tradebot.llm.client import LlmProviderError
+    with pytest.raises(LlmProviderError):
+        extract(HMT, ocr=_provider_down)
+
+
+def test_the_pdf_is_deleted_when_the_ocr_provider_fails(tmp_path):
+    from tradebot.llm.client import LlmProviderError
+    with pytest.raises(LlmProviderError):
+        process_url("https://x.invalid/hmt.pdf", work_dir=tmp_path,
+                    fetcher=FakeFetcher(HMT), ocr=_provider_down)
+    assert list(tmp_path.iterdir()) == []                 # D8 on the error path too

@@ -35,6 +35,13 @@ class LlmRefused(Exception):
     """
 
 
+class LlmProviderError(Exception):
+    """The provider was called and failed: a network error, a timeout, a 5xx, a rate
+    limit. Logged in `llm_calls` with status 'error'. Unlike a model's bad answer this says
+    nothing about the document, so the item waits as `pending_llm` and is retried later; it
+    is never sent to review and never marks a document unreadable (GATE 1 audit)."""
+
+
 @dataclass
 class LlmResult:
     text: str
@@ -186,7 +193,7 @@ class LlmClient:
                        cost_usd=Decimal("0"), batch_id=None,
                        latency_ms=int((time.monotonic() - started) * 1000),
                        status="error", escalation_reason=None, error=str(exc))
-            raise
+            raise LlmProviderError(f"{type(exc).__name__}: {exc}") from exc
 
         latency_ms = int((time.monotonic() - started) * 1000)
         usage = getattr(resp, "usage", None)

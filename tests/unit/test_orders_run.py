@@ -46,6 +46,8 @@ class FakeOrdersConn:
         # _cost_since's query can be answered for real rather than stubbed to zero.
         self.llm_calls_log: list[tuple[str, datetime, Decimal]] = []
         self.page_reports: dict[int, list] = {}
+        self.document_quality: dict[int, str] = {}     # stored documents, for a retry
+        self.unknown_logged: list[str] = []
 
     def execute(self, sql, params=None):
         s = sql.lower()
@@ -57,10 +59,20 @@ class FakeOrdersConn:
         if "select raw_announcement_id, review_status, attempts, processed_at" in s:
             (raw_ids,) = params
             out = [
-                (rid, r["review_status"], r["attempts"], r["processed_at"])
+                (rid, r["review_status"], r["attempts"], r["processed_at"],
+                 r.get("document_id"))
                 for rid, r in self.rows.items() if rid in raw_ids
             ]
             return _Result(many=out)
+        if "select d.id, d.quality, coalesce(d.ocr_pages, 0) from order_extractions" in s:
+            (rid,) = params
+            row = self.rows.get(rid)
+            doc = row and row.get("document_id")
+            ok = row and row["review_status"] == "pending_llm" and doc in self.document_quality
+            return _Result(one=(doc, self.document_quality[doc], 0) if ok else None)
+        if "insert into unknown_categories" in s:
+            self.unknown_logged.append(params[0])
+            return _Result()
         if "select attempts from order_extractions" in s:
             (rid,) = params
             row = self.rows.get(rid)
@@ -589,3 +601,95 @@ def test_a_value_read_from_our_own_vision_ocr_waits_for_a_second_read():
     stored = conn.rows[91]
     assert stored["review_status"] == "needs_review"
     assert stored["second_read"] == "pending"
+
+
+# ------------------------------------------- retry bookkeeping (GATE 1 audit, 20 Oct 2026)
+
+class FailingLlmClient(CountingLlmClient):
+    """The provider is down: every extraction call fails the way `LlmClient` reports it."""
+
+    def extract_json(self, document_text, **kw):
+        from tradebot.llm.client import LlmProviderError
+        self.extract_calls += 1
+        raise LlmProviderError("APIConnectionError: Connection error.")
+
+
+def _age(conn, rid, minutes=16):
+    conn.rows[rid]["processed_at"] = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+
+def test_an_outage_uses_up_no_attempt():
+    row = _raw_row(70, category_raw="Bagging/Receiving of orders/contracts")
+    conn, fpu = FakeOrdersConn(), FakeProcessUrl()
+    fpu.plan_failure(row["attachment_url"], "ConnectionError: Failed to resolve host")
+    for _ in range(orders_store.MAX_ATTEMPTS + 2):
+        process_pending(conn, [row], fetcher=None, client=CountingLlmClient(),
+                        work_dir=Path("."), process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+        _age(conn, 70)
+    assert conn.rows[70]["attempts"] == 0 and conn.rows[70]["review_status"] == "download_failed"
+    # The file itself failing still counts, as before.
+    fpu.plan_failure(row["attachment_url"], "HTTP 500")
+    process_pending(conn, [row], fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                    process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    assert conn.rows[70]["attempts"] == 1
+
+
+def test_a_provider_error_waits_and_the_retry_reads_the_stored_text():
+    rows = [_raw_row(71, category_raw="Bagging/Receiving of orders/contracts", attachment_url="u71"),
+            _raw_row(72, category_raw="Bagging/Receiving of orders/contracts", attachment_url="u72")]
+    conn, fpu = FakeOrdersConn(), FakeProcessUrl()
+    fpu.plan_text("u71", "We are pleased to inform you of a new order from a customer.")
+    fpu.plan_text("u72", "Another order, details to follow.")
+    down = FailingLlmClient()
+    summary = process_pending(conn, rows, fetcher=None, client=down, work_dir=Path("."),
+                              process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    first = conn.rows[71]
+    assert first["review_status"] == "pending_llm" and "provider error" in first["last_error"]
+    # The pipeline does not keep hitting a provider that is down: the next filing waits.
+    assert down.extract_calls == 1 and summary.deferred == 1 and 72 not in conn.rows
+
+    # Many cycles later the provider is back. The filing was never dropped, and its stored
+    # text is used: no second download.
+    conn.document_quality[first["document_id"]] = "ok"
+    for _ in range(orders_store.MAX_ATTEMPTS + 1):
+        _age(conn, 71)
+        process_pending(conn, rows[:1], fetcher=None, client=FailingLlmClient(),
+                        work_dir=Path("."), process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    assert conn.rows[71]["review_status"] == "pending_llm"
+    _age(conn, 71)
+    downloads = len(fpu.calls)
+    process_pending(conn, rows[:1], fetcher=None,
+                    client=CountingLlmClient(extract_response=GOOD_FIELDS), work_dir=Path("."),
+                    process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    assert len(fpu.calls) == downloads
+    assert conn.rows[71]["review_status"] != "pending_llm"
+
+
+def test_the_live_budget_defers_the_rest_to_the_next_cycle():
+    rows = [_raw_row(80 + i, category_raw="Bagging/Receiving of orders/contracts",
+                     attachment_url=f"u8{i}") for i in range(4)]
+    conn, fpu = FakeOrdersConn(), FakeProcessUrl()
+    for i in range(4):
+        fpu.plan_text(f"u8{i}", "No value stated.")
+    s = process_pending(conn, rows, fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                        process_url_fn=fpu, get_text_fn=fake_get_text(fpu), limit=1)
+    assert s.considered == 1 and s.deferred == 3
+    due = iter([False, True])
+    s = process_pending(conn, rows, fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                        process_url_fn=fpu, get_text_fn=fake_get_text(fpu),
+                        stop_when=lambda: next(due))
+    assert s.considered == 1 and s.deferred == 2
+
+
+def test_an_unknown_category_is_read_as_catch_all_and_logged_once():
+    row = _raw_row(90, category_raw="A Category NSE Invents Tomorrow",
+                   headline="Receipt of work order", attachment_url="u90")
+    conn, fpu = FakeOrdersConn(), FakeProcessUrl()
+    fpu.plan_text("u90", "No value stated.")
+    process_pending(conn, [row], fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                    process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    assert conn.unknown_logged == ["A Category NSE Invents Tomorrow"]
+    assert conn.rows[90]["bucket"] == "catch_all"
+    process_pending(conn, [row], fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                    process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    assert len(conn.unknown_logged) == 1      # a processed filing is not logged again

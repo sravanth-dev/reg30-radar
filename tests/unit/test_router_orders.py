@@ -132,5 +132,9 @@ def test_every_bucket_in_the_approved_map():
 
 def test_an_unlisted_category_is_unknown_not_noise():
     assert bucket_of("A Category NSE Invents Tomorrow") == "unknown"
-    # ...and never reaches the order pipeline.
-    assert classify("A Category NSE Invents Tomorrow", "order").bucket == "out_of_scope"
+    # §5.4: the order pipeline treats it as catch_all, the safe default, and says why
+    # (Proposed, 20 Oct 2026; it used to be out of scope and never logged live).
+    got = classify("A Category NSE Invents Tomorrow", "Receipt of order")
+    assert got.bucket == "catch_all" and got.order_related
+    assert got.reason.startswith("unknown category")
+    assert not classify("A Category NSE Invents Tomorrow", "Board meeting").order_related

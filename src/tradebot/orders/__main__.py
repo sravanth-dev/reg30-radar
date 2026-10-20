@@ -34,7 +34,7 @@ from tradebot.common.db import connect
 from tradebot.collector.nse import jittered
 from tradebot.documents.fetch import PdfFetcher
 from tradebot.llm.client import LlmClient
-from tradebot.orders import report, run as run_mod
+from tradebot.orders import report, run as run_mod, store as orders_store
 
 log = logging.getLogger("orders")
 
@@ -101,7 +101,8 @@ def run_batch(*, since: date, until: date, max_requests: int) -> int:
 
 
 def follow_cycle(conn, *, fetcher, client, work_dir, lookback_days: float,
-                 now: datetime | None = None) -> run_mod.Summary:
+                 now: datetime | None = None, limit: int | None = None,
+                 stop_when=None) -> run_mod.Summary:
     """One `--follow` pass: process whatever the collector saved recently, then refresh the
     live report for each day touched.
 
@@ -116,8 +117,14 @@ def follow_cycle(conn, *, fetcher, client, work_dir, lookback_days: float,
     now = now or datetime.now(IST)
     since = now - timedelta(days=lookback_days)
     raw_rows = run_mod.select_latest_revisions(conn, since=since)
+    # The retry queue, however old: a filing waiting on a cap must not age out of the
+    # lookback window and be dropped (GATE 1 audit, 20 Oct 2026).
+    recent = {r["id"] for r in raw_rows}
+    older = [i for i in orders_store.pending_ids_any_age(conn) if i not in recent]
+    raw_rows += run_mod.select_by_ids(conn, older)
     summary = run_mod.process_pending(
         conn, raw_rows, fetcher=fetcher, client=client, work_dir=work_dir,
+        limit=limit, stop_when=stop_when,
     )
     for touched in sorted(summary.dates_touched):
         report.write(conn, touched, reports_dir=report.LIVE_REPORTS_DIR)

@@ -20,14 +20,16 @@ from pathlib import Path
 
 from tradebot.documents import store as documents_store
 from tradebot.documents.ocr import maybe_transcribe
-from tradebot.documents.pipeline import process_url as _real_process_url
+from tradebot.documents.pipeline import Outcome, process_url as _real_process_url
 from tradebot.extractor.annexure import parse_annexure, parse_company_is_recipient, parse_stage
 from tradebot.extractor import part_c
 from tradebot.extractor.llm_extract import extract_order_fields
 from tradebot.extractor.provenance import verify as verify_provenance
-from tradebot.llm.client import LlmClient
+from tradebot.llm.client import LlmClient, LlmProviderError
 from tradebot.orders import store as orders_store
-from tradebot.router.orders import Relevance, classify, in_scope, llm_allowed, refine_with_body
+from tradebot.router.orders import (
+    UNKNOWN_PREFIX, Relevance, classify, in_scope, llm_allowed, log_unknown, refine_with_body,
+)
 from tradebot.units.money import is_suspect, parse_money
 
 log = logging.getLogger("orders")
@@ -65,6 +67,7 @@ class Summary:
     llm_calls: int = 0
     llm_cost_usd: Decimal = Decimal("0")
     stopped_early: str | None = None
+    deferred: int = 0          # in-scope filings left for the next cycle (live budget)
     # A gate audit (§5.4): any filing where an LLM/OCR call happened without
     # llm_allowed(relevance) being true first. Must always be empty; a non-empty list here
     # is a bug in this module, not a filing to review.
@@ -104,6 +107,16 @@ def select_latest_revisions(
     cols = ("id", "source_id", "symbol", "category_raw", "headline", "attachment_url",
             "first_seen_at", "revision")
     return [dict(zip(cols, r)) for r in rows]
+
+
+def select_by_ids(conn, ids: list[int], *, source: str = "nse") -> list[dict]:
+    """The latest revisions among these raw ids: the retry queue, whatever its age."""
+    if not ids:
+        return []
+    sql = SELECT_LATEST_REVISIONS.format(date_clause=" and id = any(%(ids)s)")
+    cols = ("id", "source_id", "symbol", "category_raw", "headline", "attachment_url",
+            "first_seen_at", "revision")
+    return [dict(zip(cols, r)) for r in conn.execute(sql, {"source": source, "ids": ids})]
 
 
 def _gst_flag(money) -> bool | None:
@@ -181,12 +194,53 @@ def _llm_row(row, relevance: Relevance, *, document_id: int, doc_text: str, clie
     )
 
 
+# A download error that is about the connection, not the file: the machine was offline,
+# DNS failed, the host reset. It says nothing about the filing, so it uses up none of the
+# filing's attempts (GATE 1 audit: a DNS outage on 4 Oct used up attempts for a run of
+# filings in minutes). The NSE guard stops the process after 5 of these in a row.
+_OUTAGE_ERRORS = ("ConnectionError", "ConnectTimeout", "ReadTimeout", "Timeout",
+                  "ChunkedEncodingError", "SSLError")
+
+
+def _is_outage(error: str | None) -> bool:
+    return (error or "").split(":", 1)[0].strip() in _OUTAGE_ERRORS
+
+
 def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
                   work_dir: Path, summary: Summary, process_url_fn=_real_process_url,
                   get_text_fn=documents_store.get_text,
                   get_page_report_fn=documents_store.get_page_report) -> str | None:
     """One filing. Returns an auth-failure marker ("401"/"403") when the download failed
-    that way, so the caller's consecutive-failure breaker can see it; None otherwise.
+    that way, so the caller's consecutive-failure breaker can see it, or "provider" when
+    the LLM provider failed, so the caller stops the cycle; None otherwise."""
+    try:
+        return _process_one_inner(conn, row, relevance, fetcher=fetcher, client=client,
+                                  work_dir=work_dir, summary=summary,
+                                  process_url_fn=process_url_fn, get_text_fn=get_text_fn,
+                                  get_page_report_fn=get_page_report_fn)
+    except LlmProviderError as exc:
+        # From OCR inside the document pipeline: nothing was stored, so the retry
+        # downloads again, but no attempt is used up.
+        orders_store.upsert(conn, orders_store.ExtractionRow(
+            raw_announcement_id=row["id"], bucket=relevance.bucket,
+            order_related=relevance.order_related, relevance_reason=relevance.reason,
+            review_status="pending_llm", last_error=f"OCR provider error: {exc}",
+            attempts=orders_store.attempts_so_far(conn, row["id"]) - 1,
+            processed_at=datetime.now(timezone.utc),
+        ))
+        summary.pending_llm += 1
+        return "provider"
+
+
+def _process_one_inner(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
+                       work_dir: Path, summary: Summary, process_url_fn,
+                       get_text_fn, get_page_report_fn) -> str | None:
+    """The work of `_process_one`.
+
+    The attempt-counting rules, so a filing is dropped only for a reason about itself:
+    an attempt is recorded before work starts (a crash leaves a trace), but an outage
+    (`_is_outage`) and a provider error give it back, and a `pending_llm` filing whose text
+    is stored is retried from that text, with no download.
 
     `process_url_fn` and `get_text_fn` default to the real `documents` pipeline, and are
     overridden only by tests: `documents.pipeline.process_url` already has its own
@@ -199,6 +253,7 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
     now = datetime.now(timezone.utc)
     prior_attempts = orders_store.attempts_so_far(conn, row["id"])
     url = row["attachment_url"]
+    stored = orders_store.stored_document(conn, row["id"])
 
     # Count the attempt before doing any work. A worker killed mid-filing (a PDF too large
     # for the container's memory limit, §9) would otherwise leave no trace, and Docker's
@@ -208,12 +263,13 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
     orders_store.upsert(conn, orders_store.ExtractionRow(
         raw_announcement_id=row["id"], bucket=relevance.bucket,
         order_related=relevance.order_related, relevance_reason=relevance.reason,
-        review_status="download_failed",
+        review_status="pending_llm" if stored else "download_failed",
+        document_id=stored[0] if stored else None,
         last_error="interrupted: processing started but did not finish",
         attempts=prior_attempts + 1, processed_at=now,
     ))
 
-    if not url:
+    if not url and not stored:
         orders_store.upsert(conn, orders_store.ExtractionRow(
             raw_announcement_id=row["id"], bucket=relevance.bucket,
             order_related=relevance.order_related, relevance_reason=relevance.reason,
@@ -228,15 +284,21 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
     # gets this closure, never a client.
     ocr_fn = (lambda png: maybe_transcribe(png, client=client)) if llm_allowed(relevance) else None
 
-    outcome = process_url_fn(url, work_dir=work_dir, conn=conn, raw_announcement_id=row["id"],
-                           fetcher=fetcher, ocr=ocr_fn)
+    if stored:
+        # A filing waiting on the LLM keeps its stored text: no second download.
+        outcome = Outcome(True, url, document_id=stored[0], quality=stored[1],
+                          ocr_pages=0, already_stored=True)
+    else:
+        outcome = process_url_fn(url, work_dir=work_dir, conn=conn,
+                                 raw_announcement_id=row["id"], fetcher=fetcher, ocr=ocr_fn)
 
     if not outcome.ok:
+        outage = _is_outage(outcome.error)
         orders_store.upsert(conn, orders_store.ExtractionRow(
             raw_announcement_id=row["id"], bucket=relevance.bucket,
             order_related=relevance.order_related, relevance_reason=relevance.reason,
             review_status="download_failed", last_error=outcome.error,
-            attempts=prior_attempts + 1, processed_at=now,
+            attempts=prior_attempts if outage else prior_attempts + 1, processed_at=now,
         ))
         summary.download_failed += 1
         error = outcome.error or ""
@@ -333,6 +395,8 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
         "company_is_recipient": extraction.company_is_recipient, "stage": extraction.stage,
         "llm_cost_usd": extraction.llm_cost_usd,
     })
+    if status == "pending_llm" and (extraction.last_error or "").startswith("provider error"):
+        return "provider"
     return None
 
 
@@ -342,12 +406,17 @@ def process_pending(
     get_text_fn=documents_store.get_text,
     get_page_report_fn=documents_store.get_page_report,
     retry_statuses: tuple[str, ...] = orders_store.PENDING_STATUSES,
+    limit: int | None = None, stop_when=None,
 ) -> Summary:
     """The single code path both `--date`/`--from`/`--to` and `--follow` call.
 
     `raw_rows` is whatever the caller already selected (`select_latest_revisions`, bounded
     by date or not) - this only classifies, downloads and extracts. `process_url_fn` and
     `get_text_fn` are test-only overrides; see `_process_one`'s docstring for why.
+
+    `limit` and `stop_when` are the live runner's per-cycle budget (D30): at most `limit`
+    filings, and none started once `stop_when()` is true (the next poll is due). What is
+    left is still pending and is taken next cycle; `summary.deferred` counts it.
     """
     summary = Summary()
     candidate_ids = [r["id"] for r in raw_rows]
@@ -371,8 +440,15 @@ def process_pending(
         log.warning(summary.stopped_early)
         return summary
 
+    for row, relevance in classified:
+        if relevance.reason.startswith(UNKNOWN_PREFIX):
+            log_unknown(conn, row["category_raw"], row["first_seen_at"])
+
     consecutive_auth_failures = 0
-    for row, relevance in in_scope_rows:
+    for n, (row, relevance) in enumerate(in_scope_rows):
+        if (limit is not None and n >= limit) or (stop_when is not None and stop_when()):
+            summary.deferred = len(in_scope_rows) - n
+            break
         summary.considered += 1
         auth_failure = _process_one(conn, row, relevance, fetcher=fetcher, client=client,
                                      work_dir=work_dir, summary=summary,
@@ -380,6 +456,11 @@ def process_pending(
                                      get_page_report_fn=get_page_report_fn)
         summary.dates_touched.add(row["first_seen_at"].date())
 
+        if auth_failure == "provider":
+            summary.stopped_early = "the LLM provider failed; the rest wait for the next cycle"
+            summary.deferred = len(in_scope_rows) - n - 1
+            log.warning(summary.stopped_early)
+            break
         if auth_failure:
             consecutive_auth_failures += 1
             if consecutive_auth_failures >= STOP_AFTER_CONSECUTIVE_AUTH_FAILURES:

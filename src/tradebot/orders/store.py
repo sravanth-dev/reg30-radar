@@ -95,11 +95,12 @@ def existing_for(conn, raw_ids: list[int]) -> dict[int, dict]:
     if not raw_ids:
         return {}
     rows = conn.execute(
-        "select raw_announcement_id, review_status, attempts, processed_at "
+        "select raw_announcement_id, review_status, attempts, processed_at, document_id "
         "from order_extractions where raw_announcement_id = any(%s)",
         (raw_ids,),
     ).fetchall()
-    return {r[0]: {"review_status": r[1], "attempts": r[2], "processed_at": r[3]}
+    return {r[0]: {"review_status": r[1], "attempts": r[2], "processed_at": r[3],
+                   "document_id": r[4]}
             for r in rows}
 
 
@@ -124,12 +125,39 @@ def pending_raw_ids(conn, raw_ids: list[int], *, now: datetime | None = None,
             continue
         if info["review_status"] not in retry_statuses:
             continue
-        if info["attempts"] >= MAX_ATTEMPTS:
+        # A `pending_llm` row is waiting on the provider or a cap, not failing, so the
+        # attempt cap does not apply: it is never dropped (GATE 1 audit). The retry delay
+        # still does, so it is never retried in a loop.
+        if info["attempts"] >= MAX_ATTEMPTS and info["review_status"] != "pending_llm":
             continue
         if now - info["processed_at"] < RETRY_DELAY:
             continue
         pending.add(rid)
     return pending
+
+
+def stored_document(conn, raw_announcement_id: int) -> tuple[int, str, int] | None:
+    """(document_id, quality, ocr_pages) for a `pending_llm` filing whose text is already
+    stored, so its retry reads the stored text instead of downloading the PDF again."""
+    return conn.execute(
+        "select d.id, d.quality, coalesce(d.ocr_pages, 0) from order_extractions oe"
+        " join documents d on d.id = oe.document_id"
+        " where oe.raw_announcement_id = %s and oe.review_status = 'pending_llm'",
+        (raw_announcement_id,),
+    ).fetchone()
+
+
+PENDING_ANY_AGE = """
+select oe.raw_announcement_id from order_extractions oe
+where oe.review_status = 'pending_llm'
+   or (oe.review_status = 'download_failed' and oe.attempts < %s)
+"""
+
+
+def pending_ids_any_age(conn) -> list[int]:
+    """Every filing still owed work, however old: a live cycle reads only recent filings,
+    and a filing waiting on a cap for weeks must not age out of it."""
+    return [r[0] for r in conn.execute(PENDING_ANY_AGE, (MAX_ATTEMPTS,))]
 
 
 def attempts_so_far(conn, raw_announcement_id: int) -> int:

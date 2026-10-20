@@ -83,7 +83,7 @@ def test_one_cycle_polls_then_runs_orders_on_a_budget(monkeypatch):
     assert calls[0] == "poll"
     # The order step gets the per-cycle cap and the long lookback, and is not yet due to
     # stop: the next poll is a full interval away.
-    assert calls[1] == ("orders", 6, 14.0, False)
+    assert calls[1] == ("orders", 6, 0.25, False)
 
 
 # ------------------------------------------------------------------ catchup

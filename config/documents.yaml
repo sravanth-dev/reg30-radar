@@ -26,4 +26,7 @@ orders:
   # cycle has a budget and the next poll is never late.
   live_filings_per_cycle: 6      # at most this many filings (downloads) per cycle
   live_poll_margin_seconds: 20   # no filing is started this close to the next poll
-  live_lookback_days: 14         # long enough for a catch-up backlog to drain at this pace
+  # 6 h, not 14 days (Sravanth, 21 Oct 2026): the 1-20 Oct catch-up backlog is not to be
+  # processed, and those rows were stored at 22:28 on 20 Oct. New filings are handled within
+  # minutes, and a filing owed a retry is read by id whatever its age (orders/store.py).
+  live_lookback_days: 0.25

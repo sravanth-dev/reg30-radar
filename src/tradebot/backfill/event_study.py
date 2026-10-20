@@ -109,6 +109,7 @@ class EventIn:
     currency: str
     ttm_revenue_inr: Decimal | None          # as filed before event_ts (rule 1, §5.8)
     execution_months: Decimal | None
+    ttm_basis: str | None = None              # consolidated | standalone, the one used (§5.8)
     other_filings: list[tuple[datetime, str]] = field(default_factory=list)  # (ts, bucket)
     previous_order_ts: datetime | None = None
     company_is_recipient: bool | None = True

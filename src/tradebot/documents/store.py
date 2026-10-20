@@ -84,6 +84,14 @@ def get_text(conn, document_id: int) -> str:
     return row[0] if row and row[0] else ""
 
 
+def get_page_report(conn, document_id: int) -> list:
+    """The per-page report for one document: which pages came from vision OCR (§5.5
+    Part C) is what decides whether a value read from it needs a second read."""
+    row = conn.execute("select page_report from documents where id = %s",
+                       (document_id,)).fetchone()
+    return row[0] if row and row[0] else []
+
+
 def mark_pdf_deleted(conn, document_id: int, when: datetime) -> None:
     conn.execute(
         "update documents set pdf_deleted_at = %s where id = %s and pdf_deleted_at is null",

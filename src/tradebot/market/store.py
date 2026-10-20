@@ -34,6 +34,19 @@ def _series_rank(series: str) -> int:
     return SERIES_PREFERENCE.index(series) if series in SERIES_PREFERENCE else len(SERIES_PREFERENCE)
 
 
+def save_corp_ind(conn, day, actions) -> int:
+    """Rewrite one day's CORP_IND flags from its `pd` file, leaving every other stored
+    field as it is. For re-reading flags after a parser fix, one request a day."""
+    corp = {(a.symbol, a.series): a.corp_ind for a in actions}
+    with conn.transaction():
+        rows = conn.execute("select isin, symbol, series from prices where trade_date = %s",
+                            (day,)).fetchall()
+        for isin, symbol, series in rows:
+            conn.execute("update prices set corp_ind = %s where trade_date = %s and isin = %s",
+                         (corp.get((symbol, series)), day, isin))
+    return sum(1 for _, s, ser in rows if (s, ser) in corp)
+
+
 def save_day(
     conn, day: date, *, prices: list[PriceRow], indices: list[IndexClose] | None = None,
     actions: list[CorpAction] | None = None, caps: list[MarketCap] | None = None,

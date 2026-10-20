@@ -85,13 +85,53 @@ def integrated_filing(row: dict) -> Filing | None:
     return Filing(url, max(dates), end)
 
 
-# (name, how to ask the client, how to read a row) - the two listings in date order
+MAX_PAGES = 5      # 100 rows: far more results filings than any company has in the window
+
+
+def _integrated_listing(client, symbol: str, pause=lambda: None):
+    """Every page of the integrated listing. It answers 20 rows a page; three companies
+    (ITI, MCLOUD, AHLUCONT) had more and lost their oldest rows when only page 1 was read
+    (WORKLOG, 4 Oct 2026). Returns (result, requests sent); `result.total` stays, so a
+    listing still short after MAX_PAGES is visible as truncated."""
+    first = client.fetch_integrated_results(symbol)
+    sent = 1
+    while (first.ok and first.total is not None and len(first.rows) < first.total
+           and sent < MAX_PAGES):
+        pause()
+        more = client.fetch_integrated_results(symbol, page=sent + 1)
+        sent += 1
+        if not more.ok:
+            return more, sent
+        if not more.rows:
+            break
+        first.rows.extend(more.rows)
+    return first, sent
+
+
+# (name, how to ask the client, how to read a row) - the two listings in date order.
+# `ask` returns (result, requests sent).
 SOURCES = (
-    ("financial_results", lambda client, symbol: client.fetch_results_listing(symbol),
+    ("financial_results", lambda client, symbol, pause: (client.fetch_results_listing(symbol), 1),
      old_filing),
-    ("integrated_filing", lambda client, symbol: client.fetch_integrated_results(symbol),
-     integrated_filing),
+    ("integrated_filing", _integrated_listing, integrated_filing),
 )
+
+
+def distinct_facts(facts) -> tuple[list, int]:
+    """One fact per (period end, months, basis) within one file. Two facts that agree
+    collapse into one (a quarter's OneD and FourD contexts often repeat a figure); two that
+    disagree are both dropped and counted, because keeping whichever came first, as the
+    insert's conflict clause used to, is a silent guess (audit, 20 Oct 2026)."""
+    by_key: dict[tuple, list] = {}
+    for x in facts:
+        by_key.setdefault((x.period_end, x.months, x.basis), []).append(x)
+    kept, dropped = [], 0
+    for group in by_key.values():
+        if len({x.revenue_inr for x in group}) == 1:
+            kept.append(group[0])
+        else:
+            dropped += len(group)
+    return kept, dropped
 
 
 def pending_companies(conn) -> list[tuple[str, str]]:
@@ -118,12 +158,12 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
     (ok, summary, requests sent). Checkpointed only when both listings and every download
     succeeded, like `backfill/announcements.py`, so a re-run retries a partial company
     (rows already stored are skipped by the insert's conflict clause)."""
-    requests, detail, filings = 0, {}, []
+    requests, detail, filings, truncated_any = 0, {}, [], False
     for n, (name, ask, read) in enumerate(SOURCES):
         if n:
             pause()
-        result = ask(client, symbol)
-        requests += 1
+        result, sent = ask(client, symbol, pause)
+        requests += sent
         if not result.ok:
             return False, f"{name} listing: {result.error}", requests
         read_rows = [read(r) for r in result.rows]
@@ -132,13 +172,14 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
         # A listing that says it holds more rows than it returned was cut off at one page.
         truncated = result.total is not None and result.total > len(result.rows)
         if truncated:
+            truncated_any = True
             log.warning("%s: %s listing truncated (%d of %d rows)", symbol, name,
                         len(result.rows), result.total)
         detail[name] = {"rows": len(result.rows), "no_link_or_date": len(read_rows) - len(usable),
                         "before_window": len(usable) - len(in_range), "truncated": truncated}
         filings.extend(in_range)
 
-    stored = failed = unparseable = 0
+    stored = failed = unparseable = conflicting = 0
     for f in filings:
         fetched = fetcher.get(f.xbrl_url)          # market.fetch.ArchiveFetcher: bytes, no disk
         requests += 1
@@ -151,7 +192,12 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
             log.warning("%s: %s unparseable: %s", symbol, f.xbrl_url, exc)
             unparseable += 1
             continue
-        kept = [x for x in facts if x.months in KEEP_MONTHS and x.basis is not None]
+        kept, dropped = distinct_facts(
+            [x for x in facts if x.months in KEEP_MONTHS and x.basis is not None])
+        if dropped:
+            log.warning("%s: %s: %d facts dropped, two values for one period",
+                        symbol, f.xbrl_url, dropped)
+            conflicting += dropped
         with conn.cursor() as cur:
             cur.executemany(
                 "insert into financials (isin, period_start, period_end, period_months, basis,"
@@ -163,11 +209,14 @@ def fetch_company(conn, client, fetcher, isin: str, symbol: str, since: date,
         stored += len(kept)
 
     summary = (f"{stored} facts from {len(filings)} filings ({failed} failed, "
-               f"{unparseable} unparseable)")
-    if failed:
+               f"{unparseable} unparseable, {conflicting} conflicting)")
+    if failed or truncated_any:
+        # A short listing is retried next run rather than checkpointed as complete: it
+        # was checkpointed before, so the missing rows were never fetched (4 Oct 2026).
         conn.commit()
         return False, summary, requests
-    detail.update({"filings": len(filings), "stored": stored, "unparseable": unparseable})
+    detail.update({"filings": len(filings), "stored": stored, "unparseable": unparseable,
+                   "conflicting": conflicting})
     conn.execute("insert into backfill_checkpoints (job, key, done_at, detail) values"
                  " ('revenue', %s, %s, %s)",
                  (isin, datetime.now(timezone.utc), json.dumps(detail)))
@@ -212,5 +261,23 @@ def run(conn, cfg, *, max_requests: int, client=None, fetcher=None, sleep=time.s
         requests += sent
         log.info("%s %s: %s", isin, "ok" if ok else "FAILED", summary)
         done, failed = (done + 1, failed) if ok else (done, failed + 1)
+    mismatches = fy_check(conn)
     return {"fetched": done, "failed": failed, "requests": requests,
-            "remaining": len(todo) - done}
+            "remaining": len(todo) - done, "fy_mismatches": mismatches}
+
+
+def fy_check(conn) -> int:
+    """§5.8: log every full year whose four filed quarters do not add up to it."""
+    from tradebot.revenue.ttm import Period, fy_mismatches
+    rows = conn.execute("select isin, period_end, period_months, basis, revenue_inr, filed_at"
+                        " from financials order by isin").fetchall()
+    by_isin: dict[str, list] = {}
+    for isin, end, months, basis, value, filed in rows:
+        by_isin.setdefault(isin, []).append(Period(end, months, basis, value, filed))
+    n = 0
+    for isin, periods in by_isin.items():
+        for end, basis, fy, total in fy_mismatches(periods):
+            n += 1
+            log.warning("%s %s FY %s: four quarters sum to %s, the year says %s",
+                        isin, basis, end, total, fy)
+    return n

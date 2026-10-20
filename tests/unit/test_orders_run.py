@@ -45,6 +45,7 @@ class FakeOrdersConn:
         # (purpose, ts, cost) - CountingLlmClient below appends here on each fake call, so
         # _cost_since's query can be answered for real rather than stubbed to zero.
         self.llm_calls_log: list[tuple[str, datetime, Decimal]] = []
+        self.page_reports: dict[int, list] = {}
 
     def execute(self, sql, params=None):
         s = sql.lower()
@@ -69,6 +70,11 @@ class FakeOrdersConn:
             total = sum((c for p, ts, c in self.llm_calls_log if p == purpose and ts >= since),
                         Decimal("0"))
             return _Result(one=(total,))
+        if "select page_report from documents" in s:
+            # §5.5 Part C's lookup. These tests' documents carry no vision page unless a
+            # test sets one, so a value read from them needs no second read.
+            (document_id,) = params
+            return _Result(one=(self.page_reports.get(document_id, []),))
         raise AssertionError(f"FakeOrdersConn cannot handle: {sql}")
 
     def commit(self):
@@ -564,3 +570,22 @@ def test_a_worker_killed_mid_filing_leaves_a_counted_retryable_row():
                               work_dir=Path("."), process_url_fn=killed,
                               get_text_fn=lambda c, d: "")
     assert summary.considered == 0   # no fourth attempt, so no restart loop
+
+
+def test_a_value_read_from_our_own_vision_ocr_waits_for_a_second_read():
+    """§5.5 Part C, enforced on the live path from 20 Oct 2026: the same T0-verifiable text
+    as above, but the page it came from was transcribed by this pipeline's vision OCR, so
+    the span check alone proves only that T0 copied the transcript."""
+    row = _raw_row(91, category_raw="Bagging/Receiving of orders/contracts")
+    conn = FakeOrdersConn()
+    fpu = FakeProcessUrl()
+    text = ("Broad consideration or size of the order(s): Rs. 5 Crs\n"
+            "We have received a work order from a customer under this contract.")
+    fpu.plan_text(row["attachment_url"], text, quality="ok")
+    # FakeProcessUrl numbers documents from 1, and this is the only one
+    conn.page_reports[1] = [{"page": 1, "verdict": "ok", "source": "vision", "chars": len(text)}]
+    process_pending(conn, [row], fetcher=None, client=CountingLlmClient(), work_dir=Path("."),
+                    process_url_fn=fpu, get_text_fn=fake_get_text(fpu))
+    stored = conn.rows[91]
+    assert stored["review_status"] == "needs_review"
+    assert stored["second_read"] == "pending"

@@ -143,7 +143,11 @@ class CorpAction:
 
 def parse_pd(csv_text: str) -> tuple[list[IndexClose], list[CorpAction]]:
     """Index closes (rows with MKT=Y, name in SECURITY) and each security's CORP_IND flag
-    where one is set (§5.9: a detector of ex-dates, never an adjustment)."""
+    where one is set (§5.9: a detector of ex-dates, never an adjustment).
+
+    Every security row counts, not only MKT=N: BE and ST series sit under MKT=G (20 BE rows
+    on 18 Sep 2026 alone), and a bonus on a BE stock would otherwise never exclude its
+    event. 45 backfill events are on BE stocks (audit, 20 Oct 2026)."""
     indices, actions = [], []
     for r in _rows(csv_text):
         mkt = r.get("MKT", "")
@@ -151,7 +155,7 @@ def parse_pd(csv_text: str) -> tuple[list[IndexClose], list[CorpAction]]:
             close = _dec(r.get("CLOSE_PRICE"))
             if close is not None and r.get("SECURITY"):
                 indices.append(IndexClose(r["SECURITY"], close))
-        elif mkt == "N" and r.get("CORP_IND"):
+        elif mkt != "Y" and r.get("CORP_IND") and r.get("SYMBOL"):
             actions.append(CorpAction(r["SYMBOL"], r["SERIES"], r["CORP_IND"]))
     return indices, actions
 

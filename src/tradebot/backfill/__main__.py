@@ -11,6 +11,7 @@ Runs on the laptop over the phone hotspot (D19), against BACKFILL_DATABASE_URL o
     python -m tradebot.backfill batch-collect     apply finished Batch results
     python -m tradebot.backfill rejudge           re-apply changed rules to stored answers
     python -m tradebot.backfill reparse           re-apply T0 to stored text (no network)
+    python -m tradebot.backfill vision-check      §5.5 Part C: second read of vision values
     python -m tradebot.backfill events            merge verified extractions into events
     python -m tradebot.backfill revenue           results XBRL -> financials (Spike C)
     python -m tradebot.backfill calculate         §6: verified | recheck_pending
@@ -70,9 +71,12 @@ def calculate(conn, cfg) -> dict:
     for ev in evs:
         r = event_study.measure(ev, market)
         m = r.materiality
-        conn.execute("update backfill_events set ttm_revenue_inr = %s, value_to_mcap = %s"
-                     " where id = %s", (ev.ttm_revenue_inr, m.value_to_mcap if m else None,
-                                        ev.event_id))
+        # §5.8: "Record which one was used" - ttm_as_of falls back to standalone when the
+        # consolidated quarters have a gap, so the basis can differ event by event.
+        conn.execute("update backfill_events set ttm_revenue_inr = %s, ttm_basis = %s,"
+                     " value_to_mcap = %s where id = %s",
+                     (ev.ttm_revenue_inr, ev.ttm_basis, m.value_to_mcap if m else None,
+                      ev.event_id))
         events.log_transition(conn, ev.event_id, "calculated", "materiality computed")
         state, trigger = events.next_state(m.value_to_mcap if m else None,
                                            ev.ttm_revenue_inr is not None)
@@ -157,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tradebot.backfill")
     parser.add_argument("stage", choices=[
         "universe", "expected", "announcements", "reconcile", "documents", "batch-submit",
-        "batch-collect", "rejudge", "reparse", "events", "revenue", "calculate", "recheck-submit",
+        "batch-collect", "rejudge", "reparse", "vision-check", "events", "revenue", "calculate", "recheck-submit",
         "recheck-collect", "study", "status"])
     parser.add_argument("--max-requests", type=int, default=2000)
     parser.add_argument("--log-level", default="INFO")
@@ -206,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
             out = batch.rejudge(conn)
         elif args.stage == "reparse":
             out = batch.reparse(conn)
+        elif args.stage == "vision-check":
+            from tradebot.backfill import vision_check
+            out = vision_check.run(conn, client=client(), max_requests=args.max_requests)
         elif args.stage == "events":
             out = events.build(conn)
         elif args.stage == "revenue":

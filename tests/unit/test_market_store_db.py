@@ -59,3 +59,18 @@ def test_a_day_round_trips_and_maps_every_file_to_isins(conn):
     store.save_day(conn, DAY, prices=prices, indices=indices)
     again = conn.execute("select count(*) from prices where trade_date = %s", (DAY,)).fetchone()[0]
     assert again == stored
+
+
+def test_save_corp_ind_rewrites_only_the_flags(conn):
+    from tradebot.market.parse import CorpAction
+    conn.execute("delete from prices where trade_date = %s", (DAY,))
+    conn.execute("insert into prices (trade_date, isin, symbol, series, close, corp_ind)"
+                 " values (%s, 'INE1', 'KHADIM', 'BE', 200, null),"
+                 " (%s, 'INE2', 'OTHER', 'EQ', 50, 'XD')", (DAY, DAY))
+    flagged = store.save_corp_ind(conn, DAY, [CorpAction("KHADIM", "BE", "XB")])
+    assert flagged == 1
+    got = dict(conn.execute("select isin, corp_ind from prices where trade_date = %s",
+                            (DAY,)).fetchall())
+    assert got == {"INE1": "XB", "INE2": None}         # the file is the whole truth for the day
+    assert conn.execute("select close from prices where isin = 'INE1' and trade_date = %s",
+                        (DAY,)).fetchone()[0] == 200

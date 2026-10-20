@@ -2799,3 +2799,42 @@ through `nse_guard.run`). Also:
 - T0 eval: 8/18 before and after. It scores the raw parser and skips the gates, and
   nothing was tuned to the labels.
 - 416 tests pass.
+
+### 20 Oct 2026 (evening, cont.) — §5.5 Part C enforced and run; revenue and CORP_IND fixes built
+
+**Part C (vision-read values need a second read).** New: `extractor/part_c.py`, the
+`vision-check` stage, and migrations 0016-0017. The gate is applied on every path that can
+mark a value verified.
+- **First run** (detached, PID 6212, ~15 min): 39 PDFs downloaded again, all SHA-256
+  matches, 43 OCR pages (~$0.04), work directory empty after.
+- The first comparison demanded the first read's exact wording, which is a test of
+  formatting, not of the value. Changed to "the new transcript gives the same value", and
+  the second transcript is now kept.
+- **Result: 38 confirmed, 1 unavailable** (RPPINFRA: the second transcript came back
+  empty), and 3 turned out not to be vision-sourced (their value sits on a text-layer
+  page).
+
+**Revenue: the Q2 defect needed no download to confirm.**
+- The 4 Oct note's 47 files are real, counted per file: their quarter context holds the
+  half-year, and there is no 3-month revenue in them at all.
+- DBL's June 2026 revision gives the true quarter, and H1 − Q1 equals it to the rupee. Of
+  45 revised cases, 30 match exactly and 10 within rounding.
+- 5 cases (3 companies) are off: two stored "half-years" were the quarter mislabelled, and
+  their revisions changed them.
+- **Proposed:** Q2 = H1 − Q1, derived only when at least 0.4 × Q1 (good cases 0.53-3.26,
+  bad 0.05-0.28).
+- Also:
+  - A non-positive derived quarter is never used.
+  - Two values for one period in one file are both dropped and counted (no more first-wins).
+  - `ttm_basis` is written.
+  - The integrated listing is read to its last page, and a short one is not checkpointed.
+  - The FY-vs-quarters check is logged.
+
+**CORP_IND.**
+- The `pd` parser now reads flags on every market row, not only `MKT=N`. BE/ST/BZ rows can
+  sit under `MKT=G`, and 74 events touch BE prices in their windows.
+- `market --refresh-corp-ind` re-reads only the flags, one request a day.
+- On 18 Sep 2026 itself no `G` row carried a flag, so the effect may be small. The re-read
+  will say.
+
+439 tests pass. Not yet run against NSE: revenue retry, market tail, CORP_IND re-read.

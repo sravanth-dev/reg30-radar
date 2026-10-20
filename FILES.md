@@ -128,6 +128,10 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   reconstructing a stock's price band on a past date.
 - **`0014_reconcile_window.sql`** — Adds each reconcile day's window start, and the list of
   order filers the API holds only under a catch-all category.
+- **`0017_second_read_text.sql`** — Keeps the second read's own transcript beside the first,
+  so a disagreement can be reviewed rather than taken on trust.
+- **`0016_second_read.sql`** — §5.5 Part C: whether a vision-read value had its second read,
+  and the value that read was about.
 - **`0015_value_flags.sql`** — Keeps what a value is, not only what it is: the parser's
   flags (`lower_bound`, `range`, `fx_converted`, ...) and a range's high end, on extractions
   and events (D32).
@@ -239,6 +243,10 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   part of the quoted passage must appear word for word in the document text and, parsed on
   its own, give back exactly the same value. A part is allowed because PDF tables
   interleave their columns in the extracted text.
+- **`extractor/part_c.py`** — §5.5 Part C. It decides whether a value rests only on this
+  pipeline's own vision OCR, working out the page from the page report and treating it as
+  vision when the pages cannot be told apart. Its `gate` keeps such a value out of verified
+  until a second read agreed on that very value.
 - **`units/money.py`** — Turns printed amounts into `Decimal` rupees. It handles ₹/Rs./INR,
   crore/lakh/million/billion, Indian digit grouping, amounts written in words, "approx" and
   GST flags, and ranges. USD converts at the fixed rate in `config/fx.yaml`; other
@@ -322,7 +330,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 - **`__main__.py`** — `python -m tradebot.backfill <stage>`. Each stage runs one pass
   against the backfill database: universe, expected, announcements, reconcile, documents,
-  batch-submit/collect, rejudge, reparse, events, revenue, calculate, recheck-submit/collect, study
+  batch-submit/collect, rejudge, reparse, vision-check, events, revenue, calculate, recheck-submit/collect, study
   and status.
 - **`universe.py`** — Builds the frozen company list from the criteria as of 22 Sep 2025,
   and refuses if the criteria are not frozen. It applies hand and industry exclusions from
@@ -342,6 +350,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   through the same checks as a live call, with retries capped at three submissions.
   `rejudge` re-applies the current rules to stored answers without calling the model;
   `reparse` re-applies T0 to stored text and sends a value that no longer verifies to T1.
+- **`vision_check.py`** — §5.5 Part C's second read. For each vision-sourced value it
+  downloads the PDF again (the SHA-256 must match), re-reads the value's page blind,
+  deletes the PDF, and keeps the value only if it verifies against the new transcript.
 - **`events.py`** — Merges verified extractions into events on exact keys only (the same
   PDF hash, or the same company and value). It implements §6's state machine: extracted,
   then calculated, then verified or recheck.
@@ -476,6 +487,9 @@ is not reachable. The rest use fakes.
   pinned by a string that was really stored as verified: L&T's bands, the COCHINSHIP and
   SWANDEF legends, "over Rs 5,400 crore", ringgit and dinar amounts, quantities, a dropped
   digit in provenance.
+- **`test_part_c.py`** — Which values are vision-sourced (a text-layer page, a vision
+  page, pages that cannot be told apart), the gate, and the second read on real SQL with a
+  real PDF and a fake transcriber: agreement, disagreement, a different file, the cap.
 - **`test_value_rules_db.py`** — Real SQL: `reparse` sends a legend value back to the
   model and keeps good ones, `rejudge` keeps the flags, a rebuilt event whose value changed
   starts again at `extracted`.

@@ -22,6 +22,7 @@ from tradebot.documents import store as documents_store
 from tradebot.documents.ocr import maybe_transcribe
 from tradebot.documents.pipeline import process_url as _real_process_url
 from tradebot.extractor.annexure import parse_annexure, parse_company_is_recipient, parse_stage
+from tradebot.extractor import part_c
 from tradebot.extractor.llm_extract import extract_order_fields
 from tradebot.extractor.provenance import verify as verify_provenance
 from tradebot.llm.client import LlmClient
@@ -182,7 +183,8 @@ def _llm_row(row, relevance: Relevance, *, document_id: int, doc_text: str, clie
 
 def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
                   work_dir: Path, summary: Summary, process_url_fn=_real_process_url,
-                  get_text_fn=documents_store.get_text) -> str | None:
+                  get_text_fn=documents_store.get_text,
+                  get_page_report_fn=documents_store.get_page_report) -> str | None:
     """One filing. Returns an auth-failure marker ("401"/"403") when the download failed
     that way, so the caller's consecutive-failure breaker can see it; None otherwise.
 
@@ -303,6 +305,15 @@ def _process_one(conn, row, relevance: Relevance, *, fetcher, client: LlmClient,
     extraction.llm_cost_usd += ocr_cost
     summary.llm_cost_usd += extraction.llm_cost_usd
 
+    if extraction.review_status == "verified":
+        # §5.5 Part C: a value read from our own vision OCR waits for a second read
+        # (backfill/vision_check.py) before it counts.
+        vision = part_c.vision_sourced(doc_text, get_page_report_fn(conn, outcome.document_id),
+                                       extraction.value_span, extraction.value_inr)
+        extraction.review_status, extraction.second_read = part_c.gate(
+            "verified", vision=vision, second_read=None, second_read_inr=None,
+            value_inr=extraction.value_inr)
+
     orders_store.upsert(conn, extraction)
     status = extraction.review_status
     if status == "verified":
@@ -329,6 +340,7 @@ def process_pending(
     conn, raw_rows: list[dict], *, fetcher, client: LlmClient, work_dir: Path,
     max_requests: int | None = None, process_url_fn=_real_process_url,
     get_text_fn=documents_store.get_text,
+    get_page_report_fn=documents_store.get_page_report,
     retry_statuses: tuple[str, ...] = orders_store.PENDING_STATUSES,
 ) -> Summary:
     """The single code path both `--date`/`--from`/`--to` and `--follow` call.
@@ -364,7 +376,8 @@ def process_pending(
         summary.considered += 1
         auth_failure = _process_one(conn, row, relevance, fetcher=fetcher, client=client,
                                      work_dir=work_dir, summary=summary,
-                                     process_url_fn=process_url_fn, get_text_fn=get_text_fn)
+                                     process_url_fn=process_url_fn, get_text_fn=get_text_fn,
+                                     get_page_report_fn=get_page_report_fn)
         summary.dates_touched.add(row["first_seen_at"].date())
 
         if auth_failure:

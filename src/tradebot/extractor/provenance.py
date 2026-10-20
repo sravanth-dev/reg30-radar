@@ -26,14 +26,52 @@ def _collapse(text: str) -> str:
     return _WS.sub(" ", text or "").strip()
 
 
-def _occurs(piece: str, doc: str) -> bool:
-    """`piece` occurs in `doc` as whole tokens. A raw substring test let a quote "13.51 Crs"
-    verify inside "113.51 Crs", a dropped digit (audit, 20 Oct 2026). So a piece that starts
-    with a letter or digit may not continue a word or number on its left, and one that ends
-    with one may not run on into one on its right ("13.51" inside "1,13.51" or "13.515")."""
+def _token_pattern(piece: str) -> re.Pattern:
+    """`piece` as whole tokens. A raw substring test let a quote "13.51 Crs" verify inside
+    "113.51 Crs", a dropped digit (audit, 20 Oct 2026). So a piece that starts with a letter
+    or digit may not continue a word or number on its left, and one that ends with one may
+    not run on into one on its right ("13.51" inside "1,13.51" or "13.515")."""
     left = r"(?<![0-9A-Za-z])(?<![0-9][.,])" if piece[0].isalnum() else ""
     right = r"(?![0-9A-Za-z])(?![.,][0-9])" if piece[-1].isalnum() else ""
-    return re.search(left + re.escape(piece) + right, doc) is not None
+    return re.compile(left + re.escape(piece) + right)
+
+
+def _occurs(piece: str, doc: str) -> bool:
+    return _token_pattern(piece).search(doc) is not None
+
+
+def _collapse_with_map(text: str) -> tuple[str, list[int]]:
+    """`_collapse`, plus where each character of the result came from in `text`."""
+    out: list[str] = []
+    where: list[int] = []
+    for m in re.finditer(r"\S+", text or ""):
+        if out:
+            out.append(" ")
+            where.append(m.start() - 1)
+        out.append(m.group(0))
+        where.extend(range(m.start(), m.end()))
+    return "".join(out), where
+
+
+def occurrences(doc_text: str, value_span: str | None, value_inr: Decimal | None) -> list[int]:
+    """Where in `doc_text` (offsets into the original, not the collapsed, text) each piece
+    of the quote that verifies the value sits: every occurrence of the longest verifying
+    pieces. §5.5 Part C uses it to tell which page a value was read from. Empty when the
+    value does not verify."""
+    if not value_span or value_inr is None:
+        return []
+    doc, where = _collapse_with_map(doc_text)
+    words = value_span.split()
+    for size in range(len(words), 0, -1):
+        found = []
+        for start in range(len(words) - size + 1):
+            piece = " ".join(words[start:start + size])
+            if parse_money(piece).value_inr != value_inr:
+                continue
+            found.extend(where[m.start()] for m in _token_pattern(piece).finditer(doc))
+        if found:
+            return sorted(set(found))
+    return []
 
 
 def verify(doc_text: str, value_span: str | None, value_inr: Decimal | None) -> bool:

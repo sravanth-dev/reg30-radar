@@ -100,11 +100,11 @@ class NseClient:
         docstring for what that does and does not cover."""
         return self._get_json({"symbol": symbol}, endpoint="results")
 
-    def fetch_integrated_results(self, symbol: str) -> PollResult:
+    def fetch_integrated_results(self, symbol: str, page: int = 1) -> PollResult:
         """One company's "Integrated Filing - Financials" results, from the quarter ended
         31-Mar-2025 on (Spike C2): `config/sources.yaml`'s `nse.integrated_results`. One
-        page of 20 rows; `PollResult.total` says whether that was all of them."""
-        return self._get_json({"symbol": symbol}, endpoint="integrated_results")
+        page of 20 rows; `PollResult.total` says whether more pages follow."""
+        return self._get_json({"symbol": symbol, "page": page}, endpoint="integrated_results")
 
     def _get_json(self, extra_params: dict, *, endpoint: str = "announcements") -> PollResult:
         """One GET against `config/sources.yaml`'s `nse.<endpoint>` with its configured

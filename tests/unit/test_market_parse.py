@@ -101,3 +101,14 @@ def test_pr_members_match_2026_lowercase_names():
 def test_udiff_zip_holds_one_csv():
     z = _zip({"BhavCopy_NSE_CM_0_0_0_20260918_F_0000.csv": "TradDt,ISIN\n"})
     assert udiff_csv_from_zip(z) == "TradDt,ISIN\n"
+
+
+def test_a_flag_on_a_be_row_under_mkt_g_is_read():
+    # BE and ST series can sit under MKT=G (20 BE rows on 18 Sep 2026); a bonus there must
+    # still exclude the event (audit, 20 Oct 2026). Index rows (MKT=Y) are never actions.
+    text = ("MKT,SERIES,SYMBOL,SECURITY,PREV_CL_PR,OPEN_PRICE,HIGH_PRICE,LOW_PRICE,CLOSE_PRICE,"
+            "NET_TRDVAL,NET_TRDQTY,IND_SEC,CORP_IND,TRADES,HI_52_WK,LO_52_WK\n"
+            "G,BE,KHADIM,KHADIM INDIA LIMITED,200,200,201,199,200,1,1,N,XB,1,1,1\n"
+            "Y, ,NIFTY,Nifty 50,1,1,1,1,1,1,1,Y,XD,1,1,1\n")
+    _, actions = parse_pd(text)
+    assert [(a.symbol, a.series, a.corp_ind) for a in actions] == [("KHADIM", "BE", "XB")]

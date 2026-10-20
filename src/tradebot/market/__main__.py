@@ -97,6 +97,40 @@ def load_day(conn, fetcher, cfg: dict, day: date) -> str:
             f"{counts.announcements} announcements" + (f" [{note}]" if note else ""))
 
 
+def refresh_corp_ind(date_from: date, date_to: date, max_requests: int) -> int:
+    """Re-read CORP_IND for trading days already loaded, from the PR bundle only (one
+    request a day). Written for the 20 Oct 2026 parser fix (BE/ST rows under MKT=G)."""
+    cfg = nse_config()
+    fetcher = ArchiveFetcher()
+    with connect(backfill_url()) as conn:
+        days = [r[0] for r in conn.execute(
+            "select day from archive_days where trading_day and day between %s and %s"
+            " order by day", (date_from, date_to))]
+        log.info("%d trading days to re-read CORP_IND for", len(days))
+        changed = 0
+        for day in days:
+            if fetcher.requests + 2 > max_requests:
+                log.warning("stopping at --max-requests %d", max_requests)
+                break
+            bundle = fetcher.get(pr_url(cfg, day))
+            if not bundle.ok:
+                log.warning("%s PR bundle: %s (left as it was)", day, bundle.error)
+                continue
+            members = parse.pr_members(bundle.content, cfg["archives"]["pr_members"])
+            if "price_data" not in members:
+                log.warning("%s: no pd member (left as it was)", day)
+                continue
+            _, actions = parse.parse_pd(members["price_data"])
+            before = conn.execute("select count(*) from prices where trade_date = %s"
+                                  " and corp_ind is not null", (day,)).fetchone()[0]
+            after = store.save_corp_ind(conn, day, actions)
+            changed += after - before
+            log.info("%s CORP_IND: %d flagged (was %d)", day, after, before)
+    log.info("flags added: %d; requests sent (warm-ups included): %d", changed,
+             fetcher.requests)
+    return 0
+
+
 def run(date_from: date, date_to: date, max_requests: int) -> int:
     cfg = nse_config()
     fetcher = ArchiveFetcher()
@@ -132,9 +166,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--to", dest="date_to", type=date.fromisoformat, required=True)
     parser.add_argument("--max-requests", type=int, default=1000,
                         help="stop before sending more than this many requests")
+    parser.add_argument("--refresh-corp-ind", action="store_true",
+                        help="re-read only CORP_IND, from the PR bundle, for loaded days")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
     configure_logging(args.log_level)
+    if args.refresh_corp_ind:
+        return refresh_corp_ind(args.date_from, args.date_to, args.max_requests)
     return run(args.date_from, args.date_to, args.max_requests)
 
 

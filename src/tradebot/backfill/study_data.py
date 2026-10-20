@@ -87,7 +87,7 @@ def load_events(conn, states: tuple[str, ...] = ("verified",)) -> list[EventIn]:
     for (eid, isin, symbol, ts, raw_ids, value, currency, period_raw, won) in rows:
         if isin not in periods_cache:
             periods_cache[isin] = _periods(conn, isin)
-        ttm, _basis = ttm_as_of(periods_cache[isin], ts)
+        ttm, basis = ttm_as_of(periods_cache[isin], ts)
         others = []
         # Match on the isin's issuer code, because a filing carries the company's original
         # ISIN and the event the universe's current one (common/isin.py); fall back to symbol
@@ -110,7 +110,7 @@ def load_events(conn, states: tuple[str, ...] = ("verified",)) -> list[EventIn]:
         previous = max((t for i, t in all_events if i == isin and t < ts), default=None)
         out.append(EventIn(
             event_id=eid, isin=isin, symbol=symbol, event_ts=ts, value_inr=value,
-            currency=currency or "INR", ttm_revenue_inr=ttm,
+            currency=currency or "INR", ttm_revenue_inr=ttm, ttm_basis=basis,
             execution_months=execution_months(period_raw, ts.astimezone(IST).date()),
             other_filings=others, previous_order_ts=previous, company_is_recipient=won))
     conn.commit()

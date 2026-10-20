@@ -54,3 +54,51 @@ def test_a_restatement_filed_later_replaces_the_original_only_from_then_on():
     restated = BOOK + [q(date(2025, 9, 30), 150, filed(2026, 7, 1))]
     assert ttm_as_of(restated, filed(2026, 6, 1))[0] == Decimal(460)
     assert ttm_as_of(restated, filed(2026, 7, 2))[0] == Decimal(500)
+
+
+# --- Q2 = H1 - Q1 (Proposed, 20 Oct 2026) -------------------------------------------------
+# 47 Integrated-Filing Q2 files (Nov 2025) carry only the half-year: their quarter context
+# holds the Apr-Sep figure. DBL re-filed in Jun 2026 with the quarter, and H1 - Q1 matched it
+# to the rupee (4,546.23 - 2,620.34 = 1,925.89 cr); 30 of 45 such checks matched exactly and
+# 10 more within the filers' own rounding.
+
+def _half_year_book(h1):
+    return [q(date(2025, 3, 31), 90, filed(2025, 5, 20)),
+            q(date(2025, 6, 30), 100, filed(2025, 8, 10)),
+            q(date(2025, 9, 30), h1, filed(2025, 11, 13), months=6),
+            q(date(2025, 12, 31), 120, filed(2026, 2, 10)),
+            q(date(2024, 12, 31), 80, filed(2025, 2, 10))]
+
+
+def test_q2_is_derived_from_the_half_year_minus_q1():
+    ttm, basis = ttm_as_of(_half_year_book(210), filed(2026, 3, 1))
+    assert ttm == Decimal(90 + 100 + 110 + 120)
+
+
+def test_a_half_year_that_is_really_a_quarter_derives_nothing():
+    # INE0BYP01024's "half-year" was 1.05x Q1 and its later revision changed it: the figure
+    # was the quarter, mislabelled. A derived Q2 below 0.4 x Q1 is refused, not used.
+    assert ttm_as_of(_half_year_book(105), filed(2026, 3, 1)) == (None, None)
+
+
+def test_the_derived_q2_is_only_known_once_the_half_year_is_filed():
+    assert ttm_as_of(_half_year_book(210), filed(2025, 11, 1)) == (None, None)
+
+
+def test_a_non_positive_q4_is_never_used():
+    book = [q(date(2025, 12, 31), 400, filed(2026, 2, 10), months=9),
+            q(date(2026, 3, 31), 380, filed(2026, 5, 20), months=12),   # FY below 9M
+            q(date(2025, 6, 30), 100, filed(2025, 8, 10)),
+            q(date(2025, 9, 30), 110, filed(2025, 11, 10)),
+            q(date(2025, 12, 31), 120, filed(2026, 2, 10))]
+    assert ttm_as_of(book, filed(2026, 6, 1)) == (None, None)
+
+
+def test_a_year_whose_quarters_do_not_add_up_is_reported_not_changed():
+    from tradebot.revenue.ttm import fy_mismatches
+    good = [q(date(2025, 6, 30), 100, filed(2025, 8, 1)), q(date(2025, 9, 30), 100, filed(2025, 11, 1)),
+            q(date(2025, 12, 31), 100, filed(2026, 2, 1)), q(date(2026, 3, 31), 100, filed(2026, 5, 1)),
+            q(date(2026, 3, 31), 401, filed(2026, 5, 1), months=12)]
+    assert fy_mismatches(good) == []                       # within 2%
+    bad = good[:-1] + [q(date(2026, 3, 31), 500, filed(2026, 5, 1), months=12)]
+    assert fy_mismatches(bad) == [(date(2026, 3, 31), "consolidated", Decimal(500), Decimal(400))]

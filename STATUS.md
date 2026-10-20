@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 20:30 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 20 Oct 2026, 18:15 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -34,14 +34,16 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       (13 old retries + 17 T0 values that no longer verify). T0 eval unchanged at 8/18.
       416 tests pass
 
+- [x] Step 1.3 §5.5 Part C: enforced on every path; second read run on the backfill: 38
+      confirmed, 1 unavailable, 3 not vision-sourced (39 downloads, 43 OCR pages, ~$0.04)
+
 ## In progress
-- [ ] Step 1.3 §5.5 Part C (second read for vision-sourced values)
+- [ ] Step 1.4 revenue: code done (Q2 = H1 − Q1 Proposed, basis, pages, conflicts, FY
+      check); NSE run pending: 8 failed companies + truncated listings
+- [ ] Step 1.5 market: code done (CORP_IND on every row); NSE runs pending: tail
+      27 Sep - 9 Oct, CORP_IND re-read of 388 days
 
 ## Next (in order)
-3. §5.5 Part C: a second read for the 42 vision-sourced values
-4. Revenue: the Q2 defect (H1 − Q1, Proposed), basis recorded, the 8 failed companies,
-   truncated listings
-5. Market: the 27 Sep – 6 Oct tail; CORP_IND for every market row
 6. Study and report brought to spec
 7. `eval --stored`; σ measured from placebo events
 8. A single live runner (`python -m tradebot.live`) and `catchup`; then start live on the

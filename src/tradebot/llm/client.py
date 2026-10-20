@@ -83,12 +83,18 @@ class LlmClient:
                 f"the pricing page, never guessed).")
         return price
 
+    # Purposes that share one monthly cap: a §5.5 Part C second read is OCR spend too.
+    SHARED_CAP_PURPOSES = {"ocr": ("ocr", "ocr_second_read"),
+                           "ocr_second_read": ("ocr", "ocr_second_read")}
+
     def _spent_this_month(self, purpose: str) -> Decimal:
         now = datetime.now(timezone.utc)
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        purposes = list(self.SHARED_CAP_PURPOSES.get(purpose, (purpose,)))
         row = self.conn.execute(
-            "select coalesce(sum(cost_usd), 0) from llm_calls where purpose = %s and ts >= %s",
-            (purpose, start),
+            "select coalesce(sum(cost_usd), 0) from llm_calls"
+            " where purpose = any(%s) and ts >= %s",
+            (purposes, start),
         ).fetchone()
         return Decimal(row[0])
 
@@ -201,6 +207,7 @@ class LlmClient:
 
     def transcribe_image(
         self, png_bytes: bytes, *, prompt_version: str, max_output_tokens: int | None = None,
+        purpose: str = "ocr",
     ) -> str:
         """One vision-OCR call (§5.5 Part B). The image is the only untrusted input; the
         prompt (loaded from `prompts/<prompt_version>.md`, never built from document text)
@@ -224,7 +231,9 @@ class LlmClient:
             ]},
         ]
         result = self._call(
-            model=model, messages=messages, purpose="ocr", cap_key="ocr_usd_per_month",
+            # `purpose` tells a §5.5 Part C second read ("ocr_second_read") apart from a
+            # first one in llm_calls; both draw from the OCR cap (or the backfill's).
+            model=model, messages=messages, purpose=purpose, cap_key="ocr_usd_per_month",
             tier="ocr", prompt_version=prompt_version, max_output_tokens=max_out,
         )
         return result.text

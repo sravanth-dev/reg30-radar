@@ -64,9 +64,15 @@ class FakeNseClient:
         self.calls.append(("old", symbol))
         return self._answer(self.old.get(symbol, []))
 
-    def fetch_integrated_results(self, symbol):
+    def fetch_integrated_results(self, symbol, page=1):
+        # `integrated[symbol]` is one page of rows, or a list of pages (a list of lists)
         self.calls.append(("integrated", symbol))
-        return self._answer(self.integrated.get(symbol, []), self.totals.get(symbol))
+        rows = self.integrated.get(symbol, [])
+        if rows and isinstance(rows[0], list):
+            rows = rows[page - 1] if page <= len(rows) else []
+        elif page > 1:
+            rows = []
+        return self._answer(rows, self.totals.get(symbol))
 
 
 class FakeArchiveFetcher:
@@ -98,6 +104,8 @@ class FakeConn:
         if "insert into backfill_checkpoints" in s:
             self.checkpoints.append(params)
             return _Result()
+        if "from financials" in s:          # the end-of-run FY check reads what is stored
+            return _Result(many=[])
         raise AssertionError(f"unexpected SQL: {sql[:60]}")
 
     def cursor(self):
@@ -181,13 +189,42 @@ def test_a_failed_download_leaves_the_company_to_be_retried(monkeypatch):
     assert conn.checkpoints == [] and len(conn.inserted) == 1   # kept, and skipped on retry
 
 
-def test_a_truncated_integrated_listing_is_recorded(monkeypatch):
+INT_MAR26 = {"xbrl": "https://x/mar26.xml", "qe_Date": "31-MAR-2026",
+             "broadcast_Date": "14-May-2026 16:00:00"}
+
+
+def test_an_integrated_listing_is_read_to_its_last_page(monkeypatch):
+    # ITI, MCLOUD and AHLUCONT had more than one page and lost their oldest rows when only
+    # page 1 was read (4 Oct 2026).
+    monkeypatch.setattr(load, "parse_xbrl", lambda content: ONE_FACT)
+    conn = FakeConn([])
+    client = FakeNseClient({}, {"BEL": [[INT_JUN26], [INT_MAR26]]}, totals={"BEL": 2})
+    fetcher = FakeArchiveFetcher({"https://x/jun26.xml": b"x", "https://x/mar26.xml": b"x"})
+    ok, summary, sent = load.fetch_company(conn, client, fetcher, "INE263A01024", "BEL", SINCE)
+    assert ok and sent == 1 + 2 + 2                      # old listing, two pages, two files
+    assert sorted(fetcher.calls) == ["https://x/jun26.xml", "https://x/mar26.xml"]
+    assert '"truncated": false' in conn.checkpoints[0][2]
+
+
+def test_a_listing_still_short_is_retried_not_checkpointed(monkeypatch):
     monkeypatch.setattr(load, "parse_xbrl", lambda content: ONE_FACT)
     conn = FakeConn([])
     client = FakeNseClient({}, {"BEL": [INT_JUN26]}, totals={"BEL": 25})
-    load.fetch_company(conn, client, FakeArchiveFetcher({"https://x/jun26.xml": b"x"}),
-                       "INE263A01024", "BEL", SINCE)
-    assert '"truncated": true' in conn.checkpoints[0][2]
+    ok, summary, _ = load.fetch_company(conn, client,
+                                        FakeArchiveFetcher({"https://x/jun26.xml": b"x"}),
+                                        "INE263A01024", "BEL", SINCE)
+    assert ok is False and conn.checkpoints == []
+
+
+def test_two_values_for_one_period_in_one_file_store_neither():
+    def fact(value, ctx):
+        return RevenueFact(period_start=None, period_end=date(2025, 9, 30), months=6,
+                           basis="consolidated", revenue_inr=Decimal(value), context_id=ctx,
+                           element="RevenueFromOperations")
+    kept, dropped = load.distinct_facts([fact(100, "OneD"), fact(100, "FourD")])
+    assert len(kept) == 1 and dropped == 0               # the same figure twice: one fact
+    kept, dropped = load.distinct_facts([fact(100, "OneD"), fact(250, "FourD")])
+    assert kept == [] and dropped == 2                   # a conflict: never first-wins
 
 
 def test_run_paces_counts_every_request_and_stops_before_the_cap(monkeypatch):
@@ -200,7 +237,7 @@ def test_run_paces_counts_every_request_and_stops_before_the_cap(monkeypatch):
                    sleep=sleeps.append)
     # AAA sends 3 and BBB 2 (3 + 18 <= 22 lets BBB start); a third company could need 18
     # more, and 5 + 18 > 22, so it is not started
-    assert out == {"fetched": 2, "failed": 0, "requests": 5, "remaining": 1}
+    assert out == {"fetched": 2, "failed": 0, "requests": 5, "remaining": 1, "fy_mismatches": 0}
     assert len(sleeps) == 3        # between AAA's listings, between companies, BBB's listings
 
 

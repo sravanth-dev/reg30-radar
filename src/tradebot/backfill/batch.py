@@ -28,6 +28,7 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
+from tradebot.extractor import part_c
 from tradebot.extractor.llm_extract import (PROMPT_VERSION, OrderFields, build_request,
                                             interpret, judge)
 from tradebot.llm.client import LlmClient
@@ -167,9 +168,10 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
     cost = client.log_batch_result(batch_id=batch_id, model=model, prompt_version=PROMPT_VERSION,
                                    purpose=PURPOSE, tier="t1", usage=body.get("usage"),
                                    status="ok")
-    text = conn.execute("select d.text from order_extractions oe join documents d"
-                        " on d.id = oe.document_id where oe.raw_announcement_id = %s",
-                        (raw_id,)).fetchone()[0]
+    text, report, second, second_inr = conn.execute(
+        "select d.text, d.page_report, oe.second_read, oe.second_read_inr"
+        " from order_extractions oe join documents d on d.id = oe.document_id"
+        " where oe.raw_announcement_id = %s", (raw_id,)).fetchone()
     content = body["choices"][0]["message"].get("content") or ""
     try:
         result = interpret(text, content)
@@ -183,9 +185,12 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
         return cost
 
     f = result.fields
+    status, second = _part_c(result.review_status, text, report, f.value_span,
+                             result.value_inr, second, second_inr)
     conn.execute(
         """update order_extractions set
-               path = 'llm', review_status = %(status)s, value_inr = %(value)s,
+               path = 'llm', review_status = %(status)s, second_read = %(second)s,
+               value_inr = %(value)s,
                currency = %(currency)s, value_flags = %(flags)s, value_high_inr = %(high)s,
                gst_inclusive = %(gst)s,
                provenance_ok = %(prov)s, consideration_raw = %(cons)s, value_span = %(span)s,
@@ -194,7 +199,7 @@ def _apply(conn, client, batch_id, model, record, raw_id, attempt) -> Decimal:
                llm_cost_usd = llm_cost_usd + %(cost)s, last_error = null,
                processed_at = now()
            where raw_announcement_id = %(raw_id)s""",
-        {"status": result.review_status, "value": result.value_inr,
+        {"status": status, "second": second, "value": result.value_inr,
          "currency": result.currency, "flags": result.value_flags,
          "high": result.value_high_inr, "gst": result.gst_inclusive,
          "prov": result.provenance_ok, "cons": f.consideration_raw, "span": f.value_span,
@@ -211,6 +216,14 @@ def _set_review(conn, raw_id, reason, cost=Decimal("0")):
                  (reason, cost, raw_id))
 
 
+def _part_c(status, text, page_report, value_span, value_inr, second, second_inr):
+    """§5.5 Part C on a judged value (extractor/part_c.py): (status, second_read)."""
+    vision = status == "verified" and part_c.vision_sourced(text, page_report, value_span,
+                                                            value_inr)
+    return part_c.gate(status, vision=vision, second_read=second, second_read_inr=second_inr,
+                       value_inr=value_inr)
+
+
 def reparse(conn) -> dict:
     """Re-apply the deterministic parser (T0) to stored document text, for when a value
     rule changes after the documents were processed (20 Oct 2026: ranges, size legends,
@@ -223,20 +236,26 @@ def reparse(conn) -> dict:
     from tradebot.orders.run import t0_value
 
     rows = conn.execute("""
-        select oe.raw_announcement_id, d.text, oe.value_inr
+        select oe.raw_announcement_id, d.text, oe.value_inr, d.page_report, oe.second_read,
+               oe.second_read_inr
         from order_extractions oe join documents d on d.id = oe.document_id
-        where oe.path = 't0' and oe.review_status = 'verified'""").fetchall()
+        where oe.path = 't0' and (oe.review_status = 'verified' or oe.second_read is not null)
+        """).fetchall()
     moved = Counter()
-    for raw_id, text, before in rows:
+    for raw_id, text, before, report, second, second_inr in rows:
         ann, money, span, provenance_ok, ok = t0_value(text)
         if ok:
+            status, second = _part_c("verified", text, report, span, money.value_inr,
+                                     second, second_inr)
             conn.execute(
                 "update order_extractions set value_inr = %s, value_flags = %s,"
                 " value_high_inr = %s, currency = %s, gst_inclusive = %s, provenance_ok = %s,"
-                " consideration_raw = %s, value_span = %s where raw_announcement_id = %s",
+                " consideration_raw = %s, value_span = %s, review_status = %s,"
+                " second_read = %s where raw_announcement_id = %s",
                 (money.value_inr, sorted(money.flags) or None, money.high_inr, money.currency,
-                 gst_of(money), provenance_ok, ann.raw("consideration_raw"), span, raw_id))
-            moved["verified -> verified" + (" (value changed)" if money.value_inr != before
+                 gst_of(money), provenance_ok, ann.raw("consideration_raw"), span, status,
+                 second, raw_id))
+            moved["verified -> " + status + (" (value changed)" if money.value_inr != before
                                              else "")] += 1
         else:
             conn.execute(
@@ -265,24 +284,28 @@ def rejudge(conn) -> dict:
     their outcome. Returns how many rows moved between statuses."""
     rows = conn.execute("""
         select oe.raw_announcement_id, d.text, oe.consideration_raw, oe.value_span,
-               oe.company_is_recipient, oe.stage, oe.review_status
+               oe.company_is_recipient, oe.stage, oe.review_status, d.page_report,
+               oe.second_read, oe.second_read_inr
         from order_extractions oe join documents d on d.id = oe.document_id
         where oe.path = 'llm' and oe.review_status in ('verified', 'needs_review')
           and oe.last_error is null""").fetchall()
     moved = Counter()
-    for raw_id, text, cons, span, recipient, stage, before in rows:
+    for (raw_id, text, cons, span, recipient, stage, before, report, second,
+         second_inr) in rows:
         fields = OrderFields(
             is_order_announcement=True, company_is_recipient=_RECIPIENT[recipient],
             consideration_raw=cons, value_span=span, awarding_entity=None,
             nature_of_order=None, execution_period_raw=None, domestic_or_international=None,
             stage=stage if stage in _STAGES else "unknown")
         result = judge(text, fields)
+        status, second = _part_c(result.review_status, text, report, span, result.value_inr,
+                                 second, second_inr)
         conn.execute(
             "update order_extractions set review_status = %s, value_inr = %s,"
             " provenance_ok = %s, currency = %s, value_flags = %s, value_high_inr = %s,"
-            " gst_inclusive = %s where raw_announcement_id = %s",
-            (result.review_status, result.value_inr, result.provenance_ok, result.currency,
-             result.value_flags, result.value_high_inr, result.gst_inclusive, raw_id))
-        moved[f"{before} -> {result.review_status}"] += 1
+            " gst_inclusive = %s, second_read = %s where raw_announcement_id = %s",
+            (status, result.value_inr, result.provenance_ok, result.currency,
+             result.value_flags, result.value_high_inr, result.gst_inclusive, second, raw_id))
+        moved[f"{before} -> {status}"] += 1
     conn.commit()
     return dict(moved)

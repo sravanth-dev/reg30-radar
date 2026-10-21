@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# The template for docker-compose.local-db.yml (README); placeholders only.
+!.env.docker.example
 
 # Google service-account key files must never land in the repo, wherever they are saved.
 secrets/

@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 20 Oct 2026, 22:35 IST (checkpoint before the night). The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 21 Oct 2026, 06:00 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -57,14 +57,17 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       7,806 new filings, no failed or flagged day
 
 ## In progress (running unattended)
-- [ ] **`python -m reg30_radar.live` is running detached** (started 22:30, python PID 8316,
-      log `data/live.log`, holds `data/nse.lock`). It is draining the catch-up backlog: 1,894
-      in-scope PDFs at 6 per cycle (about 2 days at the off-window pace). It needs no input.
-      It stops by itself on 5 NSE failures in a row (exit 3) or a calendar problem (exit 2);
-      restart it with the command below. While it runs, no other NSE command can start
-      (the lock refuses), which is intended.
-- [ ] Batch `batch_6ad799778dc08190a9fbb5d15054aad9` (30 pending backfill filings,
-      submitted 22:10, worst case $0.0092): collect after it completes (<= 24 h)
+- [ ] **`python -m reg30_radar.live` and `python -m reg30_radar.sheets` are running
+      detached** (restarted 21 Oct 05:45 under the new name; logs `data/live.log`,
+      `data/sheets.log`; live holds `data/nse.lock`). Live's lookback is 6 h, so the
+      1-20 Oct backlog is not processed (Sravanth). Live stops by itself on 5 NSE failures
+      in a row (exit 3) or a calendar problem (exit 2); restart it with the command below.
+- [ ] Recheck batch `batch_6ad7f3be9a5c81908950a23bdb8b3921` (257 high-stakes events,
+      submitted 21 Oct 04:35, worst case $0.08), polled every 10 min. When it is in:
+      `batch-submit` for HCC's one pending filing, `batch-collect`, `events`, `calculate`,
+      `study`, then RESULTS.md.
+- [ ] **Rename to Reg30 Radar (D33) on branch `rename/reg30-radar`**, 5 commits, not
+      merged or pushed: Sravanth reviews the diff first. The working copy runs this branch.
 
 ## Next (in order)
 9. Backfill stages: `batch-submit`/`collect` → `events` → `calculate` → `recheck` →

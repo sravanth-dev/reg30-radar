@@ -2950,3 +2950,31 @@ trades" failed for that reason alone. The calendar code was right.
   limitations, how to run it, a repository map, and a note on NSE's terms. The hosting
   options moved to STATUS.md. Full-history secret scan before going public: clean. One hit
   was a documentation placeholder; no sensitive file was ever committed.
+
+### 21 Oct 2026 (morning) — renamed to Reg30 Radar (D33), on branch `rename/reg30-radar`
+
+Sravanth's rename brief: a careful refactor, not a find-and-replace, with one commit per
+tier and the baseline re-run after each. He delegated every decision ("do whatever is
+best").
+- **Baseline** (scratchpad `baseline.sh`, read-only or `--help` only): 23 commands,
+  pytest 467 passed. It was identical after every commit.
+- **Inventory:** 700 hits in 143 files. A: 12 display lines. B: 492 identifier lines in
+  120 files, plus `git mv src/tradebot src/reg30_radar`. C: 28 env-var and Docker lines.
+  59 kept, being database names and external IDs. 109 not edited, being history,
+  migrations and reports.
+- **Commits:**
+  - `e4b2d4f` (A).
+  - `cd87de8` (B). Every one of the 492 changed lines was checked to be a pure name
+    substitution. The package was reinstalled with `pip uninstall tradebot` and
+    `pip install -e ".[dev]"`. `import tradebot` now fails and `import reg30_radar` works.
+  - `79ca0f1` (C).
+  - `4805a8a`: a separate fix committing `.env.docker.example`. It was gitignored, so the
+    README's copy command had nothing to copy.
+- `live` and `sheets` (started by Sravanth at 05:05) were stopped before B and restarted
+  under the new names at 05:45. Live cleared the stale lock as designed. The recheck poll
+  loop was restarted the same way.
+- **Kept on purpose:** the database and role names, dump names, the GitHub URL (until he
+  renames the repo), the local folder, and the Google Cloud ids.
+- **Process slip:** the scan before `4805a8a` flagged 2 lines. Both are the placeholder
+  `CHANGEME`, so no real secret was involved. The commit went through because the scan was
+  piped into `tail`, which hid its exit code. The scan now runs unpiped.

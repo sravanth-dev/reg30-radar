@@ -7,8 +7,8 @@ from datetime import date, datetime
 
 import pytest
 
-from tradebot.backfill import __main__ as backfill
-from tradebot.common.calendar import IST
+from reg30_radar.backfill import __main__ as backfill
+from reg30_radar.common.calendar import IST
 
 
 @dataclass

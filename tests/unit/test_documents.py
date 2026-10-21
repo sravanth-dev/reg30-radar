@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.documents.fetch import Fetched, sha256_of
-from tradebot.documents.pipeline import UnsafeDeletePath, _delete_downloaded, process_url
-from tradebot.documents.text import extract
+from reg30_radar.documents.fetch import Fetched, sha256_of
+from reg30_radar.documents.pipeline import UnsafeDeletePath, _delete_downloaded, process_url
+from reg30_radar.documents.text import extract
 
 LABELLED = Path(__file__).resolve().parents[1] / "labelled"
 SAMPLE = LABELLED / "RAILTEL_20260917_1.pdf"      # 2 pages, real text layer
@@ -142,10 +142,10 @@ def test_pipeline_flags_a_scan_for_review(tmp_path, monkeypatch):
     silently. The gate is `quality <> 'ok'`, not the old char-count `is_scanned` check -
     see documents/quality.py's module docstring for why that check was replaced.
     """
-    from tradebot.documents import pipeline as mod
+    from reg30_radar.documents import pipeline as mod
 
     def fake_extract(path, **kwargs):
-        from tradebot.documents.text import Extracted
+        from reg30_radar.documents.text import Extracted
         return Extracted(text="", pages=3, method="pdfplumber", is_scanned=True,
                           quality="unreadable", rejected_text="garbage")
 
@@ -174,19 +174,19 @@ HMT = Path(__file__).resolve().parents[1] / "fixtures" / "scans" / "hmt_glyphles
 
 
 def _provider_down(png: bytes) -> str:
-    from tradebot.llm.client import LlmProviderError
+    from reg30_radar.llm.client import LlmProviderError
     raise LlmProviderError("APIConnectionError: Connection error.")
 
 
 def test_an_ocr_provider_error_is_not_an_unreadable_document():
     # It used to be caught with everything else and stored as "unreadable" for good.
-    from tradebot.llm.client import LlmProviderError
+    from reg30_radar.llm.client import LlmProviderError
     with pytest.raises(LlmProviderError):
         extract(HMT, ocr=_provider_down)
 
 
 def test_the_pdf_is_deleted_when_the_ocr_provider_fails(tmp_path):
-    from tradebot.llm.client import LlmProviderError
+    from reg30_radar.llm.client import LlmProviderError
     with pytest.raises(LlmProviderError):
         process_url("https://x.invalid/hmt.pdf", work_dir=tmp_path,
                     fetcher=FakeFetcher(HMT), ocr=_provider_down)

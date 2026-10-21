@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 
-from tradebot.units.money import Money, parse_execution_months, parse_money
+from reg30_radar.units.money import Money, parse_execution_months, parse_money
 
 # (raw string, expected rupees, expected flags) — §5.7's table, verbatim.
 VECTORS = [
@@ -112,7 +112,7 @@ def test_absolute_date_is_not_guessed():
 
 # --- Scale cross-checked against the spelled-out amount (WORKLOG, 25 and 27 Sep 2026) ---
 
-from tradebot.units.money import is_suspect  # noqa: E402
+from reg30_radar.units.money import is_suspect  # noqa: E402
 
 
 def test_scale_is_taken_from_the_words_when_they_match_exactly():

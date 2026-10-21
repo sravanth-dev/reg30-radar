@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from tradebot.backfill import recheck
-from tradebot.backfill.events import Filing, group, next_state, recipient, to_event
-from tradebot.llm.client import LlmClient
+from reg30_radar.backfill import recheck
+from reg30_radar.backfill.events import Filing, group, next_state, recipient, to_event
+from reg30_radar.llm.client import LlmClient
 
 T = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
 CR = Decimal(10) ** 7
@@ -122,7 +122,7 @@ def test_an_event_carries_the_universes_isin_not_the_filings_original_one(scratc
     # Prices and market caps are keyed by the bhavcopy's current ISIN; the filing carries
     # the company's original one (common/isin.py). Before 27 Sep 2026 the event took the
     # filing's, so every order from a company with a past split found no price.
-    from tradebot.backfill import events
+    from reg30_radar.backfill import events
     current, original = "INE019A01038", "INE019A01020"
     scratch_conn.execute("insert into backfill_universe (isin, symbol, series, as_of_date)"
                          " values (%s, 'JSWSTEEL', 'EQ', '2025-09-22')", (current,))

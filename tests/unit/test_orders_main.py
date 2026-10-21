@@ -14,7 +14,7 @@ from datetime import date
 
 import pytest
 
-from tradebot.orders import __main__ as orders_main
+from reg30_radar.orders import __main__ as orders_main
 
 
 def test_date_alone_calls_run_batch_for_that_single_day(monkeypatch):
@@ -76,8 +76,8 @@ def test_follow_cycle_reads_only_the_lookback_window_and_reports_outside_git(mon
     the tracked reports/ folder, which blocks `git pull` on the VPS (WORKLOG, 27 Sep)."""
     from datetime import datetime, timedelta
 
-    from tradebot.common.calendar import IST
-    from tradebot.orders import report, run as run_mod
+    from reg30_radar.common.calendar import IST
+    from reg30_radar.orders import report, run as run_mod
 
     now = datetime(2026, 9, 27, 12, 0, tzinfo=IST)
     selected, written = [], []
@@ -94,7 +94,7 @@ def test_follow_cycle_reads_only_the_lookback_window_and_reports_outside_git(mon
                          lambda conn, day, reports_dir: written.append((day, reports_dir)))
     # The retry queue is read however old it is (GATE 1 audit): ids 7 and 8 are pending,
     # outside the window, and are added by id.
-    from tradebot.orders import store as orders_store
+    from reg30_radar.orders import store as orders_store
     by_id = []
     monkeypatch.setattr(orders_store, "pending_ids_any_age", lambda conn: [7, 8])
     monkeypatch.setattr(run_mod, "select_by_ids", lambda conn, ids: by_id.append(ids) or [])

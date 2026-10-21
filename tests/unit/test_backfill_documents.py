@@ -5,8 +5,8 @@ control group, config/backfill.yaml `documents`, 27 Sep 2026)."""
 
 from datetime import date, datetime
 
-from tradebot.backfill import documents
-from tradebot.common.calendar import IST
+from reg30_radar.backfill import documents
+from reg30_radar.common.calendar import IST
 
 CRORE = 10 ** 7
 SMALL, LARGE = "INE100A01011", "INE200B01012"      # Rs 1,000 cr and Rs 60,000 cr

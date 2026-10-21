@@ -2,8 +2,8 @@
 
 import statistics
 
-from tradebot.backfill.event_study import measure
-from tradebot.backfill.placebo import (
+from reg30_radar.backfill.event_study import measure
+from reg30_radar.backfill.placebo import (
     GUARD_DAYS, STEP, median_se, placebo_events, robust_sd, usable_excess,
 )
 from tests.unit.test_event_study import DAYS, market

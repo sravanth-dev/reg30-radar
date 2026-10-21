@@ -22,7 +22,7 @@ to the rupee) was run there, not here, since it needs real downloaded XBRL.
 from datetime import date
 from decimal import Decimal
 
-from tradebot.revenue.xbrl import months_between, parse
+from reg30_radar.revenue.xbrl import months_between, parse
 
 INSTANCE = b"""<?xml version="1.0" encoding="UTF-8"?>
 <xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"

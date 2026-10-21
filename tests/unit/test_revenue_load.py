@@ -7,12 +7,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from tradebot.collector.nse import PollResult
-from tradebot.collector.records import IST
-from tradebot.market.fetch import Archive
-from tradebot.revenue import load
-from tradebot.revenue.xbrl import RevenueFact
-from tradebot.revenue.xbrl import parse as parse_xbrl
+from reg30_radar.collector.nse import PollResult
+from reg30_radar.collector.records import IST
+from reg30_radar.market.fetch import Archive
+from reg30_radar.revenue import load
+from reg30_radar.revenue.xbrl import RevenueFact
+from reg30_radar.revenue.xbrl import parse as parse_xbrl
 
 SINCE = date(2024, 9, 1)
 XBRL = Path(__file__).resolve().parents[1] / "fixtures" / "xbrl"

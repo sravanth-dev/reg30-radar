@@ -2,7 +2,7 @@
 by hand and by industry both come from config, and re-applying clears what config no
 longer lists."""
 
-from tradebot.backfill import universe
+from reg30_radar.backfill import universe
 
 
 def _seed(conn):

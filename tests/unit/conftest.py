@@ -22,7 +22,7 @@ def scratch_conn():
     try:
         import psycopg
 
-        from tradebot.common.config import env
+        from reg30_radar.common.config import env
         url = env("BACKFILL_DATABASE_URL", required=False)
         if not url or url == "CHANGEME":
             pytest.skip("BACKFILL_DATABASE_URL not set")
@@ -50,7 +50,7 @@ def nse_guard_for_tests(tmp_path_factory, monkeypatch):
     """Every test gets its own NSE guard: a lock file in a temporary directory of its own
     (not the test's tmp_path, which some tests inspect) and a sleep that returns at once, so
     no test ever waits on pacing or touches data/nse.lock."""
-    from tradebot.common import nse_guard
+    from reg30_radar.common import nse_guard
 
     lock = tmp_path_factory.mktemp("nse_guard") / "nse.lock"
     guard = nse_guard.NseGuard(lock, sleep=lambda seconds: None)

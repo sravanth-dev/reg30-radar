@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from tradebot.backfill import batch
-from tradebot.extractor.llm_extract import build_request
-from tradebot.llm.client import LlmClient, LlmRefused
+from reg30_radar.backfill import batch
+from reg30_radar.extractor.llm_extract import build_request
+from reg30_radar.llm.client import LlmClient, LlmRefused
 
 DOC = ("BEL has received orders worth Rs. 572 Crore from Cochin Shipyard for supply of "
        "communication equipment.")

@@ -52,12 +52,12 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       54,081 placebos: 5.75% raw, 4.43% robust, MDE(median, n=30) 2.50%; ordinary-day
       median excess -0.44% (`reports/power_analysis_2026-10-20.md`). 448 tests pass
 
-- [x] Step 1.8: `tradebot.live` + `tradebot.catchup` built (commit `388075b`), migration
+- [x] Step 1.8: `reg30_radar.live` + `reg30_radar.catchup` built (commit `388075b`), migration
       0018 on both DBs, order-path retries fixed. 461 tests pass. Catch-up 1-20 Oct:
       7,806 new filings, no failed or flagged day
 
 ## In progress (running unattended)
-- [ ] **`python -m tradebot.live` is running detached** (started 22:30, python PID 8316,
+- [ ] **`python -m reg30_radar.live` is running detached** (started 22:30, python PID 8316,
       log `data/live.log`, holds `data/nse.lock`). It is draining the catch-up backlog: 1,894
       in-scope PDFs at 6 per cycle (about 2 days at the off-window pace). It needs no input.
       It stops by itself on 5 NSE failures in a row (exit 3) or a calendar problem (exit 2);
@@ -86,13 +86,13 @@ Decisions from the gate (ARCHITECTURE D28-D32):
 .venv\Scripts\Activate.ps1
 git status; git log --oneline -5          # what landed last
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Select ProcessId, CommandLine   # anything running?
-python -m tradebot.backfill status       # backfill counters
+python -m reg30_radar.backfill status       # backfill counters
 python -m pytest -q                      # must be green before any commit
-python -m tradebot.common.backup         # before any stage that writes to a database
+python -m reg30_radar.common.backup         # before any stage that writes to a database
 # live runner: is it up? restart it if it exited
 Get-Content data\live.log -Tail 20
-Start-Process cmd.exe -ArgumentList '/c','.venv\Scripts\python.exe -m tradebot.live 2>> data\live.log' -WindowStyle Hidden
-python -m tradebot.backfill batch-collect   # once the 20 Oct batch is done
+Start-Process cmd.exe -ArgumentList '/c','.venv\Scripts\python.exe -m reg30_radar.live 2>> data\live.log' -WindowStyle Hidden
+python -m reg30_radar.backfill batch-collect   # once the 20 Oct batch is done
 ```
 Rule: never start an NSE-talking command while another one is running.
 

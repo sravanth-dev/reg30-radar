@@ -1,6 +1,6 @@
 # Labelled order set — how to fill one in
 
-Ground truth for the Spike D bake-off and later `python -m tradebot.eval`. Ten PDFs gate
+Ground truth for the Spike D bake-off and later `python -m reg30_radar.eval`. Ten PDFs gate
 Spike D; about fifty eventually feed the eval set.
 
 One pair per filing, sharing a stem:

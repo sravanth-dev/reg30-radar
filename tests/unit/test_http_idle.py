@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.collector import nse
-from tradebot.common.http import close_if_idle
-from tradebot.documents.fetch import PdfFetcher
+from reg30_radar.collector import nse
+from reg30_radar.common.http import close_if_idle
+from reg30_radar.documents.fetch import PdfFetcher
 
 
 class Clock:

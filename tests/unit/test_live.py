@@ -1,16 +1,16 @@
-"""tradebot.live (D30) and tradebot.catchup, offline: no NSE, no database, no model."""
+"""reg30_radar.live (D30) and reg30_radar.catchup, offline: no NSE, no database, no model."""
 
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 import pytest
 
-from tradebot.catchup import __main__ as catchup
-from tradebot.collector import nse
-from tradebot.common import calendar as cal
-from tradebot.common.calendar import IST
-from tradebot.live import __main__ as live
-from tradebot.orders.run import Summary
+from reg30_radar.catchup import __main__ as catchup
+from reg30_radar.collector import nse
+from reg30_radar.common import calendar as cal
+from reg30_radar.common.calendar import IST
+from reg30_radar.live import __main__ as live
+from reg30_radar.orders.run import Summary
 
 CAL = cal.load(2026)
 WEDNESDAY = datetime(2026, 10, 21, 11, 0, tzinfo=IST)    # a trading day, in the 60 s band (20 Oct is Dussehra)
@@ -71,11 +71,11 @@ def test_one_cycle_polls_then_runs_orders_on_a_budget(monkeypatch):
     monkeypatch.setattr(live, "connect", fake_connect)
     monkeypatch.setattr(live.store, "known_hashes", lambda conn, source: set())
     monkeypatch.setattr(live.collector, "poll_once", fake_poll)
-    import tradebot.orders.__main__ as orders_main
+    import reg30_radar.orders.__main__ as orders_main
     monkeypatch.setattr(orders_main, "follow_cycle", fake_follow)
-    import tradebot.documents.fetch as fetch
+    import reg30_radar.documents.fetch as fetch
     monkeypatch.setattr(fetch, "PdfFetcher", lambda: None)
-    import tradebot.llm.client as llm_client
+    import reg30_radar.llm.client as llm_client
     monkeypatch.setattr(llm_client, "LlmClient", lambda conn: None)
     monkeypatch.setattr(nse, "NseClient", lambda: None)
 

@@ -5,8 +5,8 @@ contamination and make the study look cleaner than it is."""
 
 from datetime import datetime, timezone
 
-from tradebot.backfill import study_data
-from tradebot.common.calendar import IST
+from reg30_radar.backfill import study_data
+from reg30_radar.common.calendar import IST
 
 ISIN = "INE000T01010"
 EVENT_TS = datetime(2026, 1, 15, 11, 0, tzinfo=IST)
@@ -90,7 +90,7 @@ def test_prices_follow_a_reissued_isin_and_the_switch_is_a_capital_action(scratc
     # The rights entitlement (security type 20) must never be mixed in.
     from datetime import date
     from decimal import Decimal
-    from tradebot.backfill.event_study import NEW_ISIN
+    from reg30_radar.backfill.event_study import NEW_ISIN
 
     c = scratch_conn
     rows = [("2025-10-30", "INE258A01016", "4400.00", None),

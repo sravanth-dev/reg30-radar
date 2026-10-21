@@ -10,10 +10,10 @@ import shutil
 from decimal import Decimal
 from pathlib import Path
 
-from tradebot.backfill import vision_check
-from tradebot.documents.fetch import Fetched
-from tradebot.extractor import part_c
-from tradebot.llm.client import LlmRefused
+from reg30_radar.backfill import vision_check
+from reg30_radar.documents.fetch import Fetched
+from reg30_radar.extractor import part_c
+from reg30_radar.llm.client import LlmRefused
 
 CR = Decimal(10) ** 7
 PAGE1 = "Letter to the exchange about an order received."

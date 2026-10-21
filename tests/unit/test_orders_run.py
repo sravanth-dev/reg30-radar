@@ -22,11 +22,11 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.documents.pipeline import Outcome
-from tradebot.documents.text import extract as real_extract
-from tradebot.orders import store as orders_store
-from tradebot.orders.run import Summary, process_pending
-from tradebot.llm.client import LlmResult
+from reg30_radar.documents.pipeline import Outcome
+from reg30_radar.documents.text import extract as real_extract
+from reg30_radar.orders import store as orders_store
+from reg30_radar.orders.run import Summary, process_pending
+from reg30_radar.llm.client import LlmResult
 
 HMT = Path(__file__).resolve().parents[1] / "fixtures" / "scans" / "hmt_glyphless.pdf"
 LABELLED = Path(__file__).resolve().parents[1] / "labelled"
@@ -609,7 +609,7 @@ class FailingLlmClient(CountingLlmClient):
     """The provider is down: every extraction call fails the way `LlmClient` reports it."""
 
     def extract_json(self, document_text, **kw):
-        from tradebot.llm.client import LlmProviderError
+        from reg30_radar.llm.client import LlmProviderError
         self.extract_calls += 1
         raise LlmProviderError("APIConnectionError: Connection error.")
 

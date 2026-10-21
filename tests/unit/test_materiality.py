@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from tradebot.calculator.materiality import compute, execution_months
+from reg30_radar.calculator.materiality import compute, execution_months
 
 CR = Decimal(10) ** 7
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from tradebot.documents.ocr import maybe_transcribe
-from tradebot.llm.client import LlmClient, LlmRefused
+from reg30_radar.documents.ocr import maybe_transcribe
+from reg30_radar.llm.client import LlmClient, LlmRefused
 
 
 class RefusingClient:

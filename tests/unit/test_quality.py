@@ -13,7 +13,7 @@ from pathlib import Path
 import pdfplumber
 import pytest
 
-from tradebot.documents import quality
+from reg30_radar.documents import quality
 
 LABELLED = Path(__file__).resolve().parents[1] / "labelled"
 HMT = Path(__file__).resolve().parents[1] / "fixtures" / "scans" / "hmt_glyphless.pdf"

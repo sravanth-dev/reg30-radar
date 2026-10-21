@@ -39,4 +39,4 @@ RUN useradd --create-home --uid 10001 tradebot \
     && chown tradebot:tradebot /app/data
 USER tradebot
 
-CMD ["python", "-m", "tradebot.collector"]
+CMD ["python", "-m", "reg30_radar.collector"]

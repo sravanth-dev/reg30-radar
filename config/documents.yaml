@@ -10,7 +10,7 @@ ocr:
   # The per-document page cap lives in config/llm.yaml (ocr_max_pages_per_document),
   # next to the other spend guards, not here.
 
-# src/tradebot/orders/ (ARCHITECTURE.md §5.4-§5.6): the order-relevance gate, extraction
+# src/reg30_radar/orders/ (ARCHITECTURE.md §5.4-§5.6): the order-relevance gate, extraction
 # and the live `--follow` worker. The bounded-retry constants (MAX_ATTEMPTS, RETRY_DELAY)
 # live as calibrated constants in orders/store.py, same reasoning as the quality
 # thresholds above; this is only the live worker's polling cadence, which is genuinely
@@ -22,7 +22,7 @@ orders:
                                   # too, even though this polls our own database, not NSE)
   follow_lookback_days: 3        # --follow reads only filings first seen this recently, so
                                   # a cycle's cost stays flat as the table grows
-  # python -m tradebot.live (D30): the order pipeline runs inside the poll loop, so each
+  # python -m reg30_radar.live (D30): the order pipeline runs inside the poll loop, so each
   # cycle has a budget and the next poll is never late.
   live_filings_per_cycle: 6      # at most this many filings (downloads) per cycle
   live_poll_margin_seconds: 20   # no filing is started this close to the next poll

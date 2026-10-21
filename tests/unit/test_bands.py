@@ -4,7 +4,7 @@ reconstruction tests run on real SQL (scratch schema)."""
 
 from datetime import date
 
-from tradebot.market.bands import parse_band_changes, parse_sec_list, reconstruct
+from reg30_radar.market.bands import parse_band_changes, parse_sec_list, reconstruct
 
 SEC_LIST = (
     "Symbol,Series,Security Name,Band,Remarks\n"

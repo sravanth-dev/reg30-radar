@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tradebot.sheets import sync
-from tradebot.sheets.client import SheetsClient, _col_letter
-from tradebot.sheets.rows import HEADER, to_sheet_row
+from reg30_radar.sheets import sync
+from reg30_radar.sheets.client import SheetsClient, _col_letter
+from reg30_radar.sheets.rows import HEADER, to_sheet_row
 
 UTC = ZoneInfo("UTC")
 IST = ZoneInfo("Asia/Kolkata")

@@ -1,5 +1,5 @@
 [project]
-name = "tradebot"
+name = "reg30-radar"
 version = "0.1.0"
 description = "Phase 1: NSE/BSE announcements to order signals. Places no trades."
 requires-python = ">=3.14"
@@ -32,7 +32,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# src layout: tests import tradebot without requiring an editable install first, so the
+# src layout: tests import reg30_radar without requiring an editable install first, so the
 # test harness can be verified before the dependency set is proven on this Python.
 pythonpath = ["src"]
 # Plain `pytest` must never touch the network. `pytest -m live` overrides this, because a

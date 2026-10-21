@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from tradebot.common.health import is_fresh
+from reg30_radar.common.health import is_fresh
 
 NOW = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
 LIMIT = timedelta(minutes=30)

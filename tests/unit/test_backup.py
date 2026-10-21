@@ -4,7 +4,7 @@ where any process list would show it."""
 
 from pathlib import Path
 
-from tradebot.common.backup import build_command, prune
+from reg30_radar.common.backup import build_command, prune
 
 # Built from parts so no credential-shaped string sits in the repo for a secret scan to flag.
 FAKE_PW = "not-a-real-password"

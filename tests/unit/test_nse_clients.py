@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.collector import nse
-from tradebot.common import nse_guard
-from tradebot.common.nse_guard import NseHardStop, NseStructureChanged
-from tradebot.documents.fetch import PdfFetcher
-from tradebot.market.fetch import ArchiveFetcher
+from reg30_radar.collector import nse
+from reg30_radar.common import nse_guard
+from reg30_radar.common.nse_guard import NseHardStop, NseStructureChanged
+from reg30_radar.documents.fetch import PdfFetcher
+from reg30_radar.market.fetch import ArchiveFetcher
 
 ROW = {"symbol": "BEL", "an_dt": "18-Sep-2026 10:17:50", "desc": "Press Release",
        "seq_id": "1", "sm_isin": "INE263A01024", "attchmntFile": "https://x/a.pdf",

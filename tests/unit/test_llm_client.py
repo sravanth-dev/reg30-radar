@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tradebot.llm.client import LlmClient, LlmRefused
+from reg30_radar.llm.client import LlmClient, LlmRefused
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-png-bytes-for-a-test"
 
@@ -113,7 +113,7 @@ def test_missing_api_key_refuses(monkeypatch):
     # turns "missing key" into a genuine authenticated call to OpenAI. Caught by this exact
     # test making a real network call once a real key was added - see WORKLOG. Patching
     # env() itself is what actually makes this deterministic, independent of .env's content.
-    import tradebot.llm.client as client_module
+    import reg30_radar.llm.client as client_module
     monkeypatch.setattr(client_module, "env", lambda name, required=True: None)
     client = LlmClient(conn=FakeConn(), config=ACTIVE_CONFIG)   # no api_key injected
     with pytest.raises(LlmRefused, match="OPENAI_API_KEY"):
@@ -169,7 +169,7 @@ def test_document_text_never_alters_the_prompt():
                         api_key="sk-test")
     client.transcribe_image(PNG_BYTES, prompt_version="ocr_transcribe_v1")
 
-    from tradebot.common.config import ROOT
+    from reg30_radar.common.config import ROOT
     expected = (ROOT / "prompts" / "ocr_transcribe_v1.md").read_text(encoding="utf-8")
     system_message = fake_openai.calls[0]["messages"][0]
     assert system_message["role"] == "system"
@@ -189,7 +189,7 @@ def test_a_failed_call_is_logged_as_an_error_and_reraised():
                         api_key="sk-test")
     # Re-raised as the one provider-failure type callers wait on (pending_llm), with the
     # original kept as the cause (GATE 1 audit, 20 Oct 2026).
-    from tradebot.llm.client import LlmProviderError
+    from reg30_radar.llm.client import LlmProviderError
     with pytest.raises(LlmProviderError, match="boom") as raised:
         client.transcribe_image(PNG_BYTES, prompt_version="ocr_transcribe_v1")
     assert isinstance(raised.value.__cause__, RuntimeError)

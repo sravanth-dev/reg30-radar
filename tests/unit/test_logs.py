@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from tradebot.common import logs
+from reg30_radar.common import logs
 
 
 def test_log_time_is_ist_even_when_the_record_time_is_utc_midnight():

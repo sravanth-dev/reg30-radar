@@ -35,7 +35,7 @@ blocked is in WORKLOG.md. Read it before starting work in a new session.
 
 ## LLM rules
 
-- Every LLM call goes through `src/tradebot/llm/client.py` (OpenAI SDK). Nothing else calls a provider.
+- Every LLM call goes through `src/reg30_radar/llm/client.py` (OpenAI SDK). Nothing else calls a provider.
 - Routing: T0 code first, then the T1 cheap model, then the T2 stronger model **only** on the escalation triggers in ARCHITECTURE.md §6. Never route or accept an answer because of a model's self-reported confidence.
 - Model IDs, prices and spend caps come from `config/llm.yaml`; prompts from `prompts/<task>_v<N>.md`. Changing a prompt means a new file and a new version.
 - Respect the spend caps. At a cap, items wait as `pending_llm`. Never retry in a loop.
@@ -74,43 +74,43 @@ pip install -e ".[dev]"
 # tests
 pytest                                  # unit + fixture tests, no network
 pytest -m live                          # hits real exchange sites; run sparingly
-python -m tradebot.eval                 # labelled-set accuracy: T0 bare and as gated
-python -m tradebot.eval --stored        # the full chain's stored answers, by SHA-256; no LLM
-python -m tradebot.backfill.placebo     # σ from placebo dates -> reports/power_analysis_<date>.md
+python -m reg30_radar.eval                 # labelled-set accuracy: T0 bare and as gated
+python -m reg30_radar.eval --stored        # the full chain's stored answers, by SHA-256; no LLM
+python -m reg30_radar.backfill.placebo     # σ from placebo dates -> reports/power_analysis_<date>.md
 
 # database
-python -m tradebot.common.migrate       # apply migrations/*.sql in order
+python -m reg30_radar.common.migrate       # apply migrations/*.sql in order
 
 # run locally: ONE live process (D30), poll + order pipeline in one loop, under the NSE lock
-python -m tradebot.catchup              # after downtime: one request per day since the last poll
-python -m tradebot.live                 # then this; --once for one cycle. Exit 2: holidays file
+python -m reg30_radar.catchup              # after downtime: one request per day since the last poll
+python -m reg30_radar.live                 # then this; --once for one cycle. Exit 2: holidays file
                                         # missing; exit 3: 5 NSE failures in a row
 
 # backfill (laptop only, over the phone hotspot, D19; writes BACKFILL_DATABASE_URL only)
-python -m tradebot.common.migrate --backfill
-python -m tradebot.market --from 2025-03-01 --to 2026-09-26   # bhavcopies + PR bundles
-python -m tradebot.backfill status     # then, in order: universe, expected, announcements,
+python -m reg30_radar.common.migrate --backfill
+python -m reg30_radar.market --from 2025-03-01 --to 2026-09-26   # bhavcopies + PR bundles
+python -m reg30_radar.backfill status     # then, in order: universe, expected, announcements,
                                        # reconcile, documents, batch-submit, batch-collect,
                                        # events, revenue, calculate, recheck-submit,
                                        # recheck-collect, study (see backfill/__main__.py)
 
 # order extraction: gate + T0 parser + LLM fallback, only for order-related filings (§5.4-5.6)
-python -m tradebot.orders --date 2026-09-23                     # one already-scraped day
-python -m tradebot.orders --from 2026-09-20 --to 2026-09-24      # a date range
-python -m tradebot.orders --follow                               # retired by D30: use tradebot.live
+python -m reg30_radar.orders --date 2026-09-23                     # one already-scraped day
+python -m reg30_radar.orders --from 2026-09-20 --to 2026-09-24      # a date range
+python -m reg30_radar.orders --follow                               # retired by D30: use reg30_radar.live
 
 # browse raw_announcements + order_extractions as a Google Sheet, view-only (D11, v1.2/v1.5)
-python -m tradebot.sheets --once        # one sync of both tabs, then exit
-python -m tradebot.sheets --rebuild     # clear the raw tab and resync it; then as above
-python -m tradebot.sheets               # run continuously, every 5 min
+python -m reg30_radar.sheets --once        # one sync of both tabs, then exit
+python -m reg30_radar.sheets --rebuild     # clear the raw tab and resync it; then as above
+python -m reg30_radar.sheets               # run continuously, every 5 min
 
 # health: exit 1 if the collector has had no successful poll in 30 minutes
-python -m tradebot.common.health
+python -m reg30_radar.common.health
 
 # containers (README.md; the VPS is gone, D28). Services: live, sheets; catchup/backup under --profile ops
 docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.local-db.yml up -d --build
 docker compose logs -f live
-python -m tradebot.common.backup        # laptop: pg_dump of both databases into backups/
+python -m reg30_radar.common.backup        # laptop: pg_dump of both databases into backups/
 ```
 
 ## Definition of done (every slice)

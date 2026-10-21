@@ -11,8 +11,8 @@ from decimal import Decimal
 
 import pytest
 
-from tradebot.extractor.provenance import verify
-from tradebot.units.money import has_currency_marker, is_suspect, parse_money
+from reg30_radar.extractor.provenance import verify
+from reg30_radar.units.money import has_currency_marker, is_suspect, parse_money
 
 CRORE = Decimal(10) ** 7
 

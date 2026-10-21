@@ -26,7 +26,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from tradebot.common.config import nse  # noqa: E402
+from reg30_radar.common.config import nse  # noqa: E402
 
 OUT = ROOT / "spikes" / "out" / "spike_c2"
 BUDGET_FILE = OUT / "budget.json"

@@ -7,7 +7,7 @@ failing file undid every migration the run had already printed as applied."""
 
 import pytest
 
-from tradebot.common import migrate
+from reg30_radar.common import migrate
 
 
 def test_a_failing_migration_leaves_the_earlier_ones_applied(scratch_conn, tmp_path):

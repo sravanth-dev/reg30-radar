@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from tradebot.revenue.ttm import Period, ttm_as_of
+from reg30_radar.revenue.ttm import Period, ttm_as_of
 
 
 def filed(y, m, d):
@@ -95,7 +95,7 @@ def test_a_non_positive_q4_is_never_used():
 
 
 def test_a_year_whose_quarters_do_not_add_up_is_reported_not_changed():
-    from tradebot.revenue.ttm import fy_mismatches
+    from reg30_radar.revenue.ttm import fy_mismatches
     good = [q(date(2025, 6, 30), 100, filed(2025, 8, 1)), q(date(2025, 9, 30), 100, filed(2025, 11, 1)),
             q(date(2025, 12, 31), 100, filed(2026, 2, 1)), q(date(2026, 3, 31), 100, filed(2026, 5, 1)),
             q(date(2026, 3, 31), 401, filed(2026, 5, 1), months=12)]

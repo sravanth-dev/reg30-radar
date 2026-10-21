@@ -1,5 +1,5 @@
 # The Google Sheets mirror of raw_announcements and order_extractions - browsing only,
-# never a source of truth. Postgres stays the master copy; `python -m tradebot.sheets
+# never a source of truth. Postgres stays the master copy; `python -m reg30_radar.sheets
 # --rebuild` regenerates the raw tab from it at any time (the orders tab is rewritten
 # whole every cycle regardless - see sheets/orders.py). See WORKLOG.md, 23 Sep 2026
 # (night) and 25 Sep 2026 (later) for why these exist, and ARCHITECTURE.md Sect.9 for the
@@ -7,7 +7,7 @@
 #
 # Credentials are NOT here: the service-account key path and the spreadsheet ID are
 # machine-local, not shared config, so they go in .env and are read through
-# tradebot.common.config.env() (CLAUDE.md D13).
+# reg30_radar.common.config.env() (CLAUDE.md D13).
 
 sheets:
   api_base: https://sheets.googleapis.com/v4/spreadsheets

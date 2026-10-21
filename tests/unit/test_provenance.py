@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from tradebot.extractor.provenance import verify
+from reg30_radar.extractor.provenance import verify
 
 DOC = (
     "Sub: Bagging of orders.\n"

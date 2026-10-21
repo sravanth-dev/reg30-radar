@@ -2,7 +2,7 @@
 amendment. BDL's new ₹810.79 crore order was labelled "amendment" because every filing
 cites "Regulation 30 of SEBI (LODR) Regulations, 2015, (as amended)" (WORKLOG, 24 Sep)."""
 
-from tradebot.extractor.annexure import parse_stage
+from reg30_radar.extractor.annexure import parse_stage
 
 BDL = (
     "Subject: Receipt of orders- Reg.\n"

@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from tradebot.extractor.llm_extract import ORDER_FIELDS_SCHEMA, extract_order_fields
-from tradebot.llm.client import LlmRefused, LlmResult
+from reg30_radar.extractor.llm_extract import ORDER_FIELDS_SCHEMA, extract_order_fields
+from reg30_radar.llm.client import LlmRefused, LlmResult
 
 DOC = (
     "We wish to inform that the Company has received a work order worth Rs. 13.51 Crs "

@@ -96,7 +96,7 @@ def test_ordinary_dividend_is_tagged_but_kept():
 
 
 def should_exclude(corp_ind: str | None) -> bool:
-    """§5.11's rule, kept here until `src/tradebot/market/` exists to hold it.
+    """§5.11's rule, kept here until `src/reg30_radar/market/` exists to hold it.
 
     Move it there in Slice 7 and import it back, rather than letting two copies drift.
     """

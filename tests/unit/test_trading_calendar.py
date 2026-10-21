@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tradebot.common import calendar as cal
+from reg30_radar.common import calendar as cal
 
 IST = ZoneInfo("Asia/Kolkata")
 CAL = cal.load(2026)

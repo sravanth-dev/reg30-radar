@@ -7,13 +7,13 @@ dependency set has been proven on this Python version (Slice 0, Step 1).
 import tomllib
 from pathlib import Path
 
-import tradebot
+import reg30_radar
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_package_imports():
-    assert tradebot.__version__
+    assert reg30_radar.__version__
 
 
 def test_layout_matches_architecture():

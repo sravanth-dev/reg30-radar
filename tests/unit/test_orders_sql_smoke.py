@@ -16,13 +16,13 @@ from datetime import date
 
 import pytest
 
-from tradebot.orders import report, run as run_mod
+from reg30_radar.orders import report, run as run_mod
 
 
 @pytest.fixture
 def conn():
     try:
-        from tradebot.common.db import connect
+        from reg30_radar.common.db import connect
     except Exception as exc:
         pytest.skip(f"cannot import db module: {exc}")
     try:

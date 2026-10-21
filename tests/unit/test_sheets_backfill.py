@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from tradebot.sheets import backfill
+from reg30_radar.sheets import backfill
 from tests.unit.test_sheets_orders import _FakeCursor, _FakeSheet
 
 CR = Decimal(10) ** 7
@@ -57,7 +57,7 @@ def test_sync_skips_the_write_when_nothing_changed():
 
 
 def test_clear_from_clears_whole_rows_and_skips_below_the_grid(monkeypatch):
-    from tradebot.sheets.client import SheetsClient
+    from reg30_radar.sheets.client import SheetsClient
     from tests.unit.test_sheets_orders import _FakeHttpSession
     s = _FakeHttpSession()
     c = SheetsClient(session=s, spreadsheet_id="x", tab_name="backfill_events", api_base="https://h")

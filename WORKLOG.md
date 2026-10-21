@@ -47,17 +47,17 @@ picks hosting. Decisions from the gate (ARCHITECTURE D28-D32):
 
 **Live database** (`tradebot`): the collector last polled on **1 Oct 09:31**. The
 `first_seen_at` hole since then is permanent. Live restarts only through the planned
-`python -m tradebot.live` (D30).
+`python -m reg30_radar.live` (D30).
 
 **Spend:** backfill $0.45 of $3, live $0.11 (OpenAI).
 
-**Backups:** `python -m tradebot.common.backup` (first run 20 Oct). There is no
+**Backups:** `python -m reg30_radar.common.backup` (first run 20 Oct). There is no
 off-machine copy until rclone is installed.
 
 **Live order ratios are deferred until after the verdict** (Sravanth, 4 Oct). The live
 database holds no revenue or market caps.
 
-**Side tool, not a pipeline slice.** `python -m tradebot.sheets` mirrors
+**Side tool, not a pipeline slice.** `python -m reg30_radar.sheets` mirrors
 `raw_announcements` and `order_extractions` into two tabs of one Google Sheet, view-only.
 It talks only to Google, not NSE.
 

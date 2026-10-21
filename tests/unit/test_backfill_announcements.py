@@ -4,8 +4,8 @@ No network, no database."""
 import json
 from datetime import date
 
-from tradebot.backfill import announcements as ann
-from tradebot.collector import nse
+from reg30_radar.backfill import announcements as ann
+from reg30_radar.collector import nse
 
 ISIN = "INE263A01024"   # BEL
 

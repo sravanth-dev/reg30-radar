@@ -5,7 +5,7 @@ it. The design and its reasons live in [ARCHITECTURE.md](ARCHITECTURE.md) (the s
 [WORKLOG.md](WORKLOG.md) (the history); this file only points at them. If an entry here
 disagrees with the code, the code is right and this entry is out of date.
 
-Every folder under `src/tradebot/` has an `__init__.py`, which only marks the folder as a
+Every folder under `src/reg30_radar/` has an `__init__.py`, which only marks the folder as a
 Python package. All are empty except the top-level one, which carries a one-line
 description ("nothing in this package places trades"). The `.gitkeep` files in
 `migrations/`, `prompts/`, `reports/`, `spikes/`, `tests/labelled/` and `tests/live/` are
@@ -92,7 +92,7 @@ empty too; they exist so git keeps a folder before it has real files.
 
 ## migrations/ — the database schema, one numbered change at a time
 
-`python -m tradebot.common.migrate` (add `--backfill` for the laptop's backfill database)
+`python -m reg30_radar.common.migrate` (add `--backfill` for the laptop's backfill database)
 applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 - **`0001_init.sql`** — The collector's tables. `raw_announcements` is append-only (a
@@ -161,19 +161,19 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 
 ---
 
-## src/tradebot/live/ and catchup/ — the one live process (D30)
+## src/reg30_radar/live/ and catchup/ — the one live process (D30)
 
-- **`live/__main__.py`** — `python -m tradebot.live`: polls on D6's schedule, then runs the
+- **`live/__main__.py`** — `python -m reg30_radar.live`: polls on D6's schedule, then runs the
   order pipeline on a per-cycle budget, in one loop under the NSE lock. Stops on a missing
   holidays file (exit 2) or 5 NSE failures in a row (exit 3); warns on a stale poll and on
   next year's missing holidays file.
-- **`catchup/__main__.py`** — `python -m tradebot.catchup`: one date-range request per day
+- **`catchup/__main__.py`** — `python -m reg30_radar.catchup`: one date-range request per day
   since the last successful poll, rows marked `catchup`, a health row per request, and
   suspect answers flagged. Collection only; `live` drains the backlog.
 
-## src/tradebot/collector/ — live NSE announcements
+## src/reg30_radar/collector/ — live NSE announcements
 
-- **`__main__.py`** — The live collector (`python -m tradebot.collector`, `--once`, or
+- **`__main__.py`** — The live collector (`python -m reg30_radar.collector`, `--once`, or
   `--catchup --from --to`). It polls the announcements endpoint on D6's schedule, stores
   new filings and one `source_health` row per poll, and checks the holiday calendar. When a
   poll's 20-row page is entirely new, it runs one date-range query to recover filings that
@@ -188,7 +188,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`store.py`** — Writes filings to `raw_announcements` with insert-only SQL (a changed
   payload becomes a new revision row) and records each poll in `source_health`.
 
-## src/tradebot/common/ — shared plumbing
+## src/reg30_radar/common/ — shared plumbing
 
 - **`config.py`** — The only place configuration is read. It loads `config/*.yaml` and
   `.env`, and gives helpers for the database URLs and the NSE, LLM, Sheets and category
@@ -197,7 +197,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   database. No ORM, no connection pool.
 - **`migrate.py`** — Applies `migrations/*.sql` in filename order, skipping any already
   recorded in `schema_migrations`. `--backfill` targets the laptop's backfill database.
-- **`backup.py`** — `python -m tradebot.common.backup`: pg_dump of both databases into `backups/`, newest 7 kept. The password goes to pg_dump through PGPASSWORD, never the command line.
+- **`backup.py`** — `python -m reg30_radar.common.backup`: pg_dump of both databases into `backups/`, newest 7 kept. The password goes to pg_dump through PGPASSWORD, never the command line.
 - **`calendar.py`** — Decides whether a future date is a trading day from the hand-kept
   holiday file, and which polling band applies at a given IST time. It raises rather than
   guessing when the file is missing or out of range.
@@ -215,14 +215,14 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`logs.py`** — Sets up logging for the long-running commands, with timestamps always
   converted to IST whatever the machine's clock setting.
 
-## src/tradebot/router/
+## src/reg30_radar/router/
 
 - **`orders.py`** — The order-relevance gate. It maps a category to its bucket, applies the
   headline keyword filter (and a stricter body-text filter after download), and decides
   which filings are downloaded at all. `llm_allowed()` is the single check that lets a
   filing reach OCR or the LLM.
 
-## src/tradebot/documents/ — PDF to text
+## src/reg30_radar/documents/ — PDF to text
 
 - **`fetch.py`** — Downloads one PDF politely (shared session, pacing, idle connections
   closed first), streaming with a 25 MiB cap. It names the file by its SHA-256 and rejects
@@ -243,7 +243,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`store.py`** — SQL for the `documents` table: insert, look up by SHA-256, read text,
   mark the PDF deleted, and list documents that need review.
 
-## src/tradebot/extractor/ and units/ — reading the order value
+## src/reg30_radar/extractor/ and units/ — reading the order value
 
 - **`extractor/annexure.py`** — The deterministic parser (T0, no model). It finds the rows
   of the SEBI-format order table (consideration, awarding entity, execution period and so
@@ -267,16 +267,16 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   currencies are flagged, not converted. Each amount's currency is read beside the number
   itself. It also turns execution periods into months.
 
-## src/tradebot/llm/
+## src/reg30_radar/llm/
 
 - **`client.py`** — The only code that talks to OpenAI. It loads prompts by version,
   refuses when a cap is null or a price is missing, checks spend against the cap before
   each call, and logs every call's tokens and cost to `llm_calls`. It also submits and
   retrieves Batches for the backfill.
 
-## src/tradebot/orders/ — order extraction for live data
+## src/reg30_radar/orders/ — order extraction for live data
 
-- **`__main__.py`** — `python -m tradebot.orders` for one date, a date range, or
+- **`__main__.py`** — `python -m reg30_radar.orders` for one date, a date range, or
   `--follow` (a loop running beside the collector). It picks the filings, runs them
   through `run.py`, and writes the day's report.
 - **`run.py`** — The shared processing core. For each filing it classifies, records an
@@ -288,12 +288,12 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
 - **`report.py`** — Writes `reports/orders_<date>.md` and `.csv` from the database, listing
   that day's order-related filings and the totals.
 
-## src/tradebot/sheets/ — view-only Google Sheet
+## src/reg30_radar/sheets/ — view-only Google Sheet
 
 - **`backfill.py`** — The `backfill_events` tab: one row per backfill event (value, TTM,
   ratios, state) plus the latest study run's returns and exclusions, rewritten whole when
   anything changed. Skipped where there is no backfill database.
-- **`__main__.py`** — `python -m tradebot.sheets` (`--once`, `--rebuild`, or looping every
+- **`__main__.py`** — `python -m reg30_radar.sheets` (`--once`, `--rebuild`, or looping every
   5 minutes). It builds one authenticated session and syncs both tabs. It runs apart from
   the collector so a Sheets problem can never stop collection.
 - **`client.py`** — A thin wrapper over the Sheets REST API using google-auth's session:
@@ -307,9 +307,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   flags, status). It rewrites the whole tab, but only when a hash of the content has
   changed.
 
-## src/tradebot/market/ — NSE daily archives (backfill)
+## src/reg30_radar/market/ — NSE daily archives (backfill)
 
-- **`__main__.py`** — `python -m tradebot.market --from --to`. For each calendar day it
+- **`__main__.py`** — `python -m reg30_radar.market --from --to`. For each calendar day it
   fetches the UDiFF bhavcopy (a 404 means no trading that day), then the PR bundle, and
   stores both. It resumes day by day.
 - **`fetch.py`** — Downloads archive files from nsearchives with the polite session and a
@@ -324,7 +324,7 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   starts from NSE's current band list and undoes each day's published band changes,
   newest first. It includes its own loader for the change files.
 
-## src/tradebot/revenue/ — quarterly results
+## src/reg30_radar/revenue/ — quarterly results
 
 - **`load.py`** — For each event company, fetches both results listings (the old
   "Financial Results" one and the post-April-2025 "Integrated Filing" one), downloads the
@@ -337,15 +337,15 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   moment, one basis, four consecutive quarters, and Q4 = FY − 9M. It returns `None` rather
   than guessing.
 
-## src/tradebot/calculator/
+## src/reg30_radar/calculator/
 
 - **`materiality.py`** — Pure ratios for one order: value ÷ TTM revenue, the next 12
   months' share of the value ÷ TTM revenue, and value ÷ market cap. It also sets flags
   (manual review, suspect parse, missing data) and converts a completion month into months.
 
-## src/tradebot/backfill/ — 12 months of history, and the verdict
+## src/reg30_radar/backfill/ — 12 months of history, and the verdict
 
-- **`__main__.py`** — `python -m tradebot.backfill <stage>`. Each stage runs one pass
+- **`__main__.py`** — `python -m reg30_radar.backfill <stage>`. Each stage runs one pass
   against the backfill database: universe, expected, announcements, reconcile, documents,
   batch-submit/collect, rejudge, reparse, vision-check, events, revenue, calculate, recheck-submit/collect, study
   and status.
@@ -390,9 +390,9 @@ applies these in order. Each runs once and is recorded in `schema_migrations`.
   its four checks come first, then the sensitivity and exploratory cells, with every
   exclusion counted.
 
-## src/tradebot/eval/ and normalizer/
+## src/reg30_radar/eval/ and normalizer/
 
-- **`eval/__main__.py`** — `python -m tradebot.eval`: scores the T0 parser against the
+- **`eval/__main__.py`** — `python -m reg30_radar.eval`: scores the T0 parser against the
   hand-labelled JSONs. The headline metric is exact `value_inr`, where a correct null
   counts as correct.
 - **`normalizer/__init__.py`** — An empty placeholder for Slice 2's normalizer. That work
@@ -488,7 +488,7 @@ which is gitignored.
 - **18 pairs `<SYMBOL>_<date>_1.pdf` + `.json`** (AFFORDABLE, BEL, BEML, CEINSYS, CPL, DBL,
   GKENERGY, GPTINFRA, GREENPOWER, HECPROJECT, HEG, HILINFRA, MCLOUD, NEWGEN, RAILTEL,
   VIVIANA, WAAREEENER, ZAGGLE) — Real order filings and their expected answers.
-  `python -m tradebot.eval` scores against them, and many unit tests use the PDFs as real
+  `python -m reg30_radar.eval` scores against them, and many unit tests use the PDFs as real
   inputs. They are the one permanent exception to "delete PDFs after extraction" (D8).
 
 ## tests/live/
@@ -566,7 +566,7 @@ is not reachable. The rest use fakes.
   held to the same provenance check as the parser.
 - **`test_orders_run.py`** — The processing core with fakes: the gate, idempotency,
   retries, attempt markers and the gate audit.
-- **`test_orders_main.py`** — Command-line parsing for `python -m tradebot.orders`,
+- **`test_orders_main.py`** — Command-line parsing for `python -m reg30_radar.orders`,
   including the `--from/--to` bug.
 - **`test_orders_sql_smoke.py`** — Read-only runs of the real orders SQL against the local
   database.

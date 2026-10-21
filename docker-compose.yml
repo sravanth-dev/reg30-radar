@@ -7,7 +7,7 @@
 #
 #   docker compose up -d --build                        start or update live + sheets
 #   docker compose logs -f live                         follow it
-#   docker compose run --rm live python -m tradebot.common.migrate
+#   docker compose run --rm live python -m reg30_radar.common.migrate
 #   docker compose --profile ops run --rm catchup       after downtime, BEFORE `up` (one
 #                                                       NSE process at a time)
 #   docker compose --profile ops run --rm backup        one pg_dump into ./backups (D14)
@@ -44,7 +44,7 @@ x-app: &app
 services:
   live:
     <<: *app
-    command: ["python", "-m", "tradebot.live"]
+    command: ["python", "-m", "reg30_radar.live"]
     # pdfplumber holds a page's objects in memory; a PDF larger than
     # nse.documents.max_bytes is refused before it is parsed.
     mem_limit: ${TRADEBOT_LIVE_MEM:-512m}
@@ -52,7 +52,7 @@ services:
     healthcheck:
       # Healthy means a poll succeeded in the last 30 minutes (common/health.py), not
       # merely that the process is alive.
-      test: ["CMD", "python", "-m", "tradebot.common.health", "--max-age-minutes", "30"]
+      test: ["CMD", "python", "-m", "reg30_radar.common.health", "--max-age-minutes", "30"]
       interval: 5m
       timeout: 30s
       start_period: 2m
@@ -60,7 +60,7 @@ services:
 
   sheets:
     <<: *app
-    command: ["python", "-m", "tradebot.sheets"]
+    command: ["python", "-m", "reg30_radar.sheets"]
     mem_limit: ${TRADEBOT_SHEETS_MEM:-256m}
     cpus: ${TRADEBOT_SHEETS_CPUS:-0.25}
 
@@ -70,7 +70,7 @@ services:
     <<: *app
     profiles: ["ops"]
     restart: "no"
-    command: ["python", "-m", "tradebot.catchup"]
+    command: ["python", "-m", "reg30_radar.catchup"]
 
   # One pg_dump into ./backups (D14). The client major version must be at least the
   # server's.

@@ -4,7 +4,7 @@ the backfill database (conftest.py): `reparse` (T0 over stored text), flags kept
 
 from decimal import Decimal
 
-from tradebot.backfill import batch, events
+from reg30_radar.backfill import batch, events
 
 CR = Decimal(10) ** 7
 LEGEND = ("Name of the entity: Navy\nBroad consideration or size of the order(s)/contract(s)"

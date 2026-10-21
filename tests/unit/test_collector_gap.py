@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from tradebot.collector import __main__ as collector
-from tradebot.collector import nse
-from tradebot.collector.records import IST, payload_hash
+from reg30_radar.collector import __main__ as collector
+from reg30_radar.collector import nse
+from reg30_radar.collector.records import IST, payload_hash
 
 NOW = datetime(2026, 9, 26, 17, 5, tzinfo=IST)
 VIA: dict[str, str] = {}      # payload hash -> collected_via, as the fake insert saw it

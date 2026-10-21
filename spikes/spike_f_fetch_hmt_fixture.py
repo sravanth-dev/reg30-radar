@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tradebot.documents.fetch import PdfFetcher
+from reg30_radar.documents.fetch import PdfFetcher
 
 URL = "https://nsearchives.nseindia.com/corporate/HMT_22092026135910_TWC.pdf"
 DEST_DIR = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "scans"

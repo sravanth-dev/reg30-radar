@@ -8,7 +8,7 @@ genuine correction into a separate filing, or hides it entirely.
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from tradebot.collector.records import (
+from reg30_radar.collector.records import (
     IST, parse_ts, payload_hash, source_id, to_raw,
 )
 

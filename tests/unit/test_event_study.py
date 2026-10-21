@@ -6,10 +6,10 @@ moves them. Each test changes one thing and checks the one rule it exercises."""
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from tradebot.backfill.event_study import (
+from reg30_radar.backfill.event_study import (
     Bar, EventIn, Market, day0_of, measure, primary, verdict,
 )
-from tradebot.common.calendar import IST
+from reg30_radar.common.calendar import IST
 
 CR = Decimal(10) ** 7
 
@@ -213,7 +213,7 @@ def test_a_muhurat_day0_event_is_reported_apart_not_in_the_primary_cell():
 
 
 def test_the_report_states_the_undercount_coverage_and_what_dropped_out(tmp_path):
-    from tradebot.backfill import report
+    from reg30_radar.backfill import report
     rs = _both_halves(30, "0.02")
     rs[0].value_flags = ["lower_bound"]
     rs[1].ttm_basis = "standalone"

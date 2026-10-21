@@ -5,9 +5,9 @@ study_data.py, the §6 transitions, and that a report is written."""
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from tradebot.backfill import __main__ as backfill
-from tradebot.backfill import report
-from tradebot.common.calendar import IST
+from reg30_radar.backfill import __main__ as backfill
+from reg30_radar.backfill import report
+from reg30_radar.common.calendar import IST
 
 CR = Decimal(10) ** 7
 ISIN = "INE000T01010"

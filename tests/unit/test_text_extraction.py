@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.documents.text import extract
+from reg30_radar.documents.text import extract
 
 LABELLED = Path(__file__).resolve().parents[1] / "labelled"
 HMT = Path(__file__).resolve().parents[1] / "fixtures" / "scans" / "hmt_glyphless.pdf"

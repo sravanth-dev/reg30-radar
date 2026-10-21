@@ -181,20 +181,20 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1          # Linux/macOS: source .venv/bin/activate
 pip install -e ".[dev]"
 copy .env.example .env              # fill in DATABASE_URL and OPENAI_API_KEY
-python -m tradebot.common.migrate   # create the tables
+python -m reg30_radar.common.migrate   # create the tables
 python -m pytest -q                 # no network needed
 ```
 
 Day to day:
 
 ```powershell
-python -m tradebot.catchup          # after any downtime: fetch what was missed
-python -m tradebot.live             # poll NSE and read new order filings, until stopped
-python -m tradebot.sheets           # optional: mirror the data into a Google Sheet
-python -m tradebot.eval             # accuracy on the hand-labelled filings
+python -m reg30_radar.catchup          # after any downtime: fetch what was missed
+python -m reg30_radar.live             # poll NSE and read new order filings, until stopped
+python -m reg30_radar.sheets           # optional: mirror the data into a Google Sheet
+python -m reg30_radar.eval             # accuracy on the hand-labelled filings
 ```
 
-The historical study runs as stages, `python -m tradebot.backfill <stage>`, in the order
+The historical study runs as stages, `python -m reg30_radar.backfill <stage>`, in the order
 listed in `backfill/__main__.py`. With Docker:
 
 ```powershell
@@ -206,15 +206,15 @@ docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.lo
 
 | Folder | What's in it |
 |---|---|
-| `src/tradebot/collector`, `live`, `catchup` | Polling NSE and recovering after downtime |
-| `src/tradebot/router` | Filing category → bucket |
-| `src/tradebot/documents` | PDF download, per-page text extraction, OCR, deletion |
-| `src/tradebot/extractor`, `units` | Finding the order value and proving it; rupee conversion |
-| `src/tradebot/llm` | The single gateway to the LLM: caps, cost logging, batching |
-| `src/tradebot/revenue` | Quarterly results XBRL → point-in-time revenue |
-| `src/tradebot/market` | Daily price, market-cap and circuit-limit files |
-| `src/tradebot/backfill` | The 12-month run, the event study and the verdict |
-| `src/tradebot/sheets` | Optional read-only Google Sheets mirror |
+| `src/reg30_radar/collector`, `live`, `catchup` | Polling NSE and recovering after downtime |
+| `src/reg30_radar/router` | Filing category → bucket |
+| `src/reg30_radar/documents` | PDF download, per-page text extraction, OCR, deletion |
+| `src/reg30_radar/extractor`, `units` | Finding the order value and proving it; rupee conversion |
+| `src/reg30_radar/llm` | The single gateway to the LLM: caps, cost logging, batching |
+| `src/reg30_radar/revenue` | Quarterly results XBRL → point-in-time revenue |
+| `src/reg30_radar/market` | Daily price, market-cap and circuit-limit files |
+| `src/reg30_radar/backfill` | The 12-month run, the event study and the verdict |
+| `src/reg30_radar/sheets` | Optional read-only Google Sheets mirror |
 | `config/`, `prompts/`, `migrations/` | Settings, versioned LLM prompts, database schema |
 | `tests/` | Unit tests, real exchange files, hand-labelled filings |
 | `reports/` | Generated reports (power analysis, extraction baselines, results) |

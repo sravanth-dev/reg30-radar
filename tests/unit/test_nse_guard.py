@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from tradebot.common import nse_guard
-from tradebot.common.nse_guard import NseBusy, NseGuard, NseHardStop
+from reg30_radar.common import nse_guard
+from reg30_radar.common.nse_guard import NseBusy, NseGuard, NseHardStop
 
 
 class Clock:

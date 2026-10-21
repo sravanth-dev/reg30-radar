@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from tradebot.market.parse import (
+from reg30_radar.market.parse import (
     mcap_trade_date, parse_an, parse_bh, parse_mcap, parse_pd, parse_udiff, pr_members,
     udiff_csv_from_zip,
 )

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.backfill.reconcile import (
+from reg30_radar.backfill.reconcile import (
     ApiRecord,
     BundleEntry,
     Coverage,

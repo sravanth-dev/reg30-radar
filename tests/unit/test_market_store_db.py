@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.market import parse, store
+from reg30_radar.market import parse, store
 
 F = Path(__file__).resolve().parents[1] / "fixtures"
 DAY = date(2026, 9, 18)
@@ -19,7 +19,7 @@ def conn():
     try:
         import psycopg
 
-        from tradebot.common.config import env
+        from reg30_radar.common.config import env
         url = env("BACKFILL_DATABASE_URL", required=False)
         if not url or url == "CHANGEME":
             pytest.skip("BACKFILL_DATABASE_URL not set")
@@ -29,7 +29,7 @@ def conn():
     exists = c.execute("select to_regclass('public.prices') is not null").fetchone()[0]
     if not exists:
         c.close()
-        pytest.skip("backfill database not migrated (python -m tradebot.common.migrate --backfill)")
+        pytest.skip("backfill database not migrated (python -m reg30_radar.common.migrate --backfill)")
     with c.transaction(force_rollback=True):
         yield c
     c.close()
@@ -62,7 +62,7 @@ def test_a_day_round_trips_and_maps_every_file_to_isins(conn):
 
 
 def test_save_corp_ind_rewrites_only_the_flags(conn):
-    from tradebot.market.parse import CorpAction
+    from reg30_radar.market.parse import CorpAction
     conn.execute("delete from prices where trade_date = %s", (DAY,))
     conn.execute("insert into prices (trade_date, isin, symbol, series, close, corp_ind)"
                  " values (%s, 'INE1', 'KHADIM', 'BE', 200, null),"

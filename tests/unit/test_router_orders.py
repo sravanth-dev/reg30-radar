@@ -2,12 +2,12 @@
 
 `llm_allowed` is the one function this whole module protects - every test here is really
 asking "would this filing be allowed to reach an LLM or OCR call", because that is the
-question the rest of src/tradebot/orders/ is built never to answer on its own.
+question the rest of src/reg30_radar/orders/ is built never to answer on its own.
 """
 
 from __future__ import annotations
 
-from tradebot.router.orders import classify, in_scope, llm_allowed, refine_with_body
+from reg30_radar.router.orders import classify, in_scope, llm_allowed, refine_with_body
 
 
 def test_order_win_category_is_order_related():
@@ -111,7 +111,7 @@ def test_refine_with_body_never_applies_to_red_flag_or_order_win_buckets():
 
 # --- The full category map (approved 27 Sep 2026) ---
 
-from tradebot.router.orders import bucket_of  # noqa: E402
+from reg30_radar.router.orders import bucket_of  # noqa: E402
 
 
 def test_category_matching_ignores_case():

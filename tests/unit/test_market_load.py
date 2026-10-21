@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.common.config import nse as nse_config
-from tradebot.market import __main__ as market
-from tradebot.market.fetch import Archive
+from reg30_radar.common.config import nse as nse_config
+from reg30_radar.market import __main__ as market
+from reg30_radar.market.fetch import Archive
 
 F = Path(__file__).resolve().parents[1] / "fixtures"
 DAY = date(2026, 9, 18)

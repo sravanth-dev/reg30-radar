@@ -11,8 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tradebot.sheets import orders
-from tradebot.sheets.client import SheetsClient
+from reg30_radar.sheets import orders
+from reg30_radar.sheets.client import SheetsClient
 
 IST = ZoneInfo("Asia/Kolkata")
 

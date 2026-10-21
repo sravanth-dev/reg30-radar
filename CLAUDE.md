@@ -72,8 +72,8 @@ python -m venv .venv && source .venv/Scripts/activate
 pip install -e ".[dev]"
 
 # tests
-pytest                                  # unit + fixture tests, no network
-pytest -m live                          # hits real exchange sites; run sparingly
+pytest                                     # unit + fixture tests, no network
+pytest -m live                             # hits real exchange sites; run sparingly
 python -m reg30_radar.eval                 # labelled-set accuracy: T0 bare and as gated
 python -m reg30_radar.eval --stored        # the full chain's stored answers, by SHA-256; no LLM
 python -m reg30_radar.backfill.placebo     # σ from placebo dates -> reports/power_analysis_<date>.md
@@ -84,15 +84,15 @@ python -m reg30_radar.common.migrate       # apply migrations/*.sql in order
 # run locally: ONE live process (D30), poll + order pipeline in one loop, under the NSE lock
 python -m reg30_radar.catchup              # after downtime: one request per day since the last poll
 python -m reg30_radar.live                 # then this; --once for one cycle. Exit 2: holidays file
-                                        # missing; exit 3: 5 NSE failures in a row
+                                           # missing; exit 3: 5 NSE failures in a row
 
 # backfill (laptop only, over the phone hotspot, D19; writes BACKFILL_DATABASE_URL only)
 python -m reg30_radar.common.migrate --backfill
 python -m reg30_radar.market --from 2025-03-01 --to 2026-09-26   # bhavcopies + PR bundles
 python -m reg30_radar.backfill status     # then, in order: universe, expected, announcements,
-                                       # reconcile, documents, batch-submit, batch-collect,
-                                       # events, revenue, calculate, recheck-submit,
-                                       # recheck-collect, study (see backfill/__main__.py)
+                                          # reconcile, documents, batch-submit, batch-collect,
+                                          # events, revenue, calculate, recheck-submit,
+                                          # recheck-collect, study (see backfill/__main__.py)
 
 # order extraction: gate + T0 parser + LLM fallback, only for order-related filings (§5.4-5.6)
 python -m reg30_radar.orders --date 2026-09-23                     # one already-scraped day

@@ -175,23 +175,23 @@ results will be reported that way.
 Needs Python 3.14 and PostgreSQL 16.
 
 ```powershell
-git clone https://github.com/sravanth-dev/tradebot_NSE_order_scraper.git
-cd tradebot_NSE_order_scraper
+git clone https://github.com/sravanth-dev/reg30-radar.git
+cd reg30-radar
 python -m venv .venv
-.venv\Scripts\Activate.ps1          # Linux/macOS: source .venv/bin/activate
+.venv\Scripts\Activate.ps1             # Linux/macOS: source .venv/bin/activate
 pip install -e ".[dev]"
-copy .env.example .env              # fill in DATABASE_URL and OPENAI_API_KEY
+copy .env.example .env                 # fill in DATABASE_URL and OPENAI_API_KEY
 python -m reg30_radar.common.migrate   # create the tables
-python -m pytest -q                 # no network needed
+python -m pytest -q                    # no network needed
 ```
 
 Day to day:
 
 ```powershell
-python -m reg30_radar.catchup          # after any downtime: fetch what was missed
-python -m reg30_radar.live             # poll NSE and read new order filings, until stopped
-python -m reg30_radar.sheets           # optional: mirror the data into a Google Sheet
-python -m reg30_radar.eval             # accuracy on the hand-labelled filings
+python -m reg30_radar.catchup   # after any downtime: fetch what was missed
+python -m reg30_radar.live      # poll NSE and read new order filings, until stopped
+python -m reg30_radar.sheets    # optional: mirror the data into a Google Sheet
+python -m reg30_radar.eval      # accuracy on the hand-labelled filings
 ```
 
 The historical study runs as stages, `python -m reg30_radar.backfill <stage>`, in the order

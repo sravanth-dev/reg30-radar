@@ -16,7 +16,7 @@ the last session entry below.
 
 ## Current state
 
-*Last updated: 20 Oct 2026 (GATE 1). The live checklist is [STATUS.md](STATUS.md); the
+*Last updated: 21 Oct 2026, 06:30 IST. The live checklist is [STATUS.md](STATUS.md); the
 20 Oct snapshot with file:line evidence is [AUDIT.md](AUDIT.md).*
 
 **What this is.** Reg30 Radar Phase 1. Collect NSE corporate announcements (BSE dropped by
@@ -24,9 +24,15 @@ D26), classify them, extract order wins, measure order value against revenue and
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.
 
-**Where we are.** Sravanth's 20 Oct brief sets two gates. GATE 1 (audit) is passed; the
-plan he approved runs Phase 1 fixes, then the backfill to a verdict, then GATE 2, where he
-picks hosting. Decisions from the gate (ARCHITECTURE D28-D32):
+**Name.** Renamed from "tradebot" to **Reg30 Radar** on 21 Oct 2026 (D33): package
+`reg30_radar`, repo and Docker names `reg30-radar`, env prefix `REG30_RADAR_`. The GitHub
+repo is `github.com/sravanth-dev/reg30-radar`. The Postgres role and databases keep their
+old names, `tradebot` and `tradebot_backfill`.
+
+**Where we are.** Sravanth's 20 Oct brief sets two gates. GATE 1 (audit) is passed and
+the Phase 1 fixes are done (STATUS.md, Steps 1.1-1.8). The backfill is in its last stages,
+and the GATE 2 pieces are built (host-agnostic Compose, README); hosting is his call.
+Decisions from the gate (ARCHITECTURE D28-D32):
 - The VPS is cancelled.
 - The LLM stays on OpenAI under the existing caps.
 - Live collection restarts only as one process behind an NSE lock.
@@ -34,22 +40,23 @@ picks hosting. Decisions from the gate (ARCHITECTURE D28-D32):
 - "over ₹X" counts as a flagged lower bound.
 
 **Backfill database** (`tradebot_backfill`, laptop):
-- Universe (1,583 companies), announcements (162,251), market data (388 trading days to
-  25 Sep 2026), band history, reconcile (96.6%): all done.
-- Documents tier one (2,120) and Batch extraction (1,444 verified / 355 review / 13 owed a
-  retry): done.
-- `events`: 1,286, all `extracted`.
-- `revenue`: 223 of 231 companies.
-- **Not yet run:** `calculate`, `recheck`, `study`.
-- Defects found in verified values must be fixed and re-applied first (AUDIT §3): 20
-  values below ₹1 lakh from ranges and band legends, 22 with no currency marker, 42
-  vision-read values with no second read, and the Sep-2025 half-year defect in revenue.
+- Universe (1,583 companies), announcements (162,251), market data (397 trading days to
+  9 Oct 2026), band history, reconcile (96.6%): all done.
+- Documents tier one (2,120); 1,426 verified extractions, with the AUDIT §3 value defects
+  fixed and re-applied, and §5.5 Part C's second read done.
+- `revenue`: 228 of 231 companies (the other 3 only miss quarters NSE answers 404 for).
+- `events`: 1,281; `calculate`: 1,024 verified, 257 in the §6 recheck, which is out as a
+  Batch. 1,201 events have TTM.
+- **Still to run:** `recheck-collect`, HCC's one filing through Batch, `events`,
+  `calculate`, `study`, then RESULTS.md.
 
-**Live database** (`tradebot`): the collector last polled on **1 Oct 09:31**. The
-`first_seen_at` hole since then is permanent. Live restarts only through the planned
-`python -m reg30_radar.live` (D30).
+**Live database** (`tradebot`): `python -m reg30_radar.live` (D30) runs detached on the
+laptop with `sheets` beside it; its lookback is 6 h, so the 1-20 Oct catch-up rows are
+stored but not processed (Sravanth). The `first_seen_at` hole from 1 Oct 09:31 until the
+runner restarted on 20 Oct is permanent, and every stretch the laptop is off adds one
+(`catchup` recovers the filings, not their timing).
 
-**Spend:** backfill $0.45 of $3, live $0.11 (OpenAI).
+**Spend:** backfill $0.50 of $3 (OpenAI); live under its $1/month cap.
 
 **Backups:** `python -m reg30_radar.common.backup` (first run 20 Oct). There is no
 off-machine copy until rclone is installed.
@@ -58,8 +65,8 @@ off-machine copy until rclone is installed.
 database holds no revenue or market caps.
 
 **Side tool, not a pipeline slice.** `python -m reg30_radar.sheets` mirrors
-`raw_announcements` and `order_extractions` into two tabs of one Google Sheet, view-only.
-It talks only to Google, not NSE.
+`raw_announcements`, `order_extractions` and the backfill events into three tabs of one
+Google Sheet, view-only. It talks only to Google, not NSE.
 
 **How Sravanth works.** He reviews every change and must be able to explain it, so prefer
 plain code and say why, not what. He pushes back hard and specifically, and he is usually
@@ -151,7 +158,7 @@ check for the literal `"CHANGEME"` string itself; it is not filtered out for you
   edges use `ZoneInfo("Asia/Kolkata")` in Python, so it only affects how `psql` prints a
   timestamp. And `migrations/` is still empty, so the database has **no schema**: a working
   connection proves the server, not the tables.
-- Branch `main`, tracking `origin/main` at `github.com/sravanth-dev/tradebot_NSE_order_scraper`. **Push after every commit** (Sravanth's standing instruction). A push carrying the 22 MB label set failed once with HTTP 408 over the hotspot and succeeded after `git config http.postBuffer 524288000`.
+- Branch `main`, tracking `origin/main` at `github.com/sravanth-dev/reg30-radar` (renamed from `tradebot_NSE_order_scraper` on 21 Oct 2026; the old URL redirects). **Push after every commit** (Sravanth's standing instruction). A push carrying the 22 MB label set failed once with HTTP 408 over the hotspot and succeeded after `git config http.postBuffer 524288000`.
 
 ```bash
 source .venv/Scripts/activate
@@ -2978,3 +2985,16 @@ best").
 - **Process slip:** the scan before `4805a8a` flagged 2 lines. Both are the placeholder
   `CHANGEME`, so no real secret was involved. The commit went through because the scan was
   piped into `tail`, which hid its exit code. The scan now runs unpiped.
+- **Finished the same morning (Sravanth: "do these too by yourself").**
+  - The GitHub repo was renamed with `gh repo rename` to `sravanth-dev/reg30-radar`, still
+    private; GitHub redirects the old URL. `origin` was set to the new URL.
+  - The README's clone and `cd` lines were updated, and the command comments the longer
+    package name had pushed out of line in README, CLAUDE.md and STATUS were realigned.
+  - The branch was fast-forwarded into `main` and pushed, then deleted locally (it was
+    never pushed).
+  - **Not done, on purpose:**
+    - `C:\Users\srava\tradebot` is not deleted. It is not an empty leftover: it holds an
+      Angel One script (`angel.py`), a `.env` and its own git history, and the brief says
+      not to touch anything Angel One. Only its file names and sizes were looked at.
+    - n8n was not checked: its MCP server did not connect, and CLAUDE.md rule 7 rules out
+      changing a workflow anyway. Nothing in this repo calls n8n.

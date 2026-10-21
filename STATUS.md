@@ -1,6 +1,6 @@
 # STATUS
 
-*Updated 21 Oct 2026, 06:00 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
+*Updated 21 Oct 2026, 06:30 IST. The short resume card; the history is in [WORKLOG.md](WORKLOG.md),
 the GATE 1 snapshot in [AUDIT.md](AUDIT.md).*
 
 ## Where we are
@@ -55,6 +55,10 @@ Decisions from the gate (ARCHITECTURE D28-D32):
 - [x] Step 1.8: `reg30_radar.live` + `reg30_radar.catchup` built (commit `388075b`), migration
       0018 on both DBs, order-path retries fixed. 461 tests pass. Catch-up 1-20 Oct:
       7,806 new filings, no failed or flagged day
+- [x] Renamed to **Reg30 Radar** (D33): package `reg30_radar`, Docker and repo `reg30-radar`,
+      env prefix `REG30_RADAR_`; the database names stay `tradebot`/`tradebot_backfill`.
+      Merged into `main` on 21 Oct, and the GitHub repo is now
+      `github.com/sravanth-dev/reg30-radar` (the old URL redirects)
 
 ## In progress (running unattended)
 - [ ] **`python -m reg30_radar.live` and `python -m reg30_radar.sheets` are running
@@ -66,13 +70,12 @@ Decisions from the gate (ARCHITECTURE D28-D32):
       submitted 21 Oct 04:35, worst case $0.08), polled every 10 min. When it is in:
       `batch-submit` for HCC's one pending filing, `batch-collect`, `events`, `calculate`,
       `study`, then RESULTS.md.
-- [ ] **Rename to Reg30 Radar (D33) on branch `rename/reg30-radar`**, 5 commits, not
-      merged or pushed: Sravanth reviews the diff first. The working copy runs this branch.
 
 ## Next (in order)
-9. Backfill stages: `batch-submit`/`collect` → `events` → `calculate` → `recheck` →
-   `study` → `report`
-10. GATE 2 preparation (Compose locally, README, hosting options), then **stop**
+9. Backfill stages: `recheck-collect` → `batch-submit`/`batch-collect` (HCC) → `events` →
+   `calculate` → `study`, then RESULTS.md
+10. GATE 2: Compose, README and the hosting options are ready (below); hosting is
+    Sravanth's choice
 
 ## Blockers that need Sravanth
 - Off-machine backups: install rclone and run `rclone config` once (D14). Until then the
@@ -87,15 +90,15 @@ Decisions from the gate (ARCHITECTURE D28-D32):
 ## Resume after an interruption (PowerShell, from the repo root)
 ```powershell
 .venv\Scripts\Activate.ps1
-git status; git log --oneline -5          # what landed last
+git status; git log --oneline -5           # what landed last
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Select ProcessId, CommandLine   # anything running?
-python -m reg30_radar.backfill status       # backfill counters
-python -m pytest -q                      # must be green before any commit
-python -m reg30_radar.common.backup         # before any stage that writes to a database
+python -m reg30_radar.backfill status      # backfill counters
+python -m pytest -q                        # must be green before any commit
+python -m reg30_radar.common.backup        # before any stage that writes to a database
 # live runner: is it up? restart it if it exited
 Get-Content data\live.log -Tail 20
 Start-Process cmd.exe -ArgumentList '/c','.venv\Scripts\python.exe -m reg30_radar.live 2>> data\live.log' -WindowStyle Hidden
-python -m reg30_radar.backfill batch-collect   # once the 20 Oct batch is done
+python -m reg30_radar.backfill recheck-collect   # once the recheck batch is done
 ```
 Rule: never start an NSE-talking command while another one is running.
 

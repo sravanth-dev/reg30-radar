@@ -2992,7 +2992,16 @@ best").
     package name had pushed out of line in README, CLAUDE.md and STATUS were realigned.
   - The branch was fast-forwarded into `main` and pushed, then deleted locally (it was
     never pushed).
+  - The rehearsal's Docker image `tradebot:latest` was removed. Docker Desktop was started
+    for it and stopped again. The `postgres:16` and `postgres:16-alpine` images and two
+    anonymous volumes (4 Sep and 27 Sep, no containers) were left alone, since they are not
+    this project's by name.
+  - No scheduled task, Run key, Startup entry, desktop or Start-menu shortcut, or
+    PowerShell profile refers to the old module name.
   - **Not done, on purpose:**
+    - The OpenAI project keeps its name: the built-in browser was not signed in to the
+      OpenAI dashboard, and signing in is Sravanth's. The name is cosmetic; no code or key
+      depends on it.
     - `C:\Users\srava\tradebot` is not deleted. It is not an empty leftover: it holds an
       Angel One script (`angel.py`), a `.env` and its own git history, and the brief says
       not to touch anything Angel One. Only its file names and sizes were looked at.

@@ -42,7 +42,7 @@ empty too; they exist so git keeps a folder before it has real files.
   resolve to `/app`.
 - **`docker-compose.yml`** — Host-agnostic services from that image: `live` (with the
   health check) and `sheets`, plus `catchup` and `backup` under the `ops` profile. One
-  `tradebot_data` volume holds the NSE lock for every service. No published ports.
+  `reg30-radar-data` volume holds the NSE lock for every service. No published ports.
 - **`docker-compose.local-db.yml`** — Adds a Postgres container and points the app at it.
 - **`docker-compose.external-db.yml`** — Joins an existing Postgres's Docker network instead.
 - **`.env.docker.example`** — The env file the local-db setup reads (copy to `.env.docker`).

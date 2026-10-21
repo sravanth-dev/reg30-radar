@@ -34,9 +34,9 @@ COPY migrations ./migrations
 # Run as an unprivileged user. /app/data holds in-flight PDFs (deleted after extraction,
 # D8) and the live order reports; compose mounts a named volume there, which inherits this
 # ownership on first use.
-RUN useradd --create-home --uid 10001 tradebot \
+RUN useradd --create-home --uid 10001 reg30-radar \
     && mkdir -p /app/data \
-    && chown tradebot:tradebot /app/data
-USER tradebot
+    && chown reg30-radar:reg30-radar /app/data
+USER reg30-radar
 
 CMD ["python", "-m", "reg30_radar.collector"]

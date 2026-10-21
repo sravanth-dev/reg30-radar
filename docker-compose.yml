@@ -20,18 +20,18 @@
 #
 # Values in ${...} come from the env file compose reads for substitution (--env-file).
 
-name: tradebot
+name: reg30-radar
 
 x-app: &app
   build: .
-  image: tradebot:latest
-  env_file: ${TRADEBOT_ENV_FILE:-.env}
+  image: reg30-radar:latest
+  env_file: ${REG30_RADAR_ENV_FILE:-.env}
   restart: unless-stopped
   volumes:
     # data/ holds the NSE lock, in-flight PDFs (deleted after extraction, D8) and live
     # reports. One volume for every service, so the lock is shared and a second NSE
     # process refuses to start (common/nse_guard.py).
-    - tradebot_data:/app/data
+    - reg30-radar-data:/app/data
     # The Google service-account key, read-only. GOOGLE_SERVICE_ACCOUNT_FILE in the env
     # file must be the path inside the container: /app/secrets/<file>.json
     - ./secrets:/app/secrets:ro
@@ -47,8 +47,8 @@ services:
     command: ["python", "-m", "reg30_radar.live"]
     # pdfplumber holds a page's objects in memory; a PDF larger than
     # nse.documents.max_bytes is refused before it is parsed.
-    mem_limit: ${TRADEBOT_LIVE_MEM:-512m}
-    cpus: ${TRADEBOT_LIVE_CPUS:-0.5}
+    mem_limit: ${REG30_RADAR_LIVE_MEM:-512m}
+    cpus: ${REG30_RADAR_LIVE_CPUS:-0.5}
     healthcheck:
       # Healthy means a poll succeeded in the last 30 minutes (common/health.py), not
       # merely that the process is alive.
@@ -61,8 +61,8 @@ services:
   sheets:
     <<: *app
     command: ["python", "-m", "reg30_radar.sheets"]
-    mem_limit: ${TRADEBOT_SHEETS_MEM:-256m}
-    cpus: ${TRADEBOT_SHEETS_CPUS:-0.25}
+    mem_limit: ${REG30_RADAR_SHEETS_MEM:-256m}
+    cpus: ${REG30_RADAR_SHEETS_CPUS:-0.25}
 
   # The daily catch-up (one date-range request per day since the last successful poll).
   # One-off, never alongside `live`: stop live, run this, start live again.
@@ -75,9 +75,9 @@ services:
   # One pg_dump into ./backups (D14). The client major version must be at least the
   # server's.
   backup:
-    image: postgres:${TRADEBOT_PG_MAJOR:-16}
+    image: postgres:${REG30_RADAR_PG_MAJOR:-16}
     profiles: ["ops"]
-    env_file: ${TRADEBOT_ENV_FILE:-.env}
+    env_file: ${REG30_RADAR_ENV_FILE:-.env}
     restart: "no"
     volumes:
       - ./backups:/backups
@@ -86,4 +86,4 @@ services:
       - 'pg_dump --format=custom --dbname="$$DATABASE_URL" --file="/backups/tradebot_$$(date +%Y%m%d_%H%M%S).dump"'
 
 volumes:
-  tradebot_data:
+  reg30-radar-data:

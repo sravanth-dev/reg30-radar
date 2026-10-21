@@ -6,7 +6,7 @@
 #
 # What it answers: free memory, disk and swap (sets the compose mem/cpu limits); the
 # Postgres container's name, image (so its major version) and Docker network (sets
-# TRADEBOT_DB_NETWORK, the host in DATABASE_URL and TRADEBOT_PG_MAJOR). It never prints
+# REG30_RADAR_DB_NETWORK, the host in DATABASE_URL and REG30_RADAR_PG_MAJOR). It never prints
 # container environment variables, which is where n8n's Postgres password lives.
 set -u
 

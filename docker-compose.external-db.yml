@@ -20,4 +20,4 @@ services:
 networks:
   db:
     external: true
-    name: ${TRADEBOT_DB_NETWORK:?set TRADEBOT_DB_NETWORK to the Postgres container's Docker network}
+    name: ${REG30_RADAR_DB_NETWORK:?set REG30_RADAR_DB_NETWORK to the Postgres container's Docker network}

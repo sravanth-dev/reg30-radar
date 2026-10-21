@@ -1,4 +1,4 @@
-# One image for every tradebot process: collector, orders --follow, sheets, and one-off
+# One image for every Reg30 Radar process: collector, orders --follow, sheets, and one-off
 # jobs such as migrations and catch-ups (ARCHITECTURE.md §9). Python 3.14, the same as the
 # laptop (D12); building this image is also the check that every approved dependency has a
 # Linux cp314 wheel.

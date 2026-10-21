@@ -19,7 +19,7 @@ the last session entry below.
 *Last updated: 20 Oct 2026 (GATE 1). The live checklist is [STATUS.md](STATUS.md); the
 20 Oct snapshot with file:line evidence is [AUDIT.md](AUDIT.md).*
 
-**What this is.** tradebot Phase 1. Collect NSE corporate announcements (BSE dropped by
+**What this is.** Reg30 Radar Phase 1. Collect NSE corporate announcements (BSE dropped by
 D26), classify them, extract order wins, measure order value against revenue and market
 cap, and test it on 12 months of history to decide whether order filings move prices
 tradeably. Nothing in this repo places trades, and nothing will in Phase 1.

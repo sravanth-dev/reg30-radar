@@ -1,4 +1,4 @@
-# tradebot as containers, wherever they run (ARCHITECTURE.md §9; D28: the VPS is gone and
+# Reg30 Radar as containers, wherever they run (ARCHITECTURE.md §9; D28: the VPS is gone and
 # hosting is Sravanth's call at GATE 2, so nothing here assumes a particular host).
 #
 # One image, and ONE process that talks to NSE (D30): `live` polls and runs the order

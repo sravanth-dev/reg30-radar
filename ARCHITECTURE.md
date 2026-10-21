@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — tradebot, Phase 1: announcements → order signals
+# ARCHITECTURE.md — Reg30 Radar, Phase 1: announcements → order signals
 
 Version 1.6 · 20 Oct 2026 · Owner: Sravanth
 
@@ -604,7 +604,7 @@ trading. **It can never produce a GO on this same data.**
 
 ## 6. LLM policy: model routing
 
-- **Provider**: OpenAI API, paid from existing account credits. Create a separate OpenAI project with its own API key for tradebot (`OPENAI_API_KEY` in `.env`), so its spend is isolated and visible. Use the official `openai` Python SDK.
+- **Provider**: OpenAI API, paid from existing account credits. Create a separate OpenAI project with its own API key for Reg30 Radar (`OPENAI_API_KEY` in `.env`), so its spend is isolated and visible. Use the official `openai` Python SDK.
 - **Client built** (24 Sep 2026, pulled forward from Slice 5 to back §5.5 Part B's vision OCR): `src/tradebot/llm/client.py` is the single entry point this section's rules describe — fails closed on a null cap, computes cost from the price table, logs every call to `llm_calls`, never retries in a loop. Its first and only caller so far is `documents/ocr.py`. Building it surfaced one real bug, now fixed and regression-tested: `common/config.py`'s `env(..., required=False)` returns the literal string `"CHANGEME"` instead of `None` for an unfilled `.env` placeholder (the `CHANGEME` check only runs when `required=True`), so a naive "is the key present" check treated the placeholder as a real key and made one genuine network call to OpenAI during a unit test before this was caught.
 - **Routing tiers** (cheapest capable tier first):
 
@@ -730,7 +730,7 @@ Migrations (Default): plain numbered SQL files in `migrations/` (`0001_init.sql`
 ## 9. Deployment and environment
 
 ```
-tradebot/
+reg30-radar/
   CLAUDE.md  ARCHITECTURE.md  WORKLOG.md  .env.example  .gitattributes  .gitignore
   Dockerfile  docker-compose.yml  pyproject.toml
   config/      sources.yaml  category_map.yaml  llm.yaml  documents.yaml  holidays_2026.yaml
@@ -828,7 +828,7 @@ Work only he can do:
 2. ~~**Postgres on the laptop**, with `DATABASE_URL` set.~~ **Done and verified end to end, 22 Sep 2026.** PostgreSQL 16.15 running as `postgresql-x64-16` on port 5432; role, database and database owner are all `tradebot`, so the migration runner can create tables — confirmed by creating one, writing to it and rolling back. `NUMERIC(20,2)` returns `Decimal` and `timestamptz` returns a tz-aware datetime. `migrations/` is still empty, so the database has no schema yet: Slice 1 writes `0001_init.sql`.
 3. **Ten order PDFs with hand-labelled expected JSON**, which gate Spike D. (~50 later for the eval set.)
 4. ~~**`config/holidays_2026.yaml`**, per D27, before the live collector runs.~~ **Done** (22 Sep 2026). Sravanth supplied NSE's official 2026 list and it is committed as `config/holidays_2026.yaml`: sixteen weekday closures from the CM segment, plus the 8 Nov Muhurat as a `special_sessions` entry. One gap remains and is NSE's, not ours — the Muhurat **timings are not published yet**, so `session` is null rather than guessed; fill it in when NSE circulates them.
-5. **To activate §5.5 Part B** (vision OCR for unreadable scans), Sravanth supplies `OPENAI_API_KEY` (tradebot-only project, in `.env`), a vision-capable `ocr_model` id with its input/output prices in `config/llm.yaml`, and `caps.ocr_usd_per_month`. Until then image pages that fail every other extraction attempt go to manual review, never guessed.
+5. **To activate §5.5 Part B** (vision OCR for unreadable scans), Sravanth supplies `OPENAI_API_KEY` (Reg30 Radar-only project, in `.env`), a vision-capable `ocr_model` id with its input/output prices in `config/llm.yaml`, and `caps.ocr_usd_per_month`. Until then image pages that fail every other extraction attempt go to manual review, never guessed.
 
 Promised before the phases that need them: **VPS numbers** (Spike E — free memory, free disk, swap, the Docker network name, how Postgres is configured) and the **OpenAI model IDs and prices** (Spike D).
 

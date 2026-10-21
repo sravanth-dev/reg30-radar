@@ -1,4 +1,4 @@
-"""tradebot, Phase 1: NSE/BSE announcements to order signals.
+"""Reg30 Radar, Phase 1: NSE/BSE announcements to order signals.
 
 Nothing in this package places trades. See ARCHITECTURE.md.
 """

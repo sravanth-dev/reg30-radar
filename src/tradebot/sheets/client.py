@@ -202,7 +202,7 @@ class SheetsClient:
             "addProtectedRange": {
                 "protectedRange": {
                     "range": {"sheetId": self.sheet_id()},
-                    "description": "tradebot sync target - manual edits can be overwritten",
+                    "description": "Reg30 Radar sync target - manual edits can be overwritten",
                     "warningOnly": True,
                 }
             }

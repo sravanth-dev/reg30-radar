@@ -1,4 +1,4 @@
-# tradebot: do NSE order-win announcements move stock prices?
+# Reg30 Radar: do NSE order-win announcements move stock prices?
 
 When a listed Indian company wins a large contract, it has to tell the stock exchange.
 Hundreds of these "order win" filings appear on NSE every month. A common belief is that

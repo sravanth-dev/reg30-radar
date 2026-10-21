@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**tradebot, Phase 1.** Collect NSE/BSE corporate announcements, classify them, extract order wins, compute order value against revenue and market cap, and test all of it on 12 months of history. Nothing in this repo places trades.
+**Reg30 Radar, Phase 1.** Collect NSE/BSE corporate announcements, classify them, extract order wins, compute order value against revenue and market cap, and test all of it on 12 months of history. Nothing in this repo places trades.
 
 The full design, decisions and build order are in ARCHITECTURE.md:
 
